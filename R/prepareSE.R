@@ -112,21 +112,31 @@ prepareMultipleDFs <- function(pathDF.list){
 prepareSE <- function(pathDF, conditionColumns= c("Compound")){
 
 #pathDF <- "data-raw/iNeurons/IV neurons_14.28.48_18T39265_LC_new_LC.xlsx"
-df <- prepareDF(pathDF)
+#pathDF <- l_files
+#length(pathDF)
+
+if(length(pathDF) > 1){
+    df <- prepareMultipleDFs(pathDF)
+}else{
+      df <- prepareDF(pathDF)
+      }
 
 df <- df %>% hablar::retype()
+
 numeric_cols <- names(df)[sapply(df, is.numeric)]
 numeric_cols <- numeric_cols[!(numeric_cols %in% c("Sweep", "V_Clamp"))]
 description_cols <- colnames (df)[!(colnames (df) %in% numeric_cols)]
 description_cols <- description_cols[description_cols != "Sweep"]
 
-assays <- lapply(numeric_cols, \(numeric_cols) {
-  x <- reshape2::dcast(df, Well ~ Sweep, value.var = numeric_cols)
-  m <- x[ , !(names(x) %in% c("Well", "QC"))] |> as.matrix()
+assays <- lapply(numeric_cols, \(cols) {
+  x <- reshape2::dcast(df, Well*Plate_ID ~Sweep, value.var = cols)
+  m <- x[ , !(names(x) %in% c("Well", "Plate_ID"))] |> as.matrix()
+  #names(m) <-interaction(x$Well, x$Plate_ID)
   t(m)
 })
 
 names(assays) <- numeric_cols
+
 
 df <- data.table::as.data.table(df)
 
@@ -137,6 +147,7 @@ rd <- S4Vectors::DataFrame(unique(df[, .(Sweep)]))
 se <- SummarizedExperiment::SummarizedExperiment(assays = assays,
                            rowData = rd,
                            colData = cd)
+
 colnames(se) <- cd$Well
 
 type(description_cols)
@@ -144,7 +155,7 @@ type(description_cols)
 description_cols <- description_cols[!(description_cols %in% names(cd))]
 
 descr <-lapply(description_cols, function(var) {
-   x<- reshape2::dcast(df, Sweep ~ Well, value.var = var)
+   x<- reshape2::dcast(df, Sweep ~ Well+Plate_ID, value.var = var)
    x[, !(names(x) %in% c("Sweep"))]
 })
 
@@ -173,3 +184,7 @@ for (colname in names(descr)){
 return(se)
 
 }
+
+
+
+
