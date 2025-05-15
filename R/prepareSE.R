@@ -104,13 +104,14 @@ prepareMultipleDFs <- function(pathDF.list){
 
 
 #' Prepare SummarizedExperiment Object from DataControl Excel-file
-#' @param vector Path to DataControl Excel files
+#' @param pathDF Path to DataControl Excel files
+#' @param conditionColumns array of columns that describe experimental conditions
 #'
 #' @return A SummarizedExperiment Object with OAs as assays
 #' @export
-prepareSE <- function(pathDF){
+prepareSE <- function(pathDF, conditionColumns= c("Compound")){
 
-pathDF <- "data-raw/iNeurons/IV neurons_14.28.48_18T39265_LC_new_LC.xlsx"
+#pathDF <- "data-raw/iNeurons/IV neurons_14.28.48_18T39265_LC_new_LC.xlsx"
 df <- prepareDF(pathDF)
 
 df <- df %>% hablar::retype()
@@ -138,15 +139,36 @@ se <- SummarizedExperiment::SummarizedExperiment(assays = assays,
                            colData = cd)
 colnames(se) <- cd$Well
 
-print(description_cols)
-x <- reshape2::dcast(df, Well ~ Sweep, value.var =description_cols[!(description_cols %in% names(cd))])
+type(description_cols)
 
-description <- x[ , !(names(x) %in% c("Well", "QC"))] |> as.matrix()
-description <- t(description)
-colnames(description) <- unique(df$Well)
+description_cols <- description_cols[!(description_cols %in% names(cd))]
 
-SummarizedExperiment::rowData(se)$Description <- S4Vectors::DataFrame(description)
-SummarizedExperiment::rowData(se)
+descr <-lapply(description_cols, function(var) {
+   x<- reshape2::dcast(df, Sweep ~ Well, value.var = var)
+   x[, !(names(x) %in% c("Sweep"))]
+})
+
+names(descr) <- description_cols
+
+
+for (colname in names(descr)){
+
+
+  mat <- descr[[colname]]  # descr[[colname]] is a DataFrame or matrix-like
+
+  # Check if all rows have the same values across columns
+  same_across <- apply(mat, 1, function(x) length(unique(x)) == 1)
+
+  if (all(same_across)) {
+    # Collapse to a single column with unique values per row
+    collapsed <- apply(mat, 1, function(x) unique(x))
+    SummarizedExperiment::rowData(se)[[colname]] <- collapsed
+  } else {
+    # Retain the full DataFrame if values vary
+    SummarizedExperiment::rowData(se)[[colname]] <- mat
+
+  }
+}
 
 return(se)
 

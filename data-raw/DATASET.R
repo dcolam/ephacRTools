@@ -9,11 +9,10 @@ l_files <- list.files(path = "data-raw/hAG/Ephys/" ,pattern = "*.xlsx$", recursi
 prepareMultipleDFs(l_files)
 
 
-se <- prepareSE("data-raw/iNeurons/IV neurons_14.28.48_18T39265_LC_new_LC.xlsx")
+se <- prepareSE("data-raw/hAG/Ephys/NCI_ramp_ATP1A1_080325_18T39421.xlsx")
 
 library(SummarizedExperiment)
 
-rowData(se)$Description
 
 
 
