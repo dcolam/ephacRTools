@@ -1,22 +1,22 @@
 ## code to prepare `DATASET` dataset goes here
 
-usethis::use_data(DATASET, overwrite = TRUE)
-
 devtools::load_all()
 
+## Human Adrenal Gland Dataset SE with imaging data
 l_files <- list.files(path = "data-raw/hAG/Ephys/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
+se_hAG <- prepareSE(l_files)
 
-prepareMultipleDFs(l_files)
-se <- prepareSE("data-raw/hAG/Ephys/NCI_ramp_ATP1A1_080325_18T39421.xlsx")
-
-se <- prepareSE(l_files)
-
-class(l_files)
-
-colData(se)
-
-library(SummarizedExperiment)
+l_files <- list.files(path = "data-raw/hAG/Imaging/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
+se_hAG <- mergeSEandImg(se_hAG, df_img)
+usethis::use_data(se_hAG, overwrite = TRUE)
 
 
+## iNeurons dataset with imaging data
+l_files <- list.files(path = "data-raw/iNeurons/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
+se_iN <- prepareSE(l_files)
 
-
+l_files <- list.files(path = "data-raw/iNeurons/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
+se_iN <- mergeSEandImg(se_iN, df_img)
+usethis::use_data(se_iN, overwrite = TRUE)

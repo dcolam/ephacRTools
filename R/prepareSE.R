@@ -71,6 +71,13 @@ prepareDF <- function(pathDF){
     }
   }
 
+  new.df$Well <- sapply(new.df$Well, function(x){
+    unlist(stringr::str_split(x, "\\r"))[1]
+  })
+  new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
+    unlist(stringr::str_split(x, "\\r"))[1]
+  })
+
   return(new.df)
 
 }
@@ -142,6 +149,17 @@ df <- data.table::as.data.table(df)
 
 cd <- S4Vectors::DataFrame(unique(df[, .(Well, QC, Plate_ID)]))
 
+cd$Row <- sapply(cd$Well, function(x){
+
+  str_sub(x, 1, 1)
+
+})
+
+cd$Column <- sapply(cd$Well, function(x){
+
+  str_sub(x, 2, 3)
+
+})
 
 rd <- S4Vectors::DataFrame(unique(df[, .(Sweep)]))
 se <- SummarizedExperiment::SummarizedExperiment(assays = assays,
@@ -180,6 +198,8 @@ for (colname in names(descr)){
 
   }
 }
+
+
 
 return(se)
 

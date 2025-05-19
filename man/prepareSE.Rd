@@ -4,10 +4,12 @@
 \alias{prepareSE}
 \title{Prepare SummarizedExperiment Object from DataControl Excel-file}
 \usage{
-prepareSE(pathDF)
+prepareSE(pathDF, conditionColumns = c("Compound"))
 }
 \arguments{
-\item{vector}{Path to DataControl Excel files}
+\item{pathDF}{Path to DataControl Excel files}
+
+\item{conditionColumns}{array of columns that describe experimental conditions}
 }
 \value{
 A SummarizedExperiment Object with OAs as assays
