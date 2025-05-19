@@ -27,6 +27,15 @@ pkgTest <- function(x)
   }
 }
 
+
+## Load Packages
+packages <- c("RSQLite", "ggplot2", "readxl", "stringr", "reshape2", "lmerTest", 
+              "emmeans", "data.table", "umap", "dplyr", "purrr")
+for(package in packages){
+  pkgTest(package)
+}
+
+
 # ────────────────────────────────────────────────────────────────────────
 ## Aggregation function based on columns
 ag <- function(df, cols, fun=mean) {
@@ -34,14 +43,6 @@ ag <- function(df, cols, fun=mean) {
   print(c)
   df <- aggregate(df[,c], by=as.list(df[,cols]), FUN=fun, na.rm=TRUE)
   return(df[, colSums(is.na(df)) != nrow(df)])
-}
-
-
-## Load Packages
-packages <- c("RSQLite", "ggplot2", "readxl", "stringr", "reshape2", "lmerTest", 
-              "emmeans", "data.table", "umap", "dplyr", "purrr")
-for(package in packages){
-  pkgTest(package)
 }
 
 # ────────────────────────────────────────────────────────────────────────

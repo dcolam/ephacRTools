@@ -1,0 +1,517 @@
+---
+title: "HT-APC IV Analysis"
+author: "David Colameo"
+date: "2025-01-17"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+## Load Useful Packages and Functions
+
+```{r message=FALSE, warning=FALSE}
+
+source("/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/Imaging_functions_neurons.R")
+
+```
+
+
+```{r}
+directory <- "/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/imaging_data/iPSC"
+extension <- "\\.db$"  # Regular expression for files ending with .db
+
+file_list <- list.files(path = directory, pattern = extension, full.names = TRUE)
+
+well_df_pa <- tibble()
+well_df_coloc <- tibble()
+
+analysis_type <- "pa"
+
+for (file in file_list) {
+  ws <- assigncell(file, analysis_type)
+  ws$file_name <- file
+  if (analysis_type == "pa") {
+    well_df_pa <- bind_rows(well_df_pa, ws)
+    well_df_pa$Well <- sub("-\\d+$", "", well_df_pa$Well)
+  }
+  else well_df_coloc <- bind_rows(well_df_coloc, ws)
+}
+
+well_df_coloc$Well <- sub("-\\d+$", "", well_df_coloc$Well)
+
+```
+
+
+## Load Nanion Excel
+
+One Excel file contains all raw-values of all 384-wells, the other one was manually curated and only contains the wells that passed QC. Combine manual QC into the dataset with all wells.
+```{r}
+
+pathToTable <- "/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/iPSC/IV neurons_14.28.48_18T39265.xlsx"
+
+df <- prepareDF(pathToTable)
+
+df <- as.data.table(df)
+df[, Well := gsub("\r\n", "", Well)]
+
+df$Column <- sapply(df$Well, function(x){
+  str_sub(x, 1, 1)
+})
+
+letter2number <- function(x) {utf8ToInt(x) - utf8ToInt("A") + 1L}
+df$ColNum <- sapply(df$Column, function(c){letter2number(c)})
+
+## Columns alternate between DIV7 and DIV14 <- Odd numbers are DIV14, even DIV7
+df$DIV <- ifelse(df$ColNum %% 2 == 0, "DIV7", "DIV14")
+
+```
+
+
+## Saved as SummarizedExperiment
+```{r se}
+
+vars <-  c("Minima", "Maxima", "Seal", "Series", "Capacitance")
+assays <- lapply(vars, \(var) {
+    x <- reshape2::dcast(df, Well + QC + DIV ~ V_Clamp, value.var = var)
+    m <- x[ , !(names(x) %in% c("Well", "QC", "DIV"))] |> as.matrix()
+    t(m)
+})
+names(assays) <- vars
+scaled <- lapply(assays[c("Minima", "Maxima", "Seal", "Series", "Capacitance")], 
+                 \(x) t(apply(x, 1, scale)))
+names(scaled) <- paste0("scaled", vars)
+
+cd <- DataFrame(unique(df[, .(Well, QC, DIV)]))
+rd <- DataFrame(V_Clamp=unique(df$V_Clamp))
+se <- SummarizedExperiment(assays = c(assays, scaled), 
+                           rowData = rd, 
+                           colData = cd)
+colnames(se) <- cd$Well
+
+```
+
+Without combining 2 SEs:
+```{r}
+
+pa_summary <- well_df_pa %>%
+  group_by(Well) %>%
+  summarize(across(where(is.numeric),  \(x) mean(x, na.rm = TRUE))) %>%
+  ungroup()
+
+coloc_summary <- well_df_coloc %>%
+  group_by(Well) %>%
+  summarize(across(where(is.numeric),  \(x) mean(x, na.rm = TRUE))) %>%
+  ungroup()
+
+pad_well <- function(well_col) {
+  well_col <- toupper(as.character(well_col))
+  row <- gsub("[0-9]+", "", well_col)
+  col <- gsub("[A-Z]+", "", well_col)
+  padded <- sprintf("%s%02d", row, as.integer(col))
+  return(padded)
+}
+
+pa_summary$Well <- pad_well(pa_summary$Well)
+coloc_summary$Well <- pad_well(coloc_summary$Well)
+
+cd <- as.data.frame(colData(se))
+cd$Well <- rownames(cd)
+
+cd <- cd %>%
+  left_join(pa_summary, by = "Well", suffix = c("", "_pa")) %>%
+  left_join(coloc_summary, by = "Well", suffix = c("", "_coloc"))
+
+rownames(cd) <- cd$Well
+cd$Well <- NULL
+
+colData(se) <- DataFrame(cd)
+
+colData(se)[15:25, 15:25]
+
+
+```
+
+
+
+## Clustering
+
+Perform clustering based on some metrices: These could be quality control metrices (Seal, Series and Capacitance) or actual information such as the IV curves of in- and outflowing currents
+
+
+### Prepare wideformated Dataframe for Dimensionality Reduction
+
+- Scale Maxima and minima per row and independently from one another
+- Make a mean of QC metrices and scale per column
+
+
+```{r}
+scaledMinima <- cbind(assay(se, "scaledMinima"))
+df <- data.frame(V_clamp=rownames(se), 
+                 I17=scaledMinima[,"I17"], 
+                 L19=scaledMinima[,"L19"])
+df <- melt(df) 
+names(df) <- c("V_clamp", "Well", "scaledMinima")
+df$V_clamp <- factor(df$V_clamp, levels=unique(df$V_clamp))
+ggplot(df, aes(V_clamp, scaledMinima, col=Well, group=Well)) +
+    geom_point() +
+    geom_line() + 
+    theme_bw()
+
+```
+
+```{r}
+scaledMaxima <- cbind(assay(se, "Capacitance"))
+df <- data.frame(V_clamp=rownames(se), 
+                 I17=scaledMaxima[,"I17"], 
+                 L19=scaledMaxima[,"L19"])
+df <- melt(df) 
+names(df) <- c("V_clamp", "Well", "scaledMaxima")
+df$V_clamp <- factor(df$V_clamp, levels=unique(df$V_clamp))
+ggplot(df, aes(V_clamp, scaledMaxima, col=Well, group=Well)) +
+    geom_point() +
+    geom_line() + 
+    theme_bw()
+
+```
+
+```{r}
+plotCurves <- \(se, assay_to_use = "scaledMinima", color_by = "DIV") {
+    assay_data <- as.data.frame(assay(se, assay_to_use))
+    df <- cbind(V_clamp = rownames(se), assay_data)
+    df <- reshape2::melt(df, id.vars = "V_clamp", 
+               variable.name = "Well",
+               value.name = "AssayValue")
+    
+    df$V_clamp <- factor(df$V_clamp, levels = unique(df$V_clamp))
+
+    meta <- as.data.frame(colData(se)[, c("Well", color_by)])
+    df <- merge(df, meta, by = "Well")
+
+    ggplot(df, aes(x = V_clamp, y = AssayValue, 
+                   color = .data[[color_by]], 
+                   group = Well)) +
+        geom_point(size = 0.5) +
+        geom_line(alpha = 0.7) +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        labs(title = assay_to_use, x = "V_clamp", y = "Assay Value")
+}
+plotCurves(se, "scaledMinima", "DIV")
+```
+
+
+
+
+
+## Perform UMAP
+```{r}
+mtx <- t(assay(se, "scaledMinima"))  
+
+umap <- umap(mtx)
+df <- data.frame(umap$layout, colData(se))
+names(df)[1:2] <- c("UMAP1", "UMAP2")
+ggplot(df, aes(UMAP1,UMAP2, colour = QC)) + 
+    geom_point() 
+```
+
+
+## Perform FPCA
+```{r}
+minima_data <- assay(se, "scaledMinima")  # Extract Minima values (matrix)
+
+# The rownames of your SummarizedExperiment are likely voltages or timepoints
+# These will be your independent variable (x-values)
+x_vals <- as.numeric(rownames(se))  # Assuming rownames are numeric (voltages or timepoints)
+
+# Create a basis function (e.g., B-splines) to represent the continuous data
+basis <- create.bspline.basis(rangeval = range(x_vals), nbasis = 15)  
+
+# Convert the minima data to a functional data object
+fd <- Data2fd(minima_data, argvals = x_vals, basisobj = basis)
+
+# Perform Functional PCA (FPCA)
+fpca_result <- pca.fd(fd, nharm = 2)  # 'nharm' specifies the number of principal components
+
+# Plot the first few principal components
+
+# Get the scores for the first two principal components
+df <- data.frame(fpca_result$scores, colData(se))
+names(df)[1:2] <- c("PC1", "PC2")
+# Optional: Visualize the FPCA scores in a scatter plot (2D)
+ggplot(df, aes(x = PC1, y = PC2, col=DIV)) +
+  geom_point() +
+  labs(title = "Functional PCA of Patch Clamp Data",
+       x = "Principal Component 1", y = "Principal Component 2")
+```
+
+
+
+
+
+### Prepare dataframe
+```{r}
+.f <- \(x) {
+    mtx <- assay(se, x)
+    mtx[is.na(mtx)] <- 0
+    scale(rowMeans(mtx))
+}
+# df_scaled <- cbind(
+#     assay(se, "Minima"), 
+#     assay(se, "Maxima"), 
+#     setNames(as.data.frame(do.call(cbind,
+#                                    lapply(c("Seal", "Series", "Capacitance"), .f))),
+#              c("Seal", "Series", "Capacitance"))
+# )
+```
+
+capcitance indicates the cell size, the larger the larger cell.  - 500 
+
+seal resistance should be as high as possible - 30
+
+series resistance should be as low as possible - 30
+
+
+separation between QC and biological
+
+
+
+### UMAP by minima
+
+
+
+TO-DO:
+
+Parameter Tuning
+
+
+```{r}
+
+df.umap <- umap(df_scaled)
+
+head(df.umap$layout, 3)
+
+umap_df <- df.umap$layout %>%
+  as.data.frame() 
+names(umap_df) <- c("UMAP1", "UMAP2")
+
+k <- 3
+kc <- kmeans(umap_df[,c(1, 2)], k)
+
+umap_df$Well <- rownames(umap_df)
+info <- colData(se)
+umap_df <- merge(umap_df, info, by=c("Well"))
+umap_df <- umap_df[!duplicated(umap_df),]
+rownames(umap_df) <- umap_df$Well
+
+ggplot(umap_df, aes(x = UMAP1, 
+             y = UMAP2, color=as.factor( kc$cluster)))+
+  geom_point() + theme_minimal()
+
+ggplot(umap_df, aes(x = UMAP1, 
+             y = UMAP2, color=as.factor(QC)))+
+  geom_point() + theme_minimal()
+
+umap_df$cluster <- kc$cluster
+
+data.pca <- princomp(df_scaled)
+
+tot_withinss.umap <- map_dbl(1:10,  function(k){
+  model <- kmeans(x = umap_df[,c("UMAP1", "UMAP2")], centers = k)
+  model$tot.withinss
+})
+
+tot_withinss.pca <- map_dbl(1:10,  function(k){
+  model <- kmeans(x = data.pca$scores, centers = k)
+  model$tot.withinss
+})
+
+# Generate a data frame containing both k and tot_withinss
+elbow_df.pca <- data.frame(
+  k = 1:10,
+  tot_withinss = tot_withinss.pca,
+  Algorithm = "PCA"
+  
+)
+
+elbow_df.umap <- data.frame(
+  k = 1:10,
+  tot_withinss = tot_withinss.umap,
+  Algorithm = "UMAP"
+  
+)
+
+elbow_df <- rbind(elbow_df.pca, elbow_df.umap)
+
+# Plot the elbow plot
+ggplot(elbow_df, aes(x = k, y = tot_withinss, color=Algorithm)) +
+  geom_line() + geom_point()+ geom_vline(xintercept=4, linetype="dashed")+
+  scale_x_continuous(breaks = 1:10) + theme_minimal()
+
+k <- 3
+
+```
+
+
+## Add Cluster information back to the wells
+
+```{r}
+
+kc.umpa <- kmeans(umap_df[,c("UMAP1", "UMAP2")], k)
+clusters <- as.data.frame(factor(kc.umpa$cluster))
+clusters$Well <- rownames(clusters)
+clusters$cluster <- factor(kc.umpa$cluster)
+
+df.comb <- merge(df, clusters, by=c("Well"))
+df.comb <- as.data.frame(df.comb)
+
+## Calculate Current Density
+df.comb$CurDens.min <- (df.comb$Minima*10^12) / df.comb$Capacitance
+df.comb$CurDens.max <- (df.comb$Maxima*10^12) / df.comb$Capacitance
+
+df.comb$Imax <- NA
+df.comb$Vhalf <- NA
+df.comb$Vmax <- NA
+
+## Fit Minima and get Imax, Vhalf and Vmax for minia, change parameter to
+#CurDens.min if interested
+  
+for(well in unique(df.comb$Well)){
+  x=subset(df.comb, Well == well)
+  metrics <- get_metric(x, well=x$Well, parameter = "Minima", F)
+  metrics <- as.numeric(metrics)
+  df.comb[df.comb$Well == well,]$Imax <-  metrics[1]
+  df.comb[df.comb$Well == well,]$Vhalf <- metrics[2]
+  df.comb[df.comb$Well == well,]$Vmax <-  metrics[3]
+}
+
+```
+
+
+
+
+## Plot IV Curves
+
+```{r}
+## Melt to Long format for better plotting
+passed.melt <- reshape2::melt(df.comb, measure.var = c("Minima", 
+                                                       "Maxima", 
+                                                       "CurDens.min", 
+                                                       "CurDens.max", 
+                                                       "Capacitance", 
+                                                       "Seal", 
+                                                       "Series"), 
+                              id.var = c("Well", 
+                                         "V_Clamp", 
+                                         "cluster", 
+                                         "Imax", 
+                                         "Vhalf", 
+                                         "Vmax", 
+                                         "DIV", 
+                                         "QC"))
+
+
+passed.melt$Column <- sapply(passed.melt$Well, function(x){
+  str_sub(x, 1, 1)
+})
+
+passed.melt$Row <- sapply(passed.melt$Well, function(x){
+  str_sub(x, 2, 3)
+})
+
+passed.melt$Row <- as.numeric(passed.melt$Row)
+
+ggplot(subset(passed.melt, variable %in% c("Seal", "Series", "Capacitance")), aes(x=cluster, y=log10(value), fill=cluster)) + geom_boxplot() + facet_grid(.~variable, scales="free")
+
+
+ggplot(subset(passed.melt, variable %in% c("Minima", "Maxima")), aes(x=V_Clamp, y=value*10^9, color=DIV)) +  stat_summary(geom='errorbar',fun.data=mean_se, size=1, alpha=0.6) +  
+  stat_summary(geom='line', fun.y = "mean", size=1, alpha=1) + 
+  facet_grid(variable ~ cluster, scales="free") + theme_minimal() + ylab("Current (nA)") + xlab("Holding Potential (mV)") + geom_hline(yintercept=0, linetype="dashed")
+
+
+```
+
+
+## Plate Plots
+
+
+
+```{r}
+sub.df <- subset(passed.melt, V_Clamp == -80 & variable == "Minima")
+unique(passed.melt$variable)
+nrow(sub.df)
+
+ggplot(subset(sub.df), aes(x=as.numeric(Row), y=Column, fill=log10(abs(Imax)))) + geom_tile() + 
+  facet_grid(.~cluster, scales="free")+ 
+  scale_fill_viridis_c(option = "magma") +
+  scale_x_continuous(breaks = 1:24) + 
+  scale_y_discrete(limits = rev) + 
+  geom_text(aes(label=interaction(Column, Row)), color="white")
+
+
+ggplot(subset(sub.df), aes(x=DIV, y=log10(abs(Imax)), color=DIV)) + 
+  geom_boxplot(alpha=0.6) + 
+  geom_point(position=position_jitterdodge(0)) + 
+  facet_grid(.~cluster, scales="free") + ylab("Imax (nA)")
+
+
+
+```
+
+
+
+
+
+## Perform Statistics
+
+Linear mixed model to fit IV-curve, if we want to test whether the IV curves is 
+
+different between DIV and clusters
+
+@Mark: Does this model make sense? Can we keep V_Clamp as numeric? We are not
+particularly interested in knowing the specific difference on a specific Voltage step:
+
+We just want to know, are the curves different within the fixed effects of DIV,
+and clusters (later on maybe also Celltype)
+
+
+```{r}
+## on IV curve
+mod <- lmer(Minima ~ DIV * cluster + V_Clamp + (1|Well), df.comb)
+summary(mod)
+emmeans(mod, trt.vs.ctrl ~ DIV | cluster, ref="DIV7")
+```
+
+
+
+- Be careful to perform statistics on single metrices and not have them
+duplicated per sweep!! -> subset for one sweep only (-80mV here, doesnt matter which one)
+
+Test for Differences in Seal, Series, Capacitance and also Imax and Vhalf etc
+
+```{r}
+sub.df <- subset(df.comb, V_Clamp == -80)
+nrow(sub.df)
+
+mod <- lm(Imax ~ DIV * cluster, subset(sub.df))
+
+mod <- lm(Imax ~ DIV * cluster, sub.df)
+summary(mod)
+emmeans(mod, trt.vs.ctrl ~ DIV | cluster, ref="DIV7")
+
+nsum <- sub.df %>%
+  group_by(cluster, DIV) %>%
+  summarise(n = n())
+nsum
+## exercise create a plot for Maxima as well
+```
+
+
+
+
+
+
+
+
+
+
