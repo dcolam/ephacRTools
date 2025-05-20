@@ -140,14 +140,19 @@ assays <- lapply(numeric_cols, \(cols) {
   m <- x[ , !(names(x) %in% c("Well", "Plate_ID"))] |> as.matrix()
   #names(m) <-interaction(x$Well, x$Plate_ID)
   t(m)
+  #colnames(m) <- x$Well
+  #m
 })
 
-names(assays) <- numeric_cols
+cols <-reshape2::dcast(df, Well*Plate_ID ~Sweep, value.var = "Well")$Well
 
+names(assays) <- numeric_cols
 
 df <- data.table::as.data.table(df)
 
 cd <- S4Vectors::DataFrame(unique(df[, .(Well, QC, Plate_ID)]))
+rownames(cd) <- cd$Well
+cd <- cd[cols,]
 
 cd$Row <- sapply(cd$Well, function(x){
 
@@ -167,7 +172,6 @@ se <- SummarizedExperiment::SummarizedExperiment(assays = assays,
                            colData = cd)
 
 colnames(se) <- cd$Well
-
 type(description_cols)
 
 description_cols <- description_cols[!(description_cols %in% names(cd))]
