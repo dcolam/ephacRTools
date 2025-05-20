@@ -17,7 +17,10 @@ prepareDF <- function(pathDF){
   df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
   df$`\r` <- NULL
   names(df)[1:2] <- c("Well", "QC")
-  df
+
+  if(!("Nanion Chip Barcode" %in% colnames(df))){
+    df[,"Nanion Chip Barcode"] <- "NoPlateID"
+  }
 
   df <- df[-1,]
   sweeps <- grep("Sweep \\d", colnames(df), value=TRUE)
