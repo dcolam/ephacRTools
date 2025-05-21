@@ -69,24 +69,30 @@ prepareSingleImgDF <- function(pathDB,
 }
 #' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
 #' @param pathDB Path to SQlite-DB
-#' @param analysis pa or coloc, which table to extract
+#' @param analysis pa or coloc, which table to extract, single option only
 #' @param id_cols Columns which metadata about the image and measurement
 #' @param num_cols Numeric Columns about the particle metrices
+#' @param coloc_cols Colocalisation specific columns to include, default "Second_Channel","Mask_Area"
 #' @param scale_num Boolean parameter to include scaled numeric metrices (Default FALSE)
 #' @param scale_fun Scale function passed through the numeric columns
 #' @return A dataframe
 #' @export
 prepareImgDF <- function(pathDB,
-                               analysis   = c("pa", "coloc"),
+                               analysis   = "pa",
                                id_cols    = c("Date","Plate_ID","Well",
                                               "Image_ID","Channel_Name",
                                               "Selection","Selection_Area"),
                                num_cols   = c("Area","Mean","IntDen"),
+                              coloc_cols = c("Second_Channel","Mask_Area"),
                                scale_num  = FALSE,
                                scale_cols = NULL,
                                scale_fun  = function(x)
                                  as.numeric(scale(x, TRUE, TRUE))){
 
+  if("coloc" %in% analysis){
+    id_cols <- c(id_cols,
+                 coloc_cols)
+  }
 
   if(length(pathDB) == 1){
     df <- prepareSingleImgDF(pathDB, analysis=analysis,
@@ -162,30 +168,50 @@ df_cleaned <- function(df){
 #' @param df_img DataFrame with imaging results returned by prepareImgDF()
 #' @return A dataframe
 #' @export
-mergeSEandImg <- function(se, df_img){
+mergeSEandImg <- function(se, df_img, tableType = "pa"){
   df_img <- subset(df_img, Image_Type == "fluor")
   cd <- as.data.frame(SummarizedExperiment::colData(se))
   # Loop through each channel
-  channels <- unique(df_img$Channel_Name)
+  if(tableType == "pa"){
+    channels <- unique(df_img$Channel_Name)
+    for (channel in channels) {
+      # Subset df_img for current channel
+      df_channel <- df_img %>%
+        filter(Channel_Name == channel) %>%
+        select(-Channel_Name)  # optional: remove the channel label
+      # Perform join
+      joined <- cd %>%
+        dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+      # Extract just the new columns (everything except original colData)
+      new_cols <- setdiff(names(joined), names(cd))
+      # Create a DataFrame object from just the new data
+      channel_data <- DataFrame(joined[, new_cols])
+      # Assign to colData(se), one column per channel, as a nested DataFrame
+      SummarizedExperiment::colData(se)[[channel]] <- channel_data
+    }
 
-  for (channel in channels) {
-    # Subset df_img for current channel
-    df_channel <- df_img %>%
-      filter(Channel_Name == channel) %>%
-      select(-Channel_Name)  # optional: remove the channel label
+  }else{
+    channels <- unique(df_img$Channel_Name)
 
-    # Perform join
-    joined <- cd %>%
-      dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+    for (channel in channels) {
+      second_channels <- unique(subset(df_img, Channel_Name == channel)$Second_Channel)
+      for (second_channel in second_channels){
+      # Subset df_img for current channel
+      df_channel <- df_img %>%
+        filter(Channel_Name == channel, Second_Channel == second_channel) %>%
+        select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
+      # Perform join
+      joined <- cd %>%
+        dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+      # Extract just the new columns (everything except original colData)
+      new_cols <- setdiff(names(joined), names(cd))
+      # Create a DataFrame object from just the new data
+      channel_data <- DataFrame(joined[, new_cols])
+      # Assign to colData(se), one column per channel, as a nested DataFrame
+      SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
+      }
+    }
 
-    # Extract just the new columns (everything except original colData)
-    new_cols <- setdiff(names(joined), names(cd))
-
-    # Create a DataFrame object from just the new data
-    channel_data <- DataFrame(joined[, new_cols])
-
-    # Assign to colData(se), one column per channel, as a nested DataFrame
-    SummarizedExperiment::colData(se)[[channel]] <- channel_data
   }
   return(se)
 }
