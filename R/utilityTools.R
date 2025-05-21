@@ -1,3 +1,5 @@
+#' @importFrom magrittr %>%
+NULL
 #' Add column-wise aggregation such as mean of any given assay and store it into colData
 #' @param assayName list of assay names to check
 #' @param assayList list of assays in the SE
@@ -96,15 +98,17 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
 
   pca_result <- prcomp(pca_data, rank=50)
 
-  tsne_data <- Rtsne(pca_data, pca = FALSE,  check_duplicates = FALSE)
+  tsne_data <- Rtsne::Rtsne(pca_data, pca = FALSE,  check_duplicates = FALSE)
+
   tsne_data <- tsne_data$Y %>%
     as.data.frame()%>%
-    rename(tsne1="V1",
+    dplyr::rename(tsne1="V1",
            tsne2="V2")
-  umap_data <- umap(pca_data)
+
+  umap_data <- umap::umap(pca_data)
   umap_df <- umap_data$layout %>%
     as.data.frame()%>%
-    rename(UMAP1="V1",
+    dplyr::rename(UMAP1="V1",
            UMAP2="V2")
   reducedDims(se) <- list(PCA=pca_result$x, TSNE=DataFrame(tsne_data), UMAP=DataFrame(umap_df))
 

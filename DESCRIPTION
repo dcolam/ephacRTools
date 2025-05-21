@@ -19,3 +19,7 @@ Imports:
     magrittr
 Depends: 
     R (>= 3.5)
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
