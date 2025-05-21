@@ -6,10 +6,11 @@
 \usage{
 prepareImgDF(
   pathDB,
-  analysis = c("pa", "coloc"),
+  analysis = "pa",
   id_cols = c("Date", "Plate_ID", "Well", "Image_ID", "Channel_Name", "Selection",
     "Selection_Area"),
   num_cols = c("Area", "Mean", "IntDen"),
+  coloc_cols = c("Second_Channel", "Mask_Area"),
   scale_num = FALSE,
   scale_cols = NULL,
   scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE))
@@ -18,11 +19,13 @@ prepareImgDF(
 \arguments{
 \item{pathDB}{Path to SQlite-DB}
 
-\item{analysis}{pa or coloc, which table to extract}
+\item{analysis}{pa or coloc, which table to extract, single option only}
 
 \item{id_cols}{Columns which metadata about the image and measurement}
 
 \item{num_cols}{Numeric Columns about the particle metrices}
+
+\item{coloc_cols}{Colocalisation specific columns to include, default "Second_Channel","Mask_Area"}
 
 \item{scale_num}{Boolean parameter to include scaled numeric metrices (Default FALSE)}
 

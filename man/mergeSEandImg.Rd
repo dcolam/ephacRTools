@@ -4,7 +4,7 @@
 \alias{mergeSEandImg}
 \title{Merge together the imgaging-results into the Column Data of the SE}
 \usage{
-mergeSEandImg(se, df_img)
+mergeSEandImg(se, df_img, tableType = "pa")
 }
 \arguments{
 \item{se}{SummarizedExperiment Object with the Ephys-Data}
