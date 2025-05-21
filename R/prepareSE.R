@@ -206,7 +206,11 @@ for (colname in names(descr)){
   }
 }
 
-
+se <- SingleCellExperiment::SingleCellExperiment(
+  assays=assays(se),
+  colData=colData(se),
+  rowData= rowData(se)
+)
 
 return(se)
 
