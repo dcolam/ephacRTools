@@ -1,0 +1,148 @@
+---
+title: "Explore_Dimensionality_Reduction"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Explore_Dimensionality_Reduction}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Load Package and Data
+
+```{r setup}
+devtools::load_all()
+
+data("se_iN")
+
+pathDF <- "C:/Users/davec/Documents/R-Markdowns/General/Blockcourse/IV neurons_12.47.37_RAW.xlsx"
+se <- prepareSE(pathDF = pathDF)
+colData(se)$Plate_ID <- "18T05487"
+pathImg <- "C:/Users/davec/Documents/R-Markdowns/General/Blockcourse/Output_291124_BME308_DIV_18T05487.db"
+
+img <- prepareImgDF(pathImg, scale_num = TRUE)
+img.coloc <- prepareImgDF(pathImg, analysis = "coloc", scale_num = TRUE)
+
+se <- mergeSEandImg(se, img)
+se <- mergeSEandImg(se, img.coloc, tableType = "coloc")
+
+colData(se)
+assays(se)
+se <- colAG(se,  c("Seal", "Series", "Capacitance"))
+colData(se)
+
+se$DIV <- ifelse(as.numeric(se$Column) %% 2 == 0, "DIV7", "DIV14")
+colData(se)$C2
+
+```
+
+
+### Dimensionality Reduction Based on QCs
+
+```{r}
+
+se <- colAG(se,  c("Seal", "Series", "Capacitance"))
+
+se <- reducedDim.Cellwise(se, assayList = c("Seal", "Series", "Capacitance"), scaling = "global", byRow=FALSE)
+
+plotDimRed(se, "UMAP",  colorColumns = c("Seal_mean", "Series_mean", "Capacitance_mean"))
+plotDimRed(se, "TSNE",  colorColumns = c("Seal_mean", "Series_mean", "Capacitance_mean"))
+
+colData(se)
+plotAssayVSSweeps(se,  c("Seal", "Series", "Capacitance"), rowCol = "V_Clamp", colorGroup = "QC", wrapFormula = cluster.umap~variable)
+
+plotAssayVSSweeps(se,  c("Minima", "Maxima", "Capacitance"), rowCol = "V_Clamp", colorGroup = "cluster.umap", wrapFormula = QC~variable)
+
+```
+
+## Dimensionality Reduction Based on Minima and Maxima
+
+```{r}
+se <- se[, se$QC == TRUE]
+
+colData(se)
+se
+
+assays(se)$CurDens.min <- 10^12*assay(se, "Minima") / assay(se, "Capacitance")
+assays(se)$CurDens.max <- 10^12*assay(se, "Maxima") / assay(se, "Capacitance")
+
+se <- reducedDim.Cellwise(se, assayList = c("CurDens.min", "CurDens.max"), scaling = "within", byRow = TRUE)
+
+plotDimRed(se, "UMAP",  colorColumns = c("DIV"))
+plotDimRed(se, "UMAP",  colorColumns = c("C2.Mean", "C3.Mean"))
+
+plotDimRed(se, "TSNE",  colorColumns = c("DIV"))
+
+plotAssayVSSweeps(se,  c("Seal", "Series", "Capacitance"), rowCol = "V_Clamp", colorGroup = "cluster.umap", wrapFormula = .~variable)
+
+plotAssayVSSweeps(se,  c("Minima", "Maxima", "Capacitance"), rowCol = "V_Clamp", colorGroup = "DIV", wrapFormula = cluster.umap~variable)
+
+
+plotAssayVSSweeps(se,  c("CurDens.min", "CurDens.max", "Capacitance"), rowCol = "V_Clamp", colorGroup = "DIV", wrapFormula = cluster.umap~variable) + ylab("Current Density (pA/pF)")
+
+
+
+```
+
+## Dimensionality Reduction Based on Imaging Data
+
+```{r}
+
+devtools::load_all()
+se <- se[,se$QC == TRUE]
+se <- reducedDim.Cellwise(se, colNames  = c("C2.Mean_Scaled", "C3.Mean_Scaled", "C2.Area_Scaled", "C3.Area_Scaled"), scaling = "within", byRow=FALSE)
+plotDimRed(se, "PCA",  colorColumns = "DIV")
+plotDimRed(se, "UMAP",  colorColumns = "DIV")
+plotDimRed(se, "TSNE",  colorColumns = "DIV")
+
+
+plotDimRed(se, "UMAP",  colorColumns = c("C2.Mean_Scaled", "C3.Mean_Scaled"))
+plotDimRed(se, "TSNE",  colorColumns =  c("C2.Mean_Scaled", "C3.Mean_Scaled"))
+
+plotAssayVSSweeps(se,  c("Seal", "Series", "Capacitance"), rowCol = "V_Clamp", colorGroup = "cluster.umap", wrapFormula = .~variable)
+
+plotAssayVSSweeps(se,  c("Minima", "Maxima", "Capacitance"), rowCol = "V_Clamp", colorGroup = "cluster.umap", wrapFormula = DIV~variable)
+
+```
+
+
+## Dimensionality Reduction based on all parameters
+
+
+```{r}
+devtools::load_all()
+
+assayList <- c("Maxima", "Minima","CurDens.min", "CurDens.max", "Seal", "Series", "Capacitance")
+colList <-  c("C2.Mean_Scaled", "C3.Mean_Scaled", "C2.Area_Scaled", "C3.Area_Scaled")
+
+se <- reducedDim.Cellwise(se, assayList = assayList,colNames = colList, scaling = "global", byRow=TRUE, k_clusters = 3)
+
+plotDimRed(se, "PCA",  colorColumns = "DIV")
+plotDimRed(se, "UMAP",  colorColumns = "DIV")
+plotDimRed(se, "TSNE",  colorColumns = "DIV")
+
+plotDimRed(se, "UMAP",  colorColumns = c("C2.Mean", "C3.Mean"))
+
+plotDimRed(se, "TSNE",  colorColumns = c("Seal_mean", "Series_mean", "Capacitance_mean"))
+plotDimRed(se, "TSNE",  colorColumns = c("C2.Mean", "C3.Mean"))
+
+
+plotAssayVSSweeps(se,  c("Minima", "Maxima"), rowCol = "V_Clamp", colorGroup = "cluster.umap", wrapFormula = DIV~variable)
+
+plotAssayVSSweeps(se,  c("CurDens.min", "CurDens.max"), rowCol = "V_Clamp", colorGroup = "DIV", wrapFormula = cluster.umap~variable)
+plotAssayVSSweeps(se,  c("CurDens.min", "CurDens.max"), rowCol = "V_Clamp", colorGroup = "DIV", wrapFormula = cluster.tsne~variable)
+
+
+
+```
+
+
+

@@ -83,7 +83,7 @@ prepareImgDF <- function(pathDB,
                                               "Image_ID","Channel_Name",
                                               "Selection","Selection_Area"),
                                num_cols   = c("Area","Mean","IntDen"),
-                              coloc_cols = c("Second_Channel","Mask_Area"),
+                                coloc_cols = c("Second_Channel","Mask_Area"),
                                scale_num  = FALSE,
                                scale_cols = NULL,
                                scale_fun  = function(x)

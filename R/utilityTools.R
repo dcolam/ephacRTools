@@ -51,7 +51,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   pca_data <- lapply(assayList, function(x){
     if(scaling == "within"){
       #scale(t(assay(se, x)))
-      temp <- sechm::safescale(t(assay(se_iN, x)), byRow = byRow)
+      temp <- sechm::safescale(t(assay(se, x)), byRow = byRow)
     }else{
       temp <-t(assay(se, x))
     }
@@ -72,7 +72,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   col_Data <- lapply(colNames, function(x){
                      if(scaling == "within"){
 
-                       temp <- sechm::safescale(flattened.df[[x]], byRow = byRow)
+                       temp <- sechm::safescale(flattened.df[[x]])
                      }else{
                        temp <-flattened.df[[x]]
                      }
@@ -88,7 +88,8 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   pca_data <- dplyr::bind_cols(pca_data)
   #print(class(pca_data))
   if(scaling == "global"){
-    pca_data <- sechm::safescale(pca_data, byRow = byRow)
+    print(pca_data)
+    pca_data <- sechm::safescale(as.matrix(pca_data), byRow = byRow)
   }
   ## handling missing values
   pca_data <-as.data.frame(pca_data)
@@ -98,7 +99,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
 
   pca_result <- prcomp(pca_data, rank=50)
 
-  tsne_data <- Rtsne::Rtsne(pca_data, pca = FALSE,  check_duplicates = FALSE)
+  tsne_data <- Rtsne::Rtsne(pca_data, pca = TRUE,  check_duplicates = FALSE)
 
   tsne_data <- tsne_data$Y %>%
     as.data.frame()%>%

@@ -105,7 +105,7 @@ The results of the dimensionality reduction is stored inside reducedDim(se).
 
 We included also plotting wrapper functions to visualize the results.
 
-```{r}
+```{r fig.height=6, fig.width=8}
 se_iN <- reducedDim.Cellwise(se_iN, assayList = c("Minima"))
 plotDimRed(se_iN, "UMAP")
 ```
@@ -116,7 +116,7 @@ The wrapper function plotAssayVSSweeps helps plotting any assay against sweeps.
 
 You can also include rowData information such as V_Clamp and include groupings.
 
-```{r}
+```{r fig.height=6, fig.width=8}
 
 plotAssayVSSweeps(se_iN, "Minima", "V_Clamp", colorGroup = "cluster.umap", wrapFormula = .~cluster.umap)
 
