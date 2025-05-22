@@ -3,6 +3,8 @@ title: "Imaging_script_Gen"
 author: "Athena Schumacher"
 date: "2025-05-21"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ## Load Useful Packages and Functions
@@ -10,6 +12,8 @@ output: html_document
 ```{r message=FALSE, warning=FALSE}
 
 source("/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/ephacRTools/R/imagingTools.R")
+source("/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/ephacRTools/R/utilityTools.R")
+source("/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/ephacRTools/R/prepareSE.R")
 
 ```
 
@@ -48,6 +52,50 @@ Visualize the different channels for a given well of a given plate
 imageval(se_iN, "C09", "18T39265")
 
 ```
+
+
+Adrenal cells
+
+```{r}
+
+wd_path <- "/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/excel_files"
+
+pathToTable <- "/Users/athenaschumacher/Downloads/E-Phac:Robinson_Labs/excel_files/NCI_ramp_ATP1A1_280225_18T39417.xlsx"
+
+df <- prep_excel(pathToTable)
+
+df <- prep_df(wd_path, df)
+
+df <- filtered_df(df, "18T39417")
+
+df <- group_assignment(df, pattern = "Cycle", cycle_pattern = c("HP", "WT", "HP"))
+
+```
+
+```{r}
+se_hAG <- prepareSE(pathToTable)
+
+colData(se_hAG)
+rowData(se_hAG)
+```
+
+```{r}
+se_coldata <- as.data.frame(colData(se_hAG))
+
+df_clean <- df %>%
+  select(Well, Plate_ID, Compound, Group) %>%
+  distinct(Well, Plate_ID, .keep_all = TRUE)
+
+matched <- left_join(se_coldata, df_clean, by = c("Well", "Plate_ID"))
+
+se_hAG$Compound <- matched$Compound
+
+se_hAG$Group <- matched$Group
+
+colData(se_hAG)[30:40,]
+```
+
+
 
 
 
