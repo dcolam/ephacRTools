@@ -54,6 +54,15 @@ We included two sample datasets with ephys and imaging data:
   using a step-wise clamp protocol from -80mV to +20mV
 - Including an imaging dataset
 
+### Dependencies
+```{r}
+suppressPackageStartupMessages({
+    library(sechm)
+    library(hablar)
+})
+```
+
+
 ### Install the package from Source
 
 Still in development
@@ -116,9 +125,10 @@ The wrapper function plotAssayVSSweeps helps plotting any assay against sweeps.
 
 You can also include rowData information such as V_Clamp and include groupings.
 
-```{r fig.height=6, fig.width=8}
+```{r fig.height=6, fig.width=12}
 
-plotAssayVSSweeps(se_iN, "Minima", "V_Clamp", colorGroup = "cluster.umap", wrapFormula = .~cluster.umap)
+plotAssayVSSweeps(se_iN, "Minima", "V_Clamp", colorGroup = "cluster.umap", 
+                  wrapFormula = .~cluster.umap) 
 
 ```
 

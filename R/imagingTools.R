@@ -178,7 +178,7 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
       # Subset df_img for current channel
       df_channel <- df_img %>%
         filter(Channel_Name == channel) %>%
-        select(-Channel_Name)  # optional: remove the channel label
+        dplyr::select(-Channel_Name)  # optional: remove the channel label
       # Perform join
       joined <- cd %>%
         dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))

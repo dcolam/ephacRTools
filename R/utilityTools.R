@@ -175,27 +175,28 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
 
   melted.se <-reshape2::melt(melted.se, measure.vars = assayList)
   if(!grouped){
-  ggplot2::ggplot(melted.se, aes(x=melted.se[[rowCol]], y=value, color=Well)) +
-      ggplot2::geom_point() +
-      ggplot2::geom_line() +
-      ggplot2::guides(color="none")
-}else{
-
-  p <- ggplot2::ggplot(melted.se, aes(x=.data[[rowCol]], y=value, color=.data[[colorGroup]])) +
-    ggplot2::stat_summary(geom='errorbar',fun.data=mean_se, size=1, alpha=0.6) +
-    ggplot2::stat_summary(geom='line', fun = "mean", size=1, alpha=1) +
-    ggplot2::theme_minimal(base_size = 16) +
-    ggplot2::ylab("Current (nA)") +
-    ggplot2::xlab("Holding Potential (mV)") +
-    ggplot2::geom_hline(yintercept=0, linetype="dashed")
-
-  if (!is.null(wrapFormula)) {
-    # Use facet_grid or facet_wrap depending on the formula
-    p <- p + ggplot2::facet_wrap(wrapFormula, scales="free")
-    # Or: p <- p + ggplot2::facet_wrap(group_formula)
-  }
-  p
-  }
+      ggplot2::ggplot(melted.se, aes(x=melted.se[[rowCol]], y=value, color=Well)) +
+          ggplot2::geom_point() +
+          ggplot2::geom_line() +
+          ggplot2::guides(color="none")
+    }else{
+    
+      p <- ggplot2::ggplot(melted.se, aes(x=.data[[rowCol]], y=value, 
+                                          color=.data[[colorGroup]])) +
+        ggplot2::stat_summary(geom='errorbar',fun.data=mean_se, size=1, alpha=0.6) +
+        ggplot2::stat_summary(geom='line', fun = "mean", size=1, alpha=1) +
+        ggplot2::theme_minimal(base_size = 16) +
+        ggplot2::ylab("Current (nA)") +
+        ggplot2::xlab("Holding Potential (mV)") +
+        ggplot2::geom_hline(yintercept=0, linetype="dashed")
+    
+      if (!is.null(wrapFormula)) {
+        # Use facet_grid or facet_wrap depending on the formula
+        p <- p + ggplot2::facet_wrap(wrapFormula, scales="free")
+        # Or: p <- p + ggplot2::facet_wrap(group_formula)
+      }
+      p
+      }
 }
 
 

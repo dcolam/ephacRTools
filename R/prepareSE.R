@@ -15,7 +15,7 @@ NULL
 prepareDF <- function(pathDF){
 
   df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
-  df$`\r` <- NULL
+  if ("\r" %in% colnames(df)) df$`\r` <- NULL
   names(df)[1:2] <- c("Well", "QC")
 
   if(!("Nanion Chip Barcode" %in% colnames(df))){
