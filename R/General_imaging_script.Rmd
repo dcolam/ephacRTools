@@ -75,9 +75,6 @@ df <- group_assignment(df, pattern = "Cycle", cycle_pattern = c("HP", "WT", "HP"
 
 ```{r}
 se_hAG <- prepareSE(pathToTable)
-
-colData(se_hAG)
-rowData(se_hAG)
 ```
 
 ```{r}
@@ -90,13 +87,78 @@ df_clean <- df %>%
 matched <- left_join(se_coldata, df_clean, by = c("Well", "Plate_ID"))
 
 se_hAG$Compound <- matched$Compound
-
 se_hAG$Group <- matched$Group
 
 colData(se_hAG)[30:40,]
 ```
 
+Save additions in colData
+```{r}
+df_mean_byConc <- rowAG(se_hAG, assay_name = "Erev", FUN=mean, mode="by.period")
 
+rd <- as.data.frame(rowData(se_hAG))
+rd$Na_Conc = case_when(
+        rd$Sweep <= 24 ~ 0.08,
+        rd$Sweep <= 42 ~ 0.04,
+        rd$Sweep <= 60 ~ 0.02,
+        rd$Sweep <= 84 ~ 0.01,
+        TRUE ~ NA_real_
+)
+rd$Step <- factor(
+  cut(rd$Sweep, breaks = c(0, 24, 42, 60, 84, Inf), 
+      labels = c("Add1", "Add2", "Add3", "Add4", "Out")),
+  levels = c("Add1", "Add2", "Add3", "Add4", "Out")
+  )
+rowData(se_hAG) <- DataFrame(rd)
+
+df_mean  <- rowAG(se_hAG, assay_name = "Erev", FUN = mean)
+
+cd <- as.data.frame(colData(se_hAG))
+cd <- left_join(cd, df_mean, by = c("Well","Plate_ID","QC","Compound","Group"))
+colData(se_hAG) <- DataFrame(cd)
+
+se_hAG <- df_mean_byConcse_hse_hAGAG 
+
+```
+
+Save Additions as assays
+```{r}
+
+se1 <- row_aggregate_SE(se_hAG,
+                        metrics = c("Erev"),
+                        FUN     = mean,
+                        mode    = "by.period")
+
+# 2) mean of last 5 sweeps
+se2_mean <- row_aggregate_SE(se_hAG,
+                        metrics = "Erev",
+                        FUN     = mean,
+                        mode    = "last.n",
+                        last.n  = 5)
+
+# 2) median of last 5 sweeps 
+se2 <- row_aggregate_SE(se_hAG,
+                        metrics = "Erev",
+                        FUN     = median,
+                        mode    = "last.n",
+                        last.n  = 5)
+
+## Check
+se_period <- se2
+
+assayNames(se_period)
+
+mat <- assay(se_period, "Erev")
+dim(mat)
+rownames(mat)
+colnames(mat)[1:10]
+
+mat[, 1:6]
+head(mat)
+
+summary(as.numeric(mat))
+
+```
 
 
 
