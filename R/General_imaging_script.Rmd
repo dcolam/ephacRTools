@@ -144,7 +144,7 @@ se2 <- row_aggregate_SE(se_hAG,
                         last.n  = 5)
 
 ## Check
-se_period <- se2
+se_period <- se1
 
 assayNames(se_period)
 
