@@ -27,10 +27,6 @@ data("se_iN")
 
 colData(se_iN)[15:25,]
 
-colData(se_iN)$Image_paths
-
-se_iN[,se_iN$Well == "H05"]$Image_paths
-
 ```
 
 ```{r}
@@ -44,7 +40,13 @@ image_paths_list <- mapply(function(well, plate, location) {
   image_paths(parent_folder, idx = well, plate = plate, location = 7)
 }, well = wells, plate = plateIDs, SIMPLIFY = FALSE)
 
-colData(se_iN)$Image_paths <- image_paths_list
+colData(se_iN)$Image_paths <- image_paths_list 
+
+# Check 
+colData(se_iN)$Image_paths
+
+se_iN[,se_iN$Well == "H05"]$Image_paths
+
 ```
 
 Visualize the different channels for a given well of a given plate
@@ -53,6 +55,7 @@ Visualize the different channels for a given well of a given plate
 imageval(se_iN, "C09", "18T39265")
 
 ```
+
 
 
 Adrenal cells
@@ -75,7 +78,26 @@ df <- group_assignment(df, pattern = "Cycle", cycle_pattern = c("HP", "WT", "HP"
 
 ```{r}
 se_hAG <- prepareSE(pathToTable)
+
+parent_folder <- "/Volumes/staff/ephacoffice/DColameo/DATA/human_AG_Sinergia"
+plate = "18T39417"
+
+wells <- se_hAG$Well
+plateIDs <- se_hAG$Plate_ID
+
+image_paths_list <- mapply(function(well, plate, location=6) {
+  image_paths(parent_folder, idx = well, plate = plate, location = 6)
+}, well = wells, plate = plateIDs, SIMPLIFY = FALSE)
+
+colData(se_hAG)$Image_paths <- image_paths_list 
+
+# Check 
+colData(se_hAG)$Image_paths
+
+se_hAG[,se_hAG$Well == "H05"]$Image_paths
+
 ```
+
 
 ```{r}
 se_coldata <- as.data.frame(colData(se_hAG))
@@ -91,6 +113,7 @@ se_hAG$Group <- matched$Group
 
 colData(se_hAG)[30:40,]
 ```
+
 
 Save additions in colData
 ```{r}
@@ -137,7 +160,7 @@ se2_mean <- row_aggregate_SE(se_hAG,
                         last.n  = 5)
 
 # 2) median of last 5 sweeps 
-se2 <- row_aggregate_SE(se_hAG,
+se2_med <- row_aggregate_SE(se_hAG,
                         metrics = "Erev",
                         FUN     = median,
                         mode    = "last.n",
@@ -160,5 +183,8 @@ summary(as.numeric(mat))
 
 ```
 
+```{r}
+SETools::aggSE()
+```
 
 
