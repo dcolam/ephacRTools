@@ -1,5 +1,7 @@
 #' @importFrom magrittr %>%
 NULL
+#' @importFrom SingleCellExperiment
+NULL
 #' Add column-wise aggregation such as mean of any given assay and store it into colData
 #' @param assayName list of assay names to check
 #' @param assayList list of assays in the SE
@@ -29,7 +31,8 @@ colAG <- function(se, assayList, fun=mean, sweeps=row.names(se)){
 
   for (assayName in assayList) {
     colName <- paste(assayName, "mean", sep = "_")
-    se[[colName]] <- colMeans(assay(se, assayName), na.rm = TRUE)
+    subse <- se[sweeps,]
+    se[[colName]] <- colMeans(assay(subse, assayName), na.rm = TRUE)
   }
   return(se)
 }
@@ -111,6 +114,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
     as.data.frame()%>%
     dplyr::rename(UMAP1="V1",
            UMAP2="V2")
+
   reducedDims(se) <- list(PCA=pca_result$x, TSNE=DataFrame(tsne_data), UMAP=DataFrame(umap_df))
 
   se$cluster.umap <- as.factor(kmeans(reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
@@ -197,8 +201,49 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
   p
   }
 }
+#' Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf
+#' @param se SummarizedExperiment Object with reducedDim data
+#' @param assayList assays that serves as the y-axis
+#' @param rowCol numeric row Column that serves as x-axis
+#' @param inward boolean stating whether the IV-curve shows in- or outward current
+#' @param getErev boolean to try to get Erev or value where y = 0
+#' @return se with updated colData
+#' @export
+get_metric <- function(df, well, parameter = "Minima", plot=FALSE){
 
+  x <- subset(df, Well == well)
+  x <- x[order(x$V_Clamp),]
 
+  if(grepl("min", tolower(parameter)) | grepl("iss", tolower(parameter))){
+    Imax <- min(x[,parameter])
+    Vmax1 <- min(x[x[,parameter]==Imax,]$V_Clamp)
+  }
+
+  if(grepl("max", tolower(parameter))){
+    Imax <- max(x[,parameter])
+    Vmax1 <- max(x[x[,parameter]==Imax,]$V_Clamp)
+  }
+
+  x_axis <- seq(-80, 40, length=100)
+  x[!complete.cases(x[,parameter]),parameter] <- 1
+  spl <- smooth.spline(x$V_Clamp, y=x[,parameter])
+  fit.pred <- predict(spl, data.frame(V_Clamp=x_axis))
+  fit.pred <- as.data.frame(fit.pred)
+  names(fit.pred)[which(names(fit.pred) == "V_Clamp.1")] <- "fit.pred"
+  Vhalf <- fit.pred[fit.pred$V_Clamp < Vmax1,]
+  Vhalf <- Vhalf[which.min(abs(Vhalf$fit.pred- Imax/2)),]$V_Clamp
+
+  if(plot){
+    print("Plotting..")
+    plot(x$V_Clamp, x[,parameter]*10^12)
+    lines(x$V_Clamp, x[,parameter]*10^12)
+    abline(v=Vmax1, col=2)
+    abline(v=Vhalf, col=3)
+    abline(h=Imax*10^12/2)
+    lines(x=fit.pred$V_Clamp, y=fit.pred$fit.pred*10^12, col=2)
+  }
+  return(list(Imax=Imax, Vhalf=Vhalf, Vmax=Vmax1))
+}
 
 
 

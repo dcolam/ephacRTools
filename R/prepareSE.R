@@ -50,7 +50,7 @@ prepareDF <- function(pathDF){
   new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
   }
   new.df <- data.frame(matrix(ncol=length(new.cols),nrow=0, dimnames=list(NULL, new.cols)))
-
+  #print(new.cols)
   for(s in no.sweeps){
     cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value=T))
     temp <- df[,cols]
