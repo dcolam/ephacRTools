@@ -21,3 +21,8 @@ df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
 se_iN <- mergeSEandImg(se_iN, df_img, tableType = "coloc")
 usethis::use_data(se_iN, overwrite = TRUE)
 
+# ROMK dataset
+
+l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
+se_romk <- prepareSE(l_files)
+usethis::use_data(se_romk, overwrite = TRUE)
