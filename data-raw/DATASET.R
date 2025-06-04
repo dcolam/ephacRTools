@@ -26,7 +26,6 @@ df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
 se_iN <- mergeSEandImg(se_iN, df_img, tableType = "pa")
 usethis::use_data(se_iN, overwrite = TRUE)
 
-
 ## Primary neurons dataset with imaging data
 l_files <- list.files(path = "data-raw/PrimaryNeurons/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_pn <- prepareSE(l_files)
@@ -37,4 +36,7 @@ df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
 se_pn <- mergeSEandImg(se_pn, df_img, tableType = "pa")
 usethis::use_data(se_pn, overwrite = TRUE)
 
-
+# ROMK dataset
+l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
+se_romk <- prepareSE(l_files)
+usethis::use_data(se_romk, overwrite = TRUE)
