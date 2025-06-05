@@ -1,6 +1,6 @@
 #' @importFrom magrittr %>%
 NULL
-#' @importFrom SingleCellExperiment
+#' @import SingleCellExperiment
 NULL
 #' Add column-wise aggregation such as mean of any given assay and store it into colData
 #' @param assayName list of assay names to check
@@ -115,11 +115,11 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
     dplyr::rename(UMAP1="V1",
            UMAP2="V2")
 
-  reducedDims(se) <- list(PCA=pca_result$x, TSNE=DataFrame(tsne_data), UMAP=DataFrame(umap_df))
+  SingleCellExperiment::reducedDims(se) <- list(PCA=pca_result$x, TSNE=DataFrame(tsne_data), UMAP=DataFrame(umap_df))
 
-  se$cluster.umap <- as.factor(kmeans(reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
-  se$cluster.tsne <- as.factor(kmeans(reducedDim(se, "TSNE")[,1:2], k_clusters, iter.max = 100)$cluster)
-  se$cluster.pca <- as.factor(kmeans(reducedDim(se, "PCA")[,1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.umap <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.tsne <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "TSNE")[,1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.pca <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "PCA")[,1:2], k_clusters, iter.max = 100)$cluster)
 
   return(se)
 }
@@ -132,7 +132,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
 #' @export
 plotDimRed <- function(se, redDim.method, colorColumns = character()) {
   flattened.df <- as.data.frame(colData(se))
-  redDF <- as.data.frame(reducedDim(se, redDim.method))
+  redDF <- as.data.frame(SingleCellExperiment::reducedDim(se, redDim.method))
 
   clustername <- grep(tolower(redDim.method), colnames(flattened.df), value = TRUE)
   if (length(clustername) == 0) clustername <- colorColumns[1]
