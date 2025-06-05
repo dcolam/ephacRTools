@@ -147,14 +147,14 @@ assays <- lapply(numeric_cols, \(cols) {
   #m
 })
 
-cols <-reshape2::dcast(df, Well*Plate_ID ~Sweep, value.var = "Well")$Well
-
+cols <- reshape2::dcast(df, Well*Plate_ID ~Sweep, value.var = "Well")
+cols <- interaction(cols$Well, cols$Plate_ID)
 names(assays) <- numeric_cols
 
 df <- data.table::as.data.table(df)
 
 cd <- S4Vectors::DataFrame(unique(df[, .(Well, QC, Plate_ID)]))
-rownames(cd) <- cd$Well
+rownames(cd) <- interaction(cd$Well, cd$Plate_ID)
 cd <- cd[cols,]
 
 cd$Row <- sapply(cd$Well, function(x){
