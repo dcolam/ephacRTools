@@ -3,3 +3,7 @@
 ^data-raw$
 ^doc$
 ^Meta$
+^Imagingscript_neurons_AS_Jiayi\.Rmd$
+^Athena_Tutorials\.Rmd$
+^Explore_Dimensionality_Reduction\.Rmd$
+^\./vignettes/Explore_Dimensionality_Reduction\.Rmd$
