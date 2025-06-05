@@ -29,6 +29,8 @@ usethis::use_data(se_iN, overwrite = TRUE)
 ## Primary neurons dataset with imaging data
 l_files <- list.files(path = "data-raw/PrimaryNeurons/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_pn <- prepareSE(l_files)
+se_pn$Plate_ID <- "18T05487"
+
 l_files <- list.files(path = "data-raw/PrimaryNeurons/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
 df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
 se_pn <- mergeSEandImg(se_pn, df_img, tableType = "coloc")
