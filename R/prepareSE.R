@@ -175,7 +175,7 @@ se <- SummarizedExperiment::SummarizedExperiment(assays = assays,
                            colData = cd)
 
 colnames(se) <- cd$Well
-type(description_cols)
+
 
 description_cols <- description_cols[!(description_cols %in% names(cd))]
 
