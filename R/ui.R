@@ -17,6 +17,7 @@
 #'
 #' @return Launches a shiny app
 #' @import shiny
+#' @import shinyjqui
 #' @export
 tinySEV <- function(objects=NULL, title="tinySEV", waiterContent=NULL,
                     about=NULL, skin="blue", uploadMaxSize=1000*1024^2,
@@ -81,9 +82,15 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                         menuItem("Prepare Object", startExpanded=TRUE,
                                                                  menuSubItem("Overview", tabName="tab_object"),
                                                                  menuItemOutput("uploadMenu"),
-                                                                 menuSubItem("Samples", tabName="tab_samples"),
-                                                                 menuSubItem("Features", tabName="tab_features")
+                                                                 menuSubItem("Column Data", tabName="tab_samples"),
+                                                                 menuSubItem("Sweeps", tabName="tab_features")
                                                                  )),
+                                                      .modify_stop_propagation(
+                                                        menuItem("Plotting", startExpanded=TRUE,
+                                                                 menuSubItem("Plate Overview", tabName="tab_plate"),
+                                                                 menuSubItem("Plot Sweeps", tabName="tab_sweeps"),
+                                                                 menuSubItem("Show Images", tabName="tab_samples")
+                                                        )),
                                                       menuItemOutput("menu_DEA"),
                                                       menuItemOutput("menu_Enrichments"),
                                                       hr(),
@@ -178,6 +185,91 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                              tabItem("tab_features",
                                      box(width=12, tags$div(style="width: 100%; overflow-x: scroll;",
                                                             withSpinner(DTOutput("features"))))),
+                             tabItem("tab_plate",
+                                     box(width = 12,
+
+                                         # Row for plot
+                                         fluidRow(
+                                           column(width = 12,
+                                                  withSpinner(plotlyOutput("plate_view"))
+                                           )
+                                         ),
+                                         # Row for input controls
+                                         fluidRow(
+                                           column(width = 4,
+                                                  selectInput("plate_id", label = "Plate ID", choices = c())
+                                           ),
+                                           column(width = 4,
+                                                  selectInput("assay_id", label = "Assay", choices = c()),
+                                                  radioButtons("assay_option", "Assay Display Mode:",
+                                                               choices = c("Raw" = "raw", "Log10" = "log10", "Z-score" = "scale"),
+                                                               inline = TRUE)
+                                           ),
+                                           column(width = 4,
+                                                  # Primary sweep selection
+                                                  selectInput("sweep_id", label = "Sweep", choices = c()),
+
+                                                  # Collapsible advanced options for grouping/aggregation
+                                                  box(
+                                                    title = "Group & Aggregate Options",
+                                                    width = 12,
+                                                    collapsible = TRUE,
+                                                    collapsed = TRUE,
+
+                                                    # Group by sweeps
+                                                    selectInput("sweep_group", "Group Sweeps (aggregate):",
+                                                                choices = c(), multiple = TRUE),
+
+                                                    radioButtons("agg_method", "Aggregation method:",
+                                                                 choices = c("Mean" = "mean",
+                                                                             "Median" = "median",
+                                                                             "Sum" = "sum"),
+                                                                 inline = TRUE),
+
+                                                    # Visual OR separator
+                                                    div(style = "text-align: center; font-weight: bold; margin: 10px 0;", "— or —"),
+
+                                                    # Group by metadata
+                                                    selectInput("group_by_meta", "Group by metadata column:",
+                                                                choices = c())  # populate dynamically
+                                                  )
+                                           )
+                                         )
+
+                                     )
+                             ),
+                             tabItem("tab_sweeps",
+                                     box(width = 12,
+
+                                         # Row for plot
+                                         fluidRow(
+                                           column(width = 12,
+                                                  withSpinner(plotlyOutput("sweep_view"))
+                                           )
+                                         ),
+                                         # Row for input controls
+                                         fluidRow(
+                                           column(width = 4,
+                                                  selectInput("plate_id1", label = "Plate ID", choices = c())
+                                           ),
+                                           column(width = 4,
+                                                  selectInput("assay_id1", label = "Assay", choices = c()),
+                                                  radioButtons("assay_option1", "Assay Display Mode:",
+                                                               choices = c("Raw" = "raw", "Log10" = "log10", "Z-score" = "scale"),
+                                                               inline = TRUE)
+                                           ),
+                                           column(width = 4,
+                                                  # Primary sweep selection
+                                                  selectInput("group_by_meta1", "Group by metadata column:",
+                                                              choices = c()),
+                                                  selectInput("color_group1", "Color by:",
+                                                              choices = c(), multiple = TRUE)
+
+                                           )
+                                         )
+
+                                     )
+                             ),
                              tabItem("tab_dea", uiOutput("dea_input"),
                                      tabBox(id="dea_box", width=12,
                                             tabPanel("Overview", textOutput("dea_overview"),

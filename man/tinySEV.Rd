@@ -10,7 +10,7 @@ tinySEV(
   waiterContent = NULL,
   about = NULL,
   skin = "blue",
-  uploadMaxSize = 50 * 1024^2,
+  uploadMaxSize = 1000 * 1024^2,
   logins = NULL,
   ...
 )

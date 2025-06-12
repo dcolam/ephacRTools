@@ -152,6 +152,25 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                         selected=getDef(x, "colvar"))
       updateSelectInput(session, "select_gridvars", choices=colvars,
                         selected=getDef(x, "gridvar"))
+      updateSelectInput(session, "plate_id", choices=unique(colData(x)$Plate_ID),
+                        selected=unique(colData(x)$Plate_ID)[1])
+      updateSelectInput(session, "assay_id", choices=c(assayNames(x), colnames(as.data.frame(colData(x)))),
+                        selected=assayNames(x)[1])
+      updateSelectInput(session, "sweep_id", choices=unique(rowData(x)$Sweep),
+                        selected=unique(rowData(x)$Sweep)[1])
+      updateSelectizeInput(session, "sweep_group",
+                               choices=unique(rowData(x)$Sweep))
+      updateSelectizeInput(session, "group_by_meta",
+                           choices=colnames(rowData(x)))
+      updateSelectInput(session, "plate_id1", choices=unique(colData(x)$Plate_ID),
+                        selected=unique(colData(x)$Plate_ID)[1])
+      updateSelectInput(session, "assay_id1", choices=assayNames(x),
+                        selected=assayNames(x)[1])
+      updateSelectInput(session, "color_group1", choices=colnames(as.data.frame(colData(x))),
+                        selected=NULL)
+      updateSelectizeInput(session, "group_by_meta1",
+                           choices=colnames(rowData(x)))
+
       x <- mergeFlists(x)
       if(length(sefl <- names(metadata(x)$feature.lists))==0){
         updateSelectInput(session, "genelist_input", choices="")
@@ -336,9 +355,17 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       tagList(
         box(width=12, title="Object overview",
             tags$p(metadata(SE())$description),
-            tags$p(paste("A SummarizedExperiment with ", ncol(SE()), "samples and ",
-                         length(unique(SE()$Plate_ID)), " with electrophysiology plates: \n",
-                         paste(unique(SE()$Plate_ID), "\n"))),
+            tagList(
+              tags$p(
+                paste("A SummarizedExperiment with", ncol(SE()), "samples and",
+                      length(unique(SE()$Plate_ID)), "electrophysiology plates:")
+              ),
+              tags$ul(
+                lapply(unique(SE()$Plate_ID), function(pid) {
+                  tags$li(pid)
+                })
+              )
+            ),
             tags$ul(lapply(names(md), FUN=function(x){
               tags$li(tags$b(x), tags$span(md[[x]]))
             })),
@@ -367,8 +394,139 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                  extensions=c("ColReorder") )
     })
 
+
+    ############
+    ### BEGIN Plotting TABS
+
+    observeEvent(input$group_by_meta, {
+      req(SE(), input$group_by_meta)
+
+      # Extract metadata column values from SE() — assuming SE() has colData with metadata
+      meta_values <- NULL
+
+      # Check if the metadata column exists in SE colData
+      if (input$group_by_meta %in% colnames(SummarizedExperiment::rowData(SE()))) {
+        meta_values <- unique(SummarizedExperiment::rowData(SE())[[input$group_by_meta]])
+        meta_values <- sort(meta_values)  # optional: sort choices
+      }
+
+      # Update the sweep_group selectInput choices accordingly
+      updateSelectInput(session, "sweep_group",
+                        choices = meta_values,
+                        selected = NULL)
+      updateSelectInput(session, "sweep_id",
+                        choices = meta_values,
+                        selected = 1)
+    })
+
+      output$plate_view <- renderPlotly({
+
+        if(!is.null(SE())){
+
+          if(!input$assay_id %in% assayNames(SE())){
+            assayNameSham <- assayNames(SE())[1]
+          }else{assayNameSham <-input$assay_id}
+          assayName <- input$assay_id
+
+          melted.dat <- sechm::meltSE(SE()[,SE()$Plate_ID == input$plate_id],
+                                        features = row.names(rowData(SE())),
+                                        assayName = assayNameSham,
+                                        rowDat.columns = c(input$sweep_id, input$group_by_meta))
+
+          melted.dat <- melted.dat[melted.dat[[input$group_by_meta]] %in% input$sweep_id, ]
+          letter2number <- function(x) {utf8ToInt(x) - utf8ToInt("A") + 1L}
+          melted.dat$RowNum <- sapply(melted.dat$Row, function(c){letter2number(c)})
+
+          if(is.numeric(melted.dat[[assayName]])){
+            numID <- TRUE
+            if(input$assay_option == "raw"){
+              melted.dat[[assayName]] <- melted.dat[[assayName]]
+              legend <- assayName
+            }
+            if(input$assay_option == "log10"){
+              melted.dat[[assayName]] <- log10(melted.dat[[assayName]])
+              legend <- paste("log10(", assayName, ")", sep="")
+            }
+            if(input$assay_option == "scale"){
+              melted.dat[[assayName]] <- scale(melted.dat[[assayName]], center = T)
+              legend <- paste("Z-scaled(", assayName, ")", sep="")
+            }
+
+          } else{
+            numID <- FALSE
+            melted.dat[[assayName]] <- as.factor((melted.dat[[assayName]]))
+            legend <- assayName
+          }
+
+          if (numID && (!is.null(input$sweep_group) || !is.null(input$group_by_meta))) {
+            print("Agg")
+            agg_fun <- switch(input$agg_method,
+                              "mean" = mean,
+                              "median" = median,
+                              "sum" = sum)
+
+            # Prioritize sweep_group if present
+            if (!is.null(input$sweep_group)) {
+              melted.dat <- melted.dat[melted.dat[[input$sweep_id]] %in% input$sweep_group, ]
+              melted.dat <- melted.dat %>%
+                group_by(Well, Row, Column, RowNum) %>%
+                summarise("{assayName}" := agg_fun(.data[[assayName]], na.rm = TRUE), .groups = "drop")
+
+            } else if (!is.null(input$group_by_meta) && input$group_by_meta != "") {
+              melted.dat <- melted.dat %>%
+                group_by(.data[[input$group_by_meta]], Well, Row, Column, RowNum) %>%
+                summarise("{assayName}" := agg_fun(.data[[assayName]], na.rm = TRUE), .groups = "drop")
+            }
+          }
+
+
+
+
+          p <- ggplot(melted.dat, aes(x=as.numeric(Column), y=Row, fill=.data[[assayName]])) + geom_tile() +
+            scale_x_continuous(breaks = 1:24) +
+            scale_y_discrete(limits = rev) +
+            geom_text(aes(label=interaction(Row, Column)), color="white") + theme_minimal()
+
+
+          if(numID){p <- p + scale_fill_viridis_c(option = "magma")}
+
+          ggplotly(p)
+        }
+      })
+      jqui_resizable(ui="#plate_view")
+      ############
+      ### BEGIN Plot Sweeps
+
+      output$sweep_view <- renderPlotly({
+
+        if(!is.null(SE())){
+
+          se <- SE()[,SE()$Plate_ID == input$plate_id1]
+
+          if(input$assay_id1 %in% assayNames(se)){
+            assayNames <- input$assay_id1
+          }
+
+          if(is.null(input$color_group1)){
+            color_group <- input$group_by_meta1
+          }else{
+            color_group <- input$color_group1
+          }
+
+         p <-  plotAssayVSSweeps(se, assayList = assayNames,
+                            rowCol = input$group_by_meta1, colorGroup = color_group)
+
+          ggplotly(p)
+        }
+      })
+      jqui_resizable(ui="#sweep_view")
+
+
     ############
     ### BEGIN DEAs
+
+
+
 
     DEAs <- reactive({
       if(is.null(SE())) return(list())
