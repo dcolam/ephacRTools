@@ -6,7 +6,7 @@
 \usage{
 tinySEV.server(
   objects = NULL,
-  uploadMaxSize = 50 * 1024^2,
+  uploadMaxSize = 1000 * 1024^2,
   maxPlot = 500,
   feature.lists = list(),
   filelist = list(),
