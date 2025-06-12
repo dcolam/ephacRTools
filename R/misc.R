@@ -4,6 +4,13 @@
   x
 }
 
+ag <- function(df, cols, fun=mean) {
+  c <- colnames(df[,unlist(lapply(df, is.numeric))])
+  print(c)
+  df <- aggregate(df[,c], by=as.list(df[,cols]), FUN=fun, na.rm=TRUE)
+  return(df[, colSums(is.na(df)) != nrow(df)])
+}
+
 
 #' dround
 #'
