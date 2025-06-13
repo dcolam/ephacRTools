@@ -201,49 +201,74 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
   p
   }
 }
-#' Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf
+#' Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
+#' Make sure that Vhalf is present in rowData
 #' @param se SummarizedExperiment Object with reducedDim data
-#' @param assayList assays that serves as the y-axis
-#' @param rowCol numeric row Column that serves as x-axis
+#' @param assay assay to be analyzed
 #' @param inward boolean stating whether the IV-curve shows in- or outward current
 #' @param getErev boolean to try to get Erev or value where y = 0
 #' @return se with updated colData
 #' @export
-get_metric <- function(df, well, parameter = "Minima", plot=FALSE){
+get_metric <- function(se, assay = "Minima", inward = TRUE) {
+  suffix <- tolower(assay)
 
-  x <- subset(df, Well == well)
-  x <- x[order(x$V_Clamp),]
+  imax_col <- paste0("Imax.", suffix)
+  vhalf_col <- paste0("Vhalf.", suffix)
+  vmax_col <- paste0("Vmax.", suffix)
 
-  if(grepl("min", tolower(parameter)) | grepl("iss", tolower(parameter))){
-    Imax <- min(x[,parameter])
-    Vmax1 <- min(x[x[,parameter]==Imax,]$V_Clamp)
+  wells <- unique(se$Well)
+  results <- data.frame(Well = wells,
+                        Imax = NA_real_,
+                        Vhalf = NA_real_,
+                        Vmax = NA_real_)
+
+  assay_data <- assay(se, assay)
+  v_clamp <- rowData(se)$V_Clamp
+  well_ids <- se$Well
+
+  for (i in seq_along(wells)) {
+    well <- wells[i]
+    indices <- which(well_ids == well)
+
+    x_vals <- v_clamp
+    y_vals <- assay_data[, indices]
+
+    # Skip if all NA
+    if (all(is.na(y_vals))) next
+
+    if (inward) {
+      Imax <- min(y_vals, na.rm = TRUE)
+      Vmax1 <- min(x_vals[y_vals == Imax])
+    } else {
+      Imax <- max(y_vals, na.rm = TRUE)
+      Vmax1 <- max(x_vals[y_vals == Imax])
+    }
+
+    y_vals[!complete.cases(y_vals)] <- 1  # Avoid smooth.spline errors
+
+    spl <- smooth.spline(x_vals, y = y_vals)
+    fit <- predict(spl, seq(min(x_vals), max(x_vals), length.out = 100))
+
+    Vhalf <- NA
+    fit_sub <- fit$x[fit$x < Vmax1]
+    pred_sub <- fit$y[fit$x < Vmax1]
+
+    if (length(pred_sub) > 0) {
+      idx <- which.min(abs(pred_sub - Imax / 2))
+      Vhalf <- fit_sub[idx]
+    }
+
+    results$Imax[i] <- Imax
+    results$Vhalf[i] <- Vhalf
+    results$Vmax[i] <- Vmax1
   }
 
-  if(grepl("max", tolower(parameter))){
-    Imax <- max(x[,parameter])
-    Vmax1 <- max(x[x[,parameter]==Imax,]$V_Clamp)
-  }
+  coldata <- colData(se)
+  coldata[[imax_col]] <- results$Imax[match(se$Well, results$Well)]
+  coldata[[vhalf_col]] <- results$Vhalf[match(se$Well, results$Well)]
+  coldata[[vmax_col]] <- results$Vmax[match(se$Well, results$Well)]
 
-  x_axis <- seq(-80, 40, length=100)
-  x[!complete.cases(x[,parameter]),parameter] <- 1
-  spl <- smooth.spline(x$V_Clamp, y=x[,parameter])
-  fit.pred <- predict(spl, data.frame(V_Clamp=x_axis))
-  fit.pred <- as.data.frame(fit.pred)
-  names(fit.pred)[which(names(fit.pred) == "V_Clamp.1")] <- "fit.pred"
-  Vhalf <- fit.pred[fit.pred$V_Clamp < Vmax1,]
-  Vhalf <- Vhalf[which.min(abs(Vhalf$fit.pred- Imax/2)),]$V_Clamp
-
-  if(plot){
-    print("Plotting..")
-    plot(x$V_Clamp, x[,parameter]*10^12)
-    lines(x$V_Clamp, x[,parameter]*10^12)
-    abline(v=Vmax1, col=2)
-    abline(v=Vhalf, col=3)
-    abline(h=Imax*10^12/2)
-    lines(x=fit.pred$V_Clamp, y=fit.pred$fit.pred*10^12, col=2)
-  }
-  return(list(Imax=Imax, Vhalf=Vhalf, Vmax=Vmax1))
+  colData(se) <- coldata
+  return(se)
 }
-
-
 
