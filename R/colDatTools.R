@@ -91,9 +91,16 @@ ag <- function(df, cols, fun=mean) {
 #' Filter your newly adjusted data frame so that it doesn't include the "empty" wells
 #' @param prepared_df The data frame that you just adjusted in prep_df
 #' @param plate_ID The plate ID that you are focusing on
+<<<<<<< HEAD
 #' @return A filtered data frame
 #' @export
 filtered_df <- function(prepared_df, plate_ID) {
+=======
+#' @param ion The compound that was added or removed during the measurements
+#' @return A filtered data frame
+#' @export
+filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("Well", "QC", "Compound", "Conditions", "Plate_ID")) {
+>>>>>>> fceaa49 (Updated scripts)
   # Filter condition: rows B–O and cols 2–23
   valid_rows <- prepared_df$Row %in% LETTERS[2:15]   # B (2) to O (15)
   valid_cols <- prepared_df$Column >= 2 & prepared_df$Column <= 23
@@ -105,9 +112,26 @@ filtered_df <- function(prepared_df, plate_ID) {
     filter(Plate_ID == plate_ID) %>%
     filter(Well %in% filtered_wells)
 
+<<<<<<< HEAD
   prepared_df$Compound <- ifelse(prepared_df$RowNum %in% 1:4 | prepared_df$RowNum %in% 9:12, "Na Addition", "Na Removal")
 
   prepared_df <- ag(subset(prepared_df), cols= c("Well", "QC", "Compound", "Conditions", "Plate_ID"))
+=======
+  if (ion == "Na") {
+    prepared_df$Compound <- ifelse(prepared_df$RowNum %in% 1:4 | prepared_df$RowNum %in% 9:12, "Na Addition", "Na Removal")
+  } else if (ion == "K") {
+      mapping <- prepared_df %>%
+        select(Well, Plate_ID, Compound) %>%
+        distinct()
+      prepared_df <- prepared_df %>%
+        left_join(mapping, by = c("Well", "Plate_ID"), suffix = c("", ".mapped"), relationship = "many-to-many") %>%
+        mutate(Compound = Compound.mapped) %>%
+        select(-Compound.mapped)
+    }
+
+
+  prepared_df <- ag(subset(prepared_df), cols= columns)
+>>>>>>> fceaa49 (Updated scripts)
 
   return(prepared_df)
 
@@ -120,9 +144,24 @@ filtered_df <- function(prepared_df, plate_ID) {
 #' @param cycle_pattern A vector containing a custom, repeating sequence like the triplet c("HP", "WT", "HP")
 #' @return A data frame with group assignment
 #' @export
+<<<<<<< HEAD
 group_assignment <- function(prepared_df, pattern = c("Conditions", "Alternating", "Block", "Manual", "Cycle"),
                              manual_map = NULL, block_size = NULL, cycle_pattern = NULL) {
   pattern <- match.arg(pattern)
+=======
+group_assignment <- function(data, se = c("Yes", "No"), pattern = c("Conditions", "Alternating", "Block", "Manual", "Cycle"),
+                             manual_map = NULL, block_size = NULL, cycle_pattern = NULL) {
+  se <- match.arg(se)
+  pattern <- match.arg(pattern)
+
+  if (se == "Yes") {
+    se_obj <- data
+    prepared_df <- as.data.frame(colData(se_obj))
+  } else {
+    prepared_df <- data
+  }
+
+>>>>>>> fceaa49 (Updated scripts)
   prepared_df$Group <- NA   #initialize the column
 
   if (pattern == "Conditions") {
@@ -138,6 +177,7 @@ group_assignment <- function(prepared_df, pattern = c("Conditions", "Alternating
   }
   else if (pattern == "Manual") {
     if (is.null(manual_map)) stop("manual_map must be provided for pattern = 'manual'")
+<<<<<<< HEAD
     prepared_df <- manual_map[as.character(prepared_df$Well)]
   }
   else if (pattern == "Cycle") {
@@ -147,6 +187,22 @@ group_assignment <- function(prepared_df, pattern = c("Conditions", "Alternating
 
 return(prepared_df)
 
+=======
+    prepared_df$Group <- manual_map[as.character(prepared_df$Well)]
+  }
+  else if (pattern == "Cycle") {
+    if (is.null(cycle_pattern)) stop("Please provide cycle_pattern for 'cycle' pattern")
+    prepared_df <- prepared_df[order(prepared_df$Well), ]
+    prepared_df$Group <- rep(cycle_pattern, length.out = nrow(prepared_df))
+  }
+
+  if (se == "Yes") {
+    colData(se_obj)$Group  <- prepared_df$Group
+    return(se_obj)
+  } else {
+    return(prepared_df)
+  }
+>>>>>>> fceaa49 (Updated scripts)
 }
 #' Create a data frame with the feature you want to add to your summarized experiment's colData
 #' @param se The summarized experiment you have created previously
