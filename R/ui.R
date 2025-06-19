@@ -89,18 +89,13 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                         menuItem("Plotting", startExpanded=TRUE,
                                                                  menuSubItem("Plate Overview", tabName="tab_plate"),
                                                                  menuSubItem("Plot Sweeps", tabName="tab_sweeps"),
-                                                                 menuSubItem("Show Images", tabName="tab_samples")
+                                                                 menuSubItem("Show Images", tabName="tab_images")
                                                         )),
-                                                      menuItemOutput("menu_DEA"),
-                                                      menuItemOutput("menu_Enrichments"),
+
                                                       hr(),
-                                                      menuItem("Subset samples", tabName="tab_hm_samples"),
-                                                      menuItem("Plot gene", tabName="tab_gene"),
-                                                      .modify_stop_propagation(menuItem("Heatmap", startExpanded=TRUE,
-                                                                                        menuSubItem("Selection of genes", tabName="tab_hm_genes"),
-                                                                                        menuSubItem("Plot heatmap", tabName="tab_heatmap")
-                                                      )),
-                                                      menuItemOutput("menu_genelist"),
+                                                      menuItem("Clustering", tabName = "tab_cluster"),
+                                                      menuItem("Define Groupings", tabName="tab_groupings"),
+                                                      menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
                                                               tags$span(paste0("tinySEV v",
                                                                                as.character(packageVersion("tinySEV")))))
@@ -194,10 +189,20 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                   withSpinner(plotlyOutput("plate_view"))
                                            )
                                          ),
-                                         # Row for input controls
+
+                                         # Row for main input controls
                                          fluidRow(
                                            column(width = 4,
-                                                  selectInput("plate_id", label = "Plate ID", choices = c())
+                                                  selectInput("plate_id", label = "Plate ID", choices = c()),
+
+                                                  # NEW: Well selector
+                                                  selectizeInput("selected_well", "Selected Well", choices = c(),
+                                                              multiple = TRUE),
+
+                                                  # Add spacing between selectInput and button
+                                                  div(style = "margin-top: 10px;"),
+                                                  actionButton("reset_well", "Reset Well Selection"),
+                                                  div(style = "margin-top: 50px;")
                                            ),
                                            column(width = 4,
                                                   selectInput("assay_id", label = "Assay", choices = c()),
@@ -206,38 +211,64 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                                inline = TRUE)
                                            ),
                                            column(width = 4,
-                                                  # Primary sweep selection
                                                   selectInput("sweep_id", label = "Sweep", choices = c()),
 
-                                                  # Collapsible advanced options for grouping/aggregation
+                                                  # Group & Aggregate Box
                                                   box(
                                                     title = "Group & Aggregate Options",
                                                     width = 12,
                                                     collapsible = TRUE,
                                                     collapsed = TRUE,
-
-                                                    # Group by sweeps
                                                     selectInput("sweep_group", "Group Sweeps (aggregate):",
                                                                 choices = c(), multiple = TRUE),
-
                                                     radioButtons("agg_method", "Aggregation method:",
-                                                                 choices = c("Mean" = "mean",
-                                                                             "Median" = "median",
-                                                                             "Sum" = "sum"),
+                                                                 choices = c("Mean" = "mean", "Median" = "median", "Sum" = "sum"),
                                                                  inline = TRUE),
-
-                                                    # Visual OR separator
                                                     div(style = "text-align: center; font-weight: bold; margin: 10px 0;", "— or —"),
-
-                                                    # Group by metadata
-                                                    selectInput("group_by_meta", "Group by metadata column:",
-                                                                choices = c())  # populate dynamically
+                                                    selectInput("group_by_meta", "Group by metadata column:", choices = c())
                                                   )
+                                           )
+                                         ),
+
+                                         # Row for custom grouping box — separated from main inputs
+                                         fluidRow(
+                                           box(
+                                             width = 12,
+                                             title = "Create Custom Groupings:",
+                                             collapsible = TRUE,
+                                             collapsed = TRUE,
+                                             column(width = 4,
+                                                    sliderInput("selected_slider", "Select a Range:", min = 0, max = 1, value = c(0, 1))
+                                             )
                                            )
                                          )
 
                                      )
                              ),
+                             tabItem("tab_images",
+                                     box(width = 12,
+
+                                         # Row for plot
+                                         fluidRow(
+                                           column(width = 12,
+                                                  withSpinner(plotlyOutput("sweep_view1"))
+                                           )
+                                         ),
+                                         fluidRow(
+                                           column(width = 4,
+                                                  selectInput("plate_id2", label = "Plate ID", choices = c()),
+
+                                                  # NEW: Well selector that updates on click
+                                                  selectizeInput("selected_well3", "Selected Well",
+                                                                 choices = c()),
+
+                                                  # NEW: Reset button
+                                                  actionButton("reset_well", "Reset Well Selection")
+                                            )
+                                          )
+
+                                        )
+                                     ),
                              tabItem("tab_sweeps",
                                      box(width = 12,
 
@@ -250,7 +281,15 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                          # Row for input controls
                                          fluidRow(
                                            column(width = 4,
-                                                  selectInput("plate_id1", label = "Plate ID", choices = c())
+                                                  selectInput("plate_id1", label = "Plate ID", choices = c()),
+
+                                                  # NEW: Well selector that updates on click
+                                                  selectizeInput("selected_well1", "Selected Well",
+                                                              choices = c(),
+                                                              multiple = T),
+
+                                                  # NEW: Reset button
+                                                  actionButton("reset_well", "Reset Well Selection")
                                            ),
                                            column(width = 4,
                                                   selectInput("assay_id1", label = "Assay", choices = c()),
@@ -270,102 +309,72 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
                                      )
                              ),
-                             tabItem("tab_dea", uiOutput("dea_input"),
-                                     tabBox(id="dea_box", width=12,
-                                            tabPanel("Overview", textOutput("dea_overview"),
-                                                     withSpinner(plotOutput("dea_pvalues", width="400px", height="300px"))),
-                                            tabPanel("Table", withSpinner(DTOutput("dea_table")),
-                                                     actionButton("dea_geneFilt", "Transfer filtered genes to the heatmap"),
-                                                     actionButton("dea_geneSel", "Transfer selected rows to the heatmap"),
-                                                     downloadLink('dea_download', label="Download whole table")),
-                                            tabPanel("Volcano", withSpinner(plotlyOutput("dea_volcano")),
-                                                     tags$p("You may click on a gene to view it."))
-                                     )
-                             ),
-                             tabItem("tab_ea",
-                                     box(width=12, id="ea_box", fluidRow(
-                                       column(8, uiOutput("ea_input")),
-                                       column(4, checkboxInput("ea_showGenes", "Show genes", value=FALSE))
-                                     ),
-                                     tags$div(style="width: 100%; overflow-x: scroll; font-size: 80%",
-                                              withSpinner(DTOutput("ea_table"))),
-                                     actionButton("ea_geneSel", "Transfer genes from selected rows to the heatmap"))),
-                             tabItem("tab_gene",
-                                     column(4, selectizeInput("gene_input", "Select Gene", choices=c(), multiple=FALSE)),
-                                     box(width=8, title="Options", collapsible=TRUE, collapsed=TRUE,
-                                         selectInput("assay_input", choices=c(), multiple=FALSE,
-                                                     tags$span("Assay ", actionLink("help_gassay", "[?]"))),
-                                         column(6,
-                                                selectInput("plottype_input", "Type of Plot",
-                                                            choices=c("violin plot","box plot"), multiple=FALSE),
-                                                checkboxInput('select_plotpoints','Plot Points', value=TRUE),
-                                                checkboxInput('select_logaxis','Logarithmic Axis', value=FALSE)),
-                                         column(6,
-                                                selectInput("select_groupvar", choices=c(), multiple=FALSE,
-                                                            tags$span("Group by ", actionLink("help_ggroup", "[?]"))),
-                                                checkboxInput('asfactor','As factor', value=TRUE),
-                                                selectInput("select_colorvar", "Color by", choices=c(), multiple=FALSE),
-                                                selectizeInput("select_gridvars", choices=c(),
-                                                               options = list(maxItems = 2), multiple=TRUE,
-                                                               tags$span("Grid by ", actionLink("help_ggrid", "[?]"))),
-                                                checkboxInput('select_freeaxis',value=TRUE,
-                                                              tags$span("Free axes ", actionLink("help_gfreeaxes", "[?]"))))
-                                     ),
-                                     box(width=12, withSpinner(shinyjqui::jqui_resizable(plotOutput("gene_plot")))),
-                                     box(width=8, withSpinner(tableOutput("gene_dea_table"))),
-                                     column(width=4, shiny::verbatimTextOutput("gene_inList"))
-                             ),
-                             tabItem("tab_hm_genes", box(width=12, title="Select genes to plot",
-                                                         textAreaInput('input_genes','Genes to plot', width="90%", rows=10,
-                                                                       placeholder="Enter genes symbols separated by commas, spaces, or line breaks..."),
-                                                         tags$p("If your the row names of the object are dot-separated IDs,
-                 such as 'ensemblID.symbol' (you can view this in the 'Features' tab),
-                 you may also enter just the genes symbols and the corresponding
-                 rows will be fetched."),
-                                                         tags$p(tags$strong("Important:"), "Note that the number of input genes
-                 is capped to ", textOutput("maxGenes", inline=TRUE)))
-                             ),
-                             tabItem("tab_hm_samples", box(width=12, title="Select samples",
-                                                           selectInput("input_hm_samples", multiple=TRUE, selectize=FALSE,
-                                                                       label="Select samples to include", choices=c(),
-                                                                       size=15)
-                             )
-                             ),
-                             tabItem("tab_heatmap",
-                                     box( width=12, title="Heatmap parameters", collapsible=TRUE,
-                                          column(4, selectInput("assay_input2", choices=c(), multiple=FALSE,
-                                                                tags$span("Assay ", actionLink("help_hmassay", "[?]"))),
-                                                 checkboxInput('hm_scale',
-                                                               tags$span("Scale rows ", actionLink("help_hmscale", "[?]"))),
-                                                 sliderInput("hm_breaks", min=0, max=2, value=0.5, step=0.25,
-                                                             tags$span("Colorscale trim ", actionLink("help_hmtrim", "[?]")))
+                             tabItem("tab_cluster",
+
+                                     box(width = 12, title = "Set up Clustering:", collapsible = T, collapsed = T,
+
+                                        fluidRow(
+
+                                          column( width=4,
+
+                                                 selectInput("clusterAssay", label = "Use Assay:", choices = c(), multiple=T),
+                                                 textInput("suffix_cluster", label = "Add Suffix:", value=".1"),
+                                                 actionButton("clustering", label="Perform Clustering")
                                           ),
-                                          column(4, selectizeInput('hm_anno', "Column annotation", choices=c(), multiple=TRUE),
-                                                 selectizeInput('hm_gaps', "Gaps at", choices=c(), multiple=TRUE)
-                                          ),
-                                          column(4, selectizeInput('hm_order', "Column ordering", choices=c(), multiple=TRUE),
-                                                 checkboxInput('hm_clusterCol','Cluster columns', value=FALSE),
-                                                 checkboxInput('hm_showColnames','Column names', value=FALSE),
-                                                 checkboxInput('hm_clusterRow','Sort rows', value=TRUE)
-                                          )
-                                     ),
-                                     box(width=12, title="Heatmap",
-                                         withSpinner(shinyjqui::jqui_resizable(plotOutput("heatmap", height=600))))
-                             ),
-                             tabItem("tab_genelists",
-                                     box(width=12, title="Gene lists",
-                                         fluidRow(
-                                           column(width=6,
-                                                  selectInput("genelist_input", choices=c(), multiple=FALSE,
-                                                              tags$span("Select gene list ",
-                                                                        actionLink("help_genelists", "[?]")))),
-                                           column(width=2,tags$strong("Size: "),textOutput("genelist_size")),
-                                           column(width=4, actionButton("btn_importGenelist",
-                                                                        label="Use as heatmap input"))
+                                          column( width=4,
+                                                 selectInput("clusterColData", label = "Use Column Data:", choices = c(), multiple=T)
+                                                 ),
+                                          column( width=4,
+                                                 sliderInput("k_cluster", label= "Number of Clusters", min=1, max=20, value=3, step = 1),
+
+                                                 )
+
+
+                                        )
+
+
                                          ),
-                                         verbatimTextOutput("genelist_out")
-                                     )
+
+                                     tabBox(
+                                       width = 12,
+                                       title = "Cluster Plots",
+                                       tabPanel("t-SNE",
+                                                withSpinner(uiOutput("cluster_tsne_ui")),
+                                                selectInput("clustercolor1", "Color your points:", choices = c(), multiple = TRUE)
+                                       ),
+                                       tabPanel("UMAP",
+                                                withSpinner(uiOutput("cluster_umap_ui")),
+                                                selectInput("clustercolor2", "Color your points:", choices = c(),  multiple=T)),
+                                       tabPanel("PCA",
+                                                withSpinner(uiOutput("cluster_pca_ui")),
+                                                selectInput("clustercolor3", "Color your points:", choices = c(),  multiple=T))
+                                     ),
+
+                                      box(width=12,
+
+                                          fluidRow(
+                                            column(width=4,
+                                                   selectInput("plate_id3", "Select Plate:",
+                                                               choices = c()),
+                                                selectizeInput("clusteredwells", "Selected Wells:",
+                                                               choices = c(),
+                                                               multiple =T),
+                                                # Add spacing between selectInput and button
+                                                div(style = "margin-top: 10px;"),
+                                                actionButton("reset_well", "Reset Well Selection"),
+                                                div(style = "margin-top: 50px;")
+
+                                                   )
+                                          )
+
+                                          )
+
+
+
                              ),
+
+
+
                              tabItem("tab_about", about)
                            ), tags$div(style="clear: both;")
                          )))

@@ -175,7 +175,7 @@ plotDimRed <- function(se, redDim.method, colorColumns = character()) {
 plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula=NULL, grouped=TRUE){
   assayList <- assayList[assayList %in% assayNames(se)]
   rowCol <- rowCol[rowCol %in% colnames(rowData(se))]
-  melted.se <- sechm::meltSE(se, features=row.names(se_iN), assayName=assayList, rowDat.columns = rowCol)
+  melted.se <- sechm::meltSE(se, features=row.names(se), assayName=assayList, rowDat.columns = rowCol)
 
   melted.se <-reshape2::melt(melted.se, measure.vars = assayList)
   if(!grouped){

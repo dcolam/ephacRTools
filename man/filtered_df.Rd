@@ -4,14 +4,23 @@
 \alias{filtered_df}
 \title{Filter your newly adjusted data frame so that it doesn't include the "empty" wells}
 \usage{
-filtered_df(prepared_df, plate_ID)
+filtered_df(
+  prepared_df,
+  plate_ID,
+  ion = c("Na", "K"),
+  columns = c("Well", "QC", "Compound", "Conditions", "Plate_ID")
+)
 }
 \arguments{
 \item{prepared_df}{The data frame that you just adjusted in prep_df}
 
 \item{plate_ID}{The plate ID that you are focusing on}
+
+\item{ion}{The compound that was added or removed during the measurements}
 }
 \value{
+A filtered data frame
+
 A filtered data frame
 }
 \description{

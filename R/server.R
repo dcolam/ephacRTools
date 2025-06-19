@@ -15,8 +15,7 @@
 #'
 #' @return A shiny server function.
 #' @export
-#' @import shiny ggplot2 SummarizedExperiment sechm waiter
-#' @importFrom plotly ggplotly renderPlotly event_data
+#' @import shiny ggplot2 SummarizedExperiment sechm waiter plotly
 #' @importFrom shinydashboard updateTabItems
 #' @importFrom shinyjs showElement hideElement
 #' @importFrom DT datatable renderDT
@@ -127,31 +126,16 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
     output$maxGenes <- renderText(maxPlot)
 
+    slider_initialized <- reactiveVal(FALSE)
+    initialized <- reactiveVal(FALSE)
+
+
     SEinit <- function(x){
       if(!is.null(logins)) req(credentials()$user_auth)
       if(is.null(assayNames(x)))
         assayNames(x) <- paste0("assay",1:length(assays(x)))
       if(ncol(rowData(x))==0) rowData(x)$name <- row.names(x)
-      updateSelectizeInput(session, "gene_input", selected=isolate(selGene()),
-                           choices=sort(unique(row.names(x))), server=TRUE)
-      colvars <- colnames(colData(x))
-      updateSelectInput(session, "input_hm_samples", choices=colnames(x),
-                        selected=colnames(x))
-      updateSelectInput(session, "assay_input", choices=assayNames(x),
-                        selected=getDef(x, "assay", rev(assayNames(x))))
-      updateSelectInput(session, "assay_input2", choices=assayNames(x),
-                        selected=getDef(x, "assay", rev(assayNames(x))))
-      updateSelectizeInput(session, "hm_order", choices=colvars)
-      updateSelectizeInput(session, "hm_anno", choices=colvars,
-                           selected=getDef(x, c("groupvar","colvar")))
-      updateSelectizeInput(session, "hm_gaps", choices=colvars,
-                           selected=getDef(x, "gridvar"))
-      updateSelectInput(session, "select_groupvar", choices=colvars,
-                        selected=getDef(x, "groupvar"))
-      updateSelectInput(session, "select_colorvar", choices=colvars,
-                        selected=getDef(x, "colvar"))
-      updateSelectInput(session, "select_gridvars", choices=colvars,
-                        selected=getDef(x, "gridvar"))
+
       updateSelectInput(session, "plate_id", choices=unique(colData(x)$Plate_ID),
                         selected=unique(colData(x)$Plate_ID)[1])
       updateSelectInput(session, "assay_id", choices=c(assayNames(x), colnames(as.data.frame(colData(x)))),
@@ -164,6 +148,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                            choices=colnames(rowData(x)))
       updateSelectInput(session, "plate_id1", choices=unique(colData(x)$Plate_ID),
                         selected=unique(colData(x)$Plate_ID)[1])
+      updateSelectInput(session, "plate_id3", choices=unique(colData(x)$Plate_ID),
+                        selected=unique(colData(x)$Plate_ID)[1])
       updateSelectInput(session, "assay_id1", choices=assayNames(x),
                         selected=assayNames(x)[1])
       updateSelectInput(session, "color_group1", choices=colnames(as.data.frame(colData(x))),
@@ -171,16 +157,56 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       updateSelectizeInput(session, "group_by_meta1",
                            choices=colnames(rowData(x)))
 
+
+
+        slider_vals <- round(assay(x, assayNames(x)[1]), 2)
+
+        updateSliderInput(session, "selected_slider",
+                          min = min(slider_vals, na.rm = TRUE),
+                          max = max(slider_vals, na.rm = TRUE),
+                          value = c(min(slider_vals, na.rm = TRUE), max(slider_vals, na.rm = TRUE)),
+                          step = 0.01)
+
+        slider_initialized <- reactiveVal(FALSE)
+
+        coldat <- colnames(as.data.frame(colData(x))[ , purrr::map_lgl(as.data.frame(colData(x)), is.numeric)])
+        coldata <- as.data.frame(colData(x))
+        updateSelectInput(session, "clusterAssay", choices = assayNames(x))
+        updateSelectInput(session, "clusterColData", choices = coldat)
+        updateSelectInput(session, "clustercolor1", choices = colnames(coldata), selected = "cluster.tsne")
+        updateSelectInput(session, "clustercolor2", choices = colnames(coldata), selected = "cluster.umap")
+        updateSelectInput(session, "clustercolor3", choices = colnames(coldata), selected = "cluster.pca")
+
+        allWells <- list()
+        for(plate in unique(coldata$Plate_ID)){
+
+          allWells[[plate]] <- subset(coldata, Plate_ID == plate)$Well
+        }
+
+        if (!initialized()) {
+        if(is.null(unlist(selected_wells$data))){
+          selwel <- character(0)
+        }else{
+          selwel <- selected_wells$data[[unique(colData(x)$Plate_ID)[1]]]
+          #selwel <- character(0)
+        }
+        updateSelectizeInput(session, "selected_well",
+                             choices=allWells,
+                             selected=selwel,
+                             server=T)
+        updateSelectizeInput(session, "selected_well1",
+                             choices=allWells,
+                             selected=selwel,
+                             server=T)
+        updateSelectizeInput(session, "clusteredwells",
+                             choices=allWells,
+                             selected=selwel,
+                             server=T)
+        initialized(TRUE)
+        }
+
       x <- mergeFlists(x)
-      if(length(sefl <- names(metadata(x)$feature.lists))==0){
-        updateSelectInput(session, "genelist_input", choices="")
-      }else{
-        updateSelectInput(session, "genelist_input", choices=sefl)
-      }
-      if(!is.null(getDef(x, "assay")))
-        updateCheckboxInput(session, "hm_scale",
-                            value=!grepl("FC$",getDef(x, "assay")))
-      x
+      return(x)
     }
 
     SEs <- reactiveValues()
@@ -200,7 +226,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           SEs[[input$object]] <- readRDS(SEs[[input$object]])
         }
       }
-      SEinit(SEs[[input$object]])
+
+    SEinit(SEs[[input$object]])
     })
 
     flists <- reactive({
@@ -249,7 +276,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             SEinit(SEs[[SEname]])
             incProgress(0.75, detail = "Updating UI")
             updateSelectInput(session, "object", selected=SEname,
-                              choices=union(names(objects), names(SEs)))
+                              choices=union(names(input$objects), names(SEs)))
           }
           incProgress(1, detail = "SE loaded")
           })
@@ -312,17 +339,26 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                          "iPSC-Tricultures" = "se_iN",
                          "ROMK" = "se_romk")
           selected_label <- names(choices)[choices %in% input$datasets]
+          toimport <- setdiff(selected_label, names(SEs))
 
-          for(i in seq_along(input$datasets)){
-            dataset <- input$datasets[i]
-            SEname <- selected_label[i]
+          for(i in seq_along(toimport)){
+
+            #dataset <- input$datasets[i]
+            #SEname <- selected_label[i]
+            SEname <- toimport[i]
+            dataset <- choices[[SEname]]
+
             if(!(SEname %in% names(SEs))){
+              initialized(FALSE)
+
             data(list = dataset, package = "ephacRTools", envir = environment())
 
             SEs[[SEname]] <- get(dataset, envir = environment())
             SEinit(SEs[[SEname]])
+            print(SEname)
             updateSelectInput(session, "object", selected=SEname,
                               choices=union(names(objects), names(SEs)))
+
             }
           }
 
@@ -419,81 +455,163 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                         selected = 1)
     })
 
-      output$plate_view <- renderPlotly({
 
-        if(!is.null(SE())){
 
-          if(!input$assay_id %in% assayNames(SE())){
-            assayNameSham <- assayNames(SE())[1]
-          }else{assayNameSham <-input$assay_id}
-          assayName <- input$assay_id
+        output$plate_view <- renderPlotly({
+          req(input$assay_id)
+          if(!is.null(SE())){
 
-          melted.dat <- sechm::meltSE(SE()[,SE()$Plate_ID == input$plate_id],
-                                        features = row.names(rowData(SE())),
-                                        assayName = assayNameSham,
-                                        rowDat.columns = c(input$sweep_id, input$group_by_meta))
+            if(!input$assay_id %in% assayNames(SE())){
+              assayNameSham <- assayNames(SE())[1]
+            }else{assayNameSham <-input$assay_id}
+            assayName <- input$assay_id
 
-          melted.dat <- melted.dat[melted.dat[[input$group_by_meta]] %in% input$sweep_id, ]
-          letter2number <- function(x) {utf8ToInt(x) - utf8ToInt("A") + 1L}
-          melted.dat$RowNum <- sapply(melted.dat$Row, function(c){letter2number(c)})
+            melted.dat <- sechm::meltSE(SE()[,SE()$Plate_ID == input$plate_id],
+                                          features = row.names(rowData(SE())),
+                                          assayName = assayNameSham,
+                                          rowDat.columns = c(input$sweep_id, input$group_by_meta))
 
-          if(is.numeric(melted.dat[[assayName]])){
-            numID <- TRUE
-            if(input$assay_option == "raw"){
-              melted.dat[[assayName]] <- melted.dat[[assayName]]
+            melted.dat <- melted.dat[melted.dat[[input$group_by_meta]] %in% input$sweep_id, ]
+            letter2number <- function(x) {utf8ToInt(x) - utf8ToInt("A") + 1L}
+            melted.dat$RowNum <- sapply(melted.dat$Row, function(c){letter2number(c)})
+
+            if(is.numeric(melted.dat[[assayName]])){
+              numID <- TRUE
+              if(input$assay_option == "raw"){
+                melted.dat[[assayName]] <- melted.dat[[assayName]]
+                legend <- assayName
+              }
+              if(input$assay_option == "log10"){
+                melted.dat[[assayName]] <- log10(abs(melted.dat[[assayName]]))
+                legend <- paste("log10(", assayName, ")", sep="")
+              }
+              if(input$assay_option == "scale"){
+                melted.dat[[assayName]] <- scale(melted.dat[[assayName]], center = T)
+                legend <- paste("Z-scaled(", assayName, ")", sep="")
+              }
+
+            } else{
+              numID <- FALSE
+              melted.dat[[assayName]] <- as.factor((melted.dat[[assayName]]))
               legend <- assayName
             }
-            if(input$assay_option == "log10"){
-              melted.dat[[assayName]] <- log10(melted.dat[[assayName]])
-              legend <- paste("log10(", assayName, ")", sep="")
-            }
-            if(input$assay_option == "scale"){
-              melted.dat[[assayName]] <- scale(melted.dat[[assayName]], center = T)
-              legend <- paste("Z-scaled(", assayName, ")", sep="")
-            }
 
-          } else{
-            numID <- FALSE
-            melted.dat[[assayName]] <- as.factor((melted.dat[[assayName]]))
-            legend <- assayName
+
+
+            if(length(selected_wells$data[[input$plate_id]]) > 0){
+              melted.dat$is_selected <- ifelse(melted.dat$Well %in% selected_wells$data[[input$plate_id]], TRUE, FALSE)
+
+            }else{
+              melted.dat$is_selected <- TRUE
+
+            }
+            #melted.dat$is_selected <- ifelse(melted.dat$Well %in% input$selected_well, TRUE, FALSE)
+
+            melted.dat$key_combined <- paste(melted.dat$Well, melted.dat$Plate_ID, sep = ", ")
+            p <- ggplot(melted.dat, aes(x = as.numeric(Column), y = Row, key = key_combined, fill = .data[[assayName]])) +
+              geom_tile() +
+              scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.2)) +
+              scale_x_continuous(breaks = 1:24) +
+              scale_y_discrete(limits = rev) +
+              geom_text(aes(label = paste(Row, Column, sep=""), alpha = is_selected), color = "white") +
+              theme_minimal()
+
+
+            if(numID){p <- p + scale_fill_viridis_c(option = "magma")}
+
+            # Register click events and return the plot
+            p_plotly <- ggplotly(p, source = "plate_plot")
+            #plotly::event_register(p_plotly, "plotly_click")
+            #slider_initialized(TRUE)
+
+            return(p_plotly)
+          }
+        })
+        jqui_resizable(ui="#plate_view")
+
+
+
+
+
+      # Observe plate click and update well selection inputs
+      observeEvent(plotly::event_data("plotly_click", source = "plate_plot"), {
+        click <- plotly::event_data("plotly_click", source = "plate_plot")
+        print(click)
+        if (!is.null(click)) {
+
+          #number2letter <- function(n) {
+          #  intToUtf8(n + utf8ToInt("A") - 1L)
+          #}
+          #wells <- paste(number2letter(17-click$y), stringr::str_pad(click$x, 2, pad = "0"), sep="")
+          clicked_info <- unlist(strsplit(unlist(click$key), ", "))
+          well <- clicked_info[1]
+          plate_id <- clicked_info[2]
+
+          if(well %in% selected_wells$data[[plate_id]]){
+
+            selected_wells$data[[plate_id]] <- selected_wells$data[[plate_id]][ selected_wells$data[[plate_id]] != well]
+          }else{
+            selected_wells$data[[plate_id]] <- unique(c(
+              selected_wells$data[[plate_id]], well
+            ))
           }
 
-          if (numID && (!is.null(input$sweep_group) || !is.null(input$group_by_meta))) {
-            print("Agg")
-            agg_fun <- switch(input$agg_method,
-                              "mean" = mean,
-                              "median" = median,
-                              "sum" = sum)
-
-            # Prioritize sweep_group if present
-            if (!is.null(input$sweep_group)) {
-              melted.dat <- melted.dat[melted.dat[[input$sweep_id]] %in% input$sweep_group, ]
-              melted.dat <- melted.dat %>%
-                group_by(Well, Row, Column, RowNum) %>%
-                summarise("{assayName}" := agg_fun(.data[[assayName]], na.rm = TRUE), .groups = "drop")
-
-            } else if (!is.null(input$group_by_meta) && input$group_by_meta != "") {
-              melted.dat <- melted.dat %>%
-                group_by(.data[[input$group_by_meta]], Well, Row, Column, RowNum) %>%
-                summarise("{assayName}" := agg_fun(.data[[assayName]], na.rm = TRUE), .groups = "drop")
-            }
-          }
-
-
-
-
-          p <- ggplot(melted.dat, aes(x=as.numeric(Column), y=Row, fill=.data[[assayName]])) + geom_tile() +
-            scale_x_continuous(breaks = 1:24) +
-            scale_y_discrete(limits = rev) +
-            geom_text(aes(label=interaction(Row, Column)), color="white") + theme_minimal()
-
-
-          if(numID){p <- p + scale_fill_viridis_c(option = "magma")}
-
-          ggplotly(p)
+          updateSelectizeInput(session, "selected_well", selected =  selected_wells$data[[input$plate_id]])
+          updateSelectizeInput(session, "selected_well1", selected = selected_wells$data[[input$plate_id1]])
+          updateSelectizeInput(session, "clusteredwells", selected = selected_wells$data[[input$plate_id3]])
         }
       })
-      jqui_resizable(ui="#plate_view")
+
+      # Observe plate click and update well selection inputs
+      observeEvent(plotly::event_data("plotly_click", source = "cluster_plot"), {
+        click <- plotly::event_data("plotly_click", source = "cluster_plot")
+        print(click)
+        if (!is.null(click)) {
+
+          number2letter <- function(n) {
+            intToUtf8(n + utf8ToInt("A") - 1L)
+          }
+          #selected_well <- click$key
+          #selected_wells(unique(c(selected_wells(), click$key)))
+          clicked_info <- unlist(strsplit(unlist(click$key), ", "))
+          well <- clicked_info[1]
+          plate_id <- clicked_info[2]
+
+          # Append the well to the plate-specific list
+
+          if(well %in% selected_wells$data[[plate_id]]){
+
+            selected_wells$data[[plate_id]] <- selected_wells$data[[plate_id]][ selected_wells$data[[plate_id]] != well]
+          }else{
+          selected_wells$data[[plate_id]] <- unique(c(
+            selected_wells$data[[plate_id]], well
+          ))
+          }
+
+          updateSelectizeInput(session, "plate_id3", selected =  plate_id)
+          updateSelectizeInput(session, "clusteredwells", selected = selected_wells$data[[input$plate_id3]])
+          updateSelectizeInput(session, "selected_well", selected =  selected_wells$data[[input$plate_id]])
+          updateSelectizeInput(session, "selected_well1", selected = selected_wells$data[[input$plate_id1]])
+
+        }
+      })
+
+
+
+
+      # Reset button clears selection
+      observeEvent(input$reset_well, {
+        selected_wells$data <- list()
+        updateSelectizeInput(session, "selected_well", selected = character(0))
+        updateSelectizeInput(session, "selected_well1", selected = character(0))
+        updateSelectizeInput(session, "clusteredwells", selected = character(0))
+      })
+
+
+
+
+
+
       ############
       ### BEGIN Plot Sweeps
 
@@ -513,6 +631,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             color_group <- input$color_group1
           }
 
+
+        if(length(selected_wells$data[[input$plate_id1]]) > 0){
+            se <- se[,se$Well %in% selected_wells$data[[input$plate_id1]]]
+
+        }
+
          p <-  plotAssayVSSweeps(se, assayList = assayNames,
                             rowCol = input$group_by_meta1, colorGroup = color_group)
 
@@ -523,369 +647,358 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
     ############
-    ### BEGIN DEAs
+    ### BEGIN Clustering
 
 
+      selected_wells <- reactiveValues(data = list())
 
-
-    DEAs <- reactive({
-      if(is.null(SE())) return(list())
-      RD <- rowData(SE())
-      deas <- grep("^DEA\\.", colnames(RD), value=TRUE)
-      deas <- deas[unlist(sapply(deas, FUN=function(x) is.data.frame(RD[[x]]) ||
-                                   is(RD[[x]], "DFrame") ))]
-      if(length(deas)==0) return(list())
-      lapply(setNames(deas, gsub("^DEA\\.","",deas)), FUN=function(x) RD[[x]])
-    })
-
-    output$menu_DEA <- renderUI({
-      if(is.null(DEAs()) || length(DEAs())==0)
-        return(menuItem("DEA results", tabName="tab_dea",
-                        badgeLabel="N/A", badgeColor="red"))
-      menuItem("DEA results", tabName="tab_dea", badgeLabel=length(DEAs()),
-               badgeColor="aqua")
-    })
-
-    output$dea_input <- renderUI({
-      hideElement("dea_box")
-      if(length(DEAs())==0)
-        return(tags$h5(icon("exclamation-triangle"),
-                       "The object contains no DEA."))
-      showElement("dea_box")
-      choices <- sapply(names(DEAs()), FUN=function(x){
-        if(!is.null(a <- attr(DEAs()[[x]], "description"))) return(a)
-        x
+      observeEvent(input$selected_well, {
+        selected_wells$data[[input$plate_id]] <- input$selected_well
+        updateSelectizeInput(session, "clusteredwells",
+                             selected = selected_wells$data[[input$plate_id]])
+        updateSelectizeInput(session, "selected_well",
+                             selected = selected_wells$data[[input$plate_id]])
+        updateSelectizeInput(session, "selected_well1",
+                             selected = selected_wells$data[[input$plate_id]])
       })
-      choices <- setNames(names(DEAs()), choices)
-      options = list( render = I(paste("{
-        item:", DEAselRender, ",
-        option:", DEAselRender, "}"))
+
+      observeEvent(input$selected_well1, {
+        selected_wells$data[[input$plate_id1]] <- input$selected_well1
+        updateSelectizeInput(session, "clusteredwells",
+                             selected = selected_wells$data[[input$plate_id1]])
+        updateSelectizeInput(session, "selected_well",
+                             selected = selected_wells$data[[input$plate_id1]])
+        updateSelectizeInput(session, "selected_well1",
+                             selected = selected_wells$data[[input$plate_id1]])
+      })
+
+      observeEvent(input$clusteredwells, {
+        selected_wells$data[[input$plate_id3]] <- input$clusteredwells
+        updateSelectizeInput(session, "clusteredwells",
+                          selected = selected_wells$data[[input$plate_id3]])
+        updateSelectizeInput(session, "selected_well",
+                             selected = selected_wells$data[[input$plate_id3]])
+        updateSelectizeInput(session, "selected_well1",
+                             selected = selected_wells$data[[input$plate_id3]])
+      })
+
+
+      observeEvent(input$plate_id, {
+        wells_for_plate <- selected_wells$data[[input$plate_id]]
+
+        # If NULL or empty, set to character(0) so selectInput clears properly
+        if (is.null(wells_for_plate) || length(wells_for_plate) == 0) {
+          wells_for_plate <- character(0)
+        }
+
+        updateSelectInput(session, "selected_well",
+                          selected = wells_for_plate)
+      })
+
+      observeEvent(input$plate_id1, {
+        wells_for_plate <- selected_wells$data[[input$plate_id1]]
+
+        # If NULL or empty, set to character(0) so selectInput clears properly
+        if (is.null(wells_for_plate) || length(wells_for_plate) == 0) {
+          wells_for_plate <- character(0)
+        }
+
+        updateSelectInput(session, "selected_well1",
+                          selected = wells_for_plate)
+      })
+
+      observeEvent(input$plate_id3, {
+        wells_for_plate <- selected_wells$data[[input$plate_id3]]
+
+        # If NULL or empty, set to character(0) so selectInput clears properly
+        if (is.null(wells_for_plate) || length(wells_for_plate) == 0) {
+          wells_for_plate <- character(0)
+        }
+
+        updateSelectizeInput(session, "clusteredwells",
+                          selected = wells_for_plate)
+      })
+
+
+
+
+  observeEvent(input$clustering, {
+
+    if(!is.null(input$clusterAssay) | !is.null(input$clusterColData)){
+
+      withProgress(message = 'Perform Clustering...', value = 0.2, {
+    req(SE())
+
+    se <- SE()
+    print(unique(se$Plate_ID))
+    incProgress(0.5)
+    se <- reducedDim.Cellwise(se, assayList = input$clusterAssay,
+                              colNames = input$clusterColData,
+                              k_clusters = input$k_cluster)
+    incProgress(0.5, message="Updating Results")
+
+    SEs[[input$object]] <- se
+    initialized(FALSE)
+    SEinit(SEs[[input$object]])
+    incProgress(0.75, message="Finished")
+
+      })
+    }
+  })
+
+  generate_cluster_plot <- function(SE, reduction_name, color_var, xlab, ylab, selected_wells, plot_source) {
+
+    df <- cbind(as.data.frame(reducedDim(SE, reduction_name)),
+                as.data.frame(colData(SE)))
+    colnames(df)[1:2] <- c("X1", "X2")
+
+    df$color_value <- df[[color_var]]
+    df$hover_text <- paste("Well: ", df$Well,
+                           "<br>Plate ID: ", df$Plate_ID,
+                           "<br>", color_var, ": ", df$color_value)
+
+    df$key_combined <- paste(df$Well, df$Plate_ID, sep=", ")
+    p <- ggplot(df, aes(x = X1, y = X2, text = hover_text, key = key_combined)) +
+      geom_point(aes(color = color_value)) +
+      labs(x = xlab, y = ylab, color = color_var) +
+      theme_minimal() +
+      theme(plot.margin = margin(10, 10, 10, 10))
+
+    if(is.numeric(df$color_value)){
+      p <- p + viridis::scale_colour_viridis()
+    }
+
+
+    if(!is.null(unlist(selected_wells))){
+
+    highlighted_df <- df %>%
+      dplyr::filter(Plate_ID %in% names(selected_wells)) %>%  # only plates with selected wells
+      dplyr::rowwise() %>%
+      dplyr::filter(Well %in% selected_wells[[Plate_ID]]) %>%
+      dplyr::ungroup()
+
+      if (nrow(highlighted_df) > 0) {
+        p <- p +
+          geom_point(data = highlighted_df, aes(x = X1, y = X2),
+                     shape = 21, fill = NA, color = "red", size = 3, stroke = 0.5,
+                     inherit.aes = FALSE)
+      }
+
+  }
+
+    # Add independent title and legend
+    ggplotly(p, tooltip = "text", source = "cluster_plot") %>%
+      layout(title = list(text = color_var, x = 0.5, xanchor = "center"),
+             showlegend = TRUE)
+
+  }
+
+  output$cluster_tsne_ui <- renderUI({
+
+    if (!is.null(SE())) {
+      if (length(reducedDims(SE())) > 1) {
+        req(input$clustercolor1)
+        n_cols <- 2
+        plots <- lapply(input$clustercolor1, function(var) {
+          plotlyOutput(outputId = paste0("tsne_plot_", var), height = "400px")
+        })
+
+        # Arrange into a grid
+        rows <- split(plots, ceiling(seq_along(plots) / n_cols))
+
+        tagList(
+          lapply(rows, function(row) {
+            fluidRow(
+              lapply(row, function(plot) {
+                column(width = 6, plot)
+              })
+            )
+          })
+        )
+      } else {
+        tagList(
+          tags$p("No Clustering available yet! Generate above first"),
+          withSpinner(plotlyOutput(outputId = "placeholder", height = "400px"))
+        )
+      }
+    } else {
+      tagList(
+        tags$p("No Clustering available yet! Generate above first"),
+        withSpinner(plotlyOutput(outputId = "placeholder", height = "400px"))
       )
-      selectizeInput("dea", label="Differential expression analysis",
-                     choices=choices, options=options)
+    }
+
+  })
+
+
+  observe({
+    req(input$clustercolor1)
+
+    lapply(input$clustercolor1, function(var) {
+      local({
+        v <- var
+        output[[paste0("tsne_plot_", v)]] <- renderPlotly({
+          generate_cluster_plot(
+            SE = SE(),
+            reduction_name = "TSNE",
+            color_var = v,
+            xlab = "TSNE1",
+            ylab = "TSNE2",
+            selected_wells = selected_wells$data,
+            plot_source = paste0("tsne_", v)
+          )
+        })
+      })
     })
 
-    DEA <- reactive({
-      if(is.null(input$dea) || input$dea=="" || is.null(DEAs()[[input$dea]]))
-        return(NULL)
-      .homogenizeDEA(DEAs()[[input$dea]])
-    })
 
-    observeEvent(input$object, {
-      if(!is.null(input$object) && input$object != "" && input$main_tabs=="tab_about"){
-        if(!is.null(previous_sel()))
-          updateTabItems(session, "main_tabs", selected="tab_object")
-        previous_sel(input$object)
+  })
+
+  output$cluster_umap_ui <- renderUI({
+
+    if (!is.null(SE())) {
+      if (length(reducedDims(SE())) > 1) {
+        req(input$clustercolor2)
+        n_cols <- 2
+        plots <- lapply(input$clustercolor2, function(var) {
+          plotlyOutput(outputId = paste0("umap_plot_", var), height = "400px")
+        })
+
+        # Arrange into a grid
+        rows <- split(plots, ceiling(seq_along(plots) / n_cols))
+
+        tagList(
+          lapply(rows, function(row) {
+            fluidRow(
+              lapply(row, function(plot) {
+                column(width = 6, plot)
+              })
+            )
+          })
+        )
+      } else {
+        tagList(
+          tags$p("No Clustering available yet! Generate above first"),
+          withSpinner(plotlyOutput(outputId = "placeholder", height = "400px"))
+        )
       }
-    })
+    } else {
+      tagList(
+        tags$p("No Clustering available yet! Generate above first"),
+        withSpinner(plotlyOutput(outputId = "placeholder", height = "400px"))
+      )
+    }
 
-    observeEvent(input$dea_geneFilt, {
-      if(length(g <- input$dea_table_rows_all)>0){
-        g <- row.names(DEA())[head(g,maxPlot)]
-        updateTextAreaInput(session, "input_genes", value=paste(g, collapse=", "))
-        updateTabItems(session, "main_tabs", selected="tab_heatmap")
+  })
+
+  observe({
+    req(input$clustercolor2)
+
+    lapply(input$clustercolor2, function(var) {
+      local({
+        v <- var
+        output[[paste0("umap_plot_", v)]] <- renderPlotly({
+          generate_cluster_plot(
+            SE = SE(),
+            reduction_name = "UMAP",
+            color_var = v,
+            xlab = "UMAP1",
+            ylab = "UMAP2",
+            selected_wells = selected_wells$data,
+            plot_source = paste0("umap_", v)
+          )
+        })
+      })
+    })
+  })
+
+  output$cluster_pca_ui <- renderUI({
+
+    if (!is.null(SE())) {
+      if (length(reducedDims(SE())) > 1) {
+        req(input$clustercolor2)
+        n_cols <- 2
+        plots <- lapply(input$clustercolor3, function(var) {
+          plotlyOutput(outputId = paste0("pca_plot_", var), height = "400px")
+        })
+
+        # Arrange into a grid
+        rows <- split(plots, ceiling(seq_along(plots) / n_cols))
+
+        tagList(
+          lapply(rows, function(row) {
+            fluidRow(
+              lapply(row, function(plot) {
+                column(width = 6, plot)
+              })
+            )
+          })
+        )
+      } else {
+        tagList(
+          tags$p("No Clustering available yet! Generate above first"),
+          withSpinner(plotlyOutput(outputId = "placeholder", height = "400px"))
+        )
       }
-    })
-    observeEvent(input$dea_geneSel, {
-      if(length(g <- input$dea_table_rows_selected)>0){
-        g <- row.names(DEA())[head(g,maxPlot)]
-        updateTextAreaInput(session, "input_genes", value=paste(g, collapse=", "))
-        updateTabItems(session, "main_tabs", selected="tab_heatmap")
-      }
-    })
+    } else {
+      tagList(
+        tags$p("No Clustering available yet! Generate above first"),
+        withSpinner(plotlyOutput(outputId = "placeholder", height = "400px"))
+      )
+    }
 
-    output$dea_overview <- renderText({
-      if(is.null(dea <- DEA())) return(NULL)
-      paste("A differential expression analysis across", sum(!is.na(dea$FDR)),
-            "features, ", sum(dea$FDR<0.05, na.rm=TRUE), "of which are at FDR<0.05.")
+  })
+
+  observe({
+    req(input$clustercolor3)
+
+    lapply(input$clustercolor3, function(var) {
+      local({
+        v <- var
+        output[[paste0("pca_plot_", v)]] <- renderPlotly({
+          generate_cluster_plot(
+            SE = SE(),
+            reduction_name = "PCA",
+            color_var = v,
+            xlab = "PC1",
+            ylab = "PC2",
+            selected_wells = selected_wells$data,
+            plot_source = paste0("pca_", v)
+          )
+        })
+      })
     })
+  })
 
-    output$dea_pvalues <- renderPlot({
-      if(is.null(dea <- DEA()) || is.null(dea$PValue)) return(NULL)
-      hist(dea$PValue, xlab="Unadjusted p-values", main="")
-    })
+    #### End of Clustering
+    ############
+    ### BEGIN Data Manipulation Tab
 
-    output$dea_table <- renderDT({
-      if(is.null(dea <- DEA())) return(NULL)
-      datatable( dround(as.data.frame(dea), digits=3, roundGreaterThan1=TRUE),
-                 filter="top", class="compact", extensions=c("ColReorder"),
-                 options=list( pageLength=30, dom = "fltBip" ) )
-    })
+  observeEvent(input$selected_slider, { req(slider_initialized())
+    req(SE(), input$assay_id, input$plate_id)
 
-    output$dea_volcano <- renderPlotly({
-      if(is.null(dea <- DEA())) return(NULL)
-      if(is.null(dea$logFC)) return(NULL)
-      dea <- head(dea, 2000)
-      dea <- dround(as.data.frame(dea), digits=3, roundGreaterThan1=TRUE)
-      dea$logFC <- round(dea$logFC,2)
-      if(is.null(dea$MeanExpr)){
-        if(!is.null(dea$logCPM)) dea$MeanExpr <- dea$logCPM
-        if(!is.null(dea$baseMean)) dea$MeanExpr <- dea$baseMean
-      }
-      dea$feature <- row.names(dea)
-      if(is.null(dea$MeanExpr)){
-        p <- ggplot(dea, aes(logFC, -log10(FDR), Feature=feature, FDR=FDR))
-      }else{
-        p <- ggplot(dea, aes(logFC, -log10(FDR), Feature=feature, FDR=FDR,
-                             MeanExpr=MeanExpr, colour=MeanExpr))
-      }
-      p <- p + geom_vline(xintercept=0, linetype="dashed") + geom_point() +
-        theme_classic()
-      plotlyObs$resume()
-      ggplotly(p, tooltip=c("Feature","logFC","PValue","FDR"), source="volcano")
-    })
+    assayName <- input$assay_id
 
-    plotlyObs <- observeEvent(event_data("plotly_click", "volcano",
-                                         priority="event"), suspended=TRUE, {
-                                           if(is.null(dea <- DEA())) return(NULL)
-                                           event <- event_data("plotly_click", "volcano")
-                                           if(!is.list(event) || is.null(event$pointNumber) && event$pointNumber>=0)
-                                             return(NULL)
-                                           g <- row.names(dea)[as.integer(event$pointNumber+1)]
-                                           selGene(g)
-                                           updateTabItems(session, "main_tabs", "tab_gene")
-                                         })
-
-    output$dea_download <- downloadHandler(
-      filename = function() {
-        if(is.null(DEA())) return(NULL)
-        paste0(make.names(input$dea),".csv")
-      },
-      content = function(con) {
-        if(is.null(dea <- DEA())) return(NULL)
-        write.csv(dea, con)
-      }
+    # Melt and subset the data
+    melted.dat <- sechm::meltSE(
+      SE()[, SE()$Plate_ID == input$plate_id],
+      features = row.names(rowData(SE())),
+      assayName = assayName,
+      rowDat.columns = c(input$sweep_id, input$group_by_meta)
     )
 
-    ### END DEAs
-    ############
-    ### BEGIN EAs
+    # Clean and filter
+    slider_vals <- melted.dat[[assayName]]
+    slider_range <- input$selected_slider
 
-    EAs <- reactive({
-      if(is.null(SE()) || is.null(eas <- metadata(SE())$EA) || !is.list(eas) ||
-         length(eas)==0) return(list())
-      if(is.list(eas[[1]]) && !is.data.frame(eas[[1]]) &&
-         !is(eas[[1]], "DFrame")) eas <- unlist(eas, recursive=FALSE)
-      eas
-    })
+    # Filter wells based on slider range
+    matching_wells <- unique(melted.dat$Well[slider_vals >= slider_range[1] & slider_vals <= slider_range[2]])
 
-    output$menu_Enrichments <- renderUI({
-      if(length(EAs())==0) return(menuItem("Enrichments", tabName="tab_ea",
-                                           badgeLabel="N/A", badgeColor="red"))
-      menuItem("Enrichments", tabName="tab_ea", badgeLabel=length(EAs()),
-               badgeColor="aqua")
-    })
+    # Update selected_well input with matching wells
+    #updateSelectInput(session, "selected_well", selected = matching_wells)
+    #updateSelectInput(session, "selected_well1", selected = matching_wells)
+  })
 
-    output$ea_input <- renderUI({
-      hideElement("ea_box")
-      if(length(EAs())==0)
-        return(tags$h5(icon("exclamation-triangle"),
-                       "The object contains no enrichment analysis"))
-      showElement("ea_box")
-      choices <- sapply(names(EAs()), FUN=function(x){
-        if(!is.null(a <- attr(EAs()[[x]], "description"))) return(a)
-        x
-      })
-      choices <- setNames(names(EAs()), choices)
-      options = list( render = I(paste("{
-        item:", DEAselRender, ",
-        option:", DEAselRender, "}"))
-      )
-      selectizeInput("ea", label="Enrichment analysis", choices=choices,
-                     options=options)
-    })
-
-    EA <- reactive({
-      if(is.null(input$ea) || input$ea=="" || is.null(ea <- EAs()[[input$ea]]))
-        return(NULL)
-      ea
-    })
-
-    output$ea_table <- renderDT({
-      if(is.null(ea <- EA())) return(NULL)
-      if(!isTRUE(input$ea_showGenes)) ea$genes <- ea$leadingEdge <- NULL
-      datatable( dround(as.data.frame(ea), digits=3, roundGreaterThan1=TRUE),
-                 filter="top", class="compact", extensions=c("ColReorder"),
-                 options=list( pageLength=30, dom = "fltBip", colReorder=TRUE ) )
-    })
-
-    observeEvent(input$ea_geneSel, {
-      if(is.null(ea <- EA()) || is.null(ea$genes)) return(NULL)
-      if(length(RN <- input$ea_table_rows_selected)>0){
-        g <- head(unique(unlist(.getWordsFromString(ea[RN,"genes"]))), maxPlot)
-        updateTextAreaInput(session, "input_genes", value=paste(g, collapse=", "))
-        updateTabItems(session, "main_tabs", selected="tab_heatmap")
-      }
-    })
-
-    ### END EAs
-    ############
-    ### BEGIN HEATMAP
-
-    selGenes <- reactive({
-      g <- gsub(",|\n|\r|;,"," ",input$input_genes)
-      g <- strsplit(g," ",fixed=T)[[1]]
-      g <- unique(g[which(g!="")])
-      grepGene(row.names(SE()), g)
-    })
-
-
-    output$heatmap <- renderPlot({
-      validate( need(!is.null(SE()), "No SummarizedExperiment loaded.") )
-      g <- selGenes()
-      validate( need(length(g)>0,
-                     message=paste("No gene selected. Select one in the ",
-                                   "dropdown list above. You can type the first few letters in the box ",
-                                   "and select from the matching suggestions.")) )
-      if(length(g)>2 && input$hm_clusterRow){
-        srow <- 1:ncol(SE())
-      }else{
-        srow <- NULL
-      }
-      se <- SE()[g, input$input_hm_samples]
-      validate(need(ncol(se)>1,
-                    message="At least two samples must be selected."))
-      o <- input$hm_order
-      if(is.null(o)) o <- c()
-      for(f in rev(o)) se <- se[,order(colData(se)[[f]])]
-      breaks <- NULL
-      if(grepl("logFC|log2FC|scaledLFC|zscore", input$assay_input2,
-               ignore.case=TRUE) || input$hm_scale)
-        breaks <- 1-(input$hm_breaks/100)
-      draw(sechm(se, g, do.scale=input$hm_scale,
-                 assayName=input$assay_input2, show_colnames=input$hm_showColnames,
-                 sortRowsOn=srow, top_annotation=input$hm_anno, gaps_at=input$hm_gaps,
-                 cluster_cols=input$hm_clusterCol, cluster_rows=FALSE,
-                 breaks=breaks),
-           merge_legends=TRUE, padding=unit(c(0.2,0.2,1.5,0.2), "cm"))
-
-    })
-
-    ### END HEATMAP
-    ############
-
-
-
-
-    ############
-    ### START GENE TAB
-
-    selGene <- reactiveVal()
-    observeEvent(input$gene_input, {
-      selGene(input$gene_input)
-    })
-
-    output$gene_plot <- renderPlot({
-      d <- tryCatch(meltSE(SE(), selGene(), rowDat.columns = NA),
-                    error=function(x){ NULL })
-      validate( need(!is.null(d) && nrow(d)>0,
-                     message=paste("No gene selected. Select one in the ",
-                                   "dropdown list above. You can type the first few letters in the box ",
-                                   "and select from the matching suggestions.")) )
-      d <- d[d$sample %in% input$input_hm_samples,]
-      validate( need(nrow(d)>0, message="No sample selected!") )
-      gr <- input$select_groupvar
-      if(input$asfactor) d[[gr]] <- factor(d[[gr]])
-      p <- ggplot(d, aes_string(input$select_groupvar, input$assay_input,
-                                colour=input$select_colorvar,
-                                fill=input$select_colorvar))
-      if(grepl("logFC|log2FC|scaledLFC", input$assay_input)){
-        p <- p + geom_hline(yintercept=0, linetype="dashed", colour="grey")
-      }
-      if(input$plottype_input=="violin plot"){
-        p <- p + geom_violin()
-      }else{
-        p <- p + geom_boxplot(outlier.shape = NA)
-      }
-      if(input$select_plotpoints){
-        p <- p + geom_beeswarm(dodge.width=1, cex=1.4, size=2)
-      }else{
-        p <- p + stat_summary()
-      }
-      p <- p + theme_classic() + ggtitle(input$gene_input) +
-        theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-      if(!is.null(input$select_gridvars)){
-        form <- as.formula(paste0("~",paste(input$select_gridvars, collapse="+")))
-        if(input$select_freeaxis){
-          p <- p + facet_wrap(form, scales="free_y")
-        }else{
-          p <- p + facet_wrap(form)
-        }
-      }
-
-      if(input$select_colorvar %in% names(metadata(SE())$anno_colors)){
-        cols <- metadata(SE())$anno_colors[[input$select_colorvar]]
-        cols2 <- sapply(cols, maketrans)
-        p <- p + scale_color_manual(values=cols) +
-          scale_fill_manual(values=cols2)
-      }
-
-      p + ggtitle(selGene())
-    })
-
-    output$gene_dea_table <- renderTable({
-      if(is.null(selGene())) return(NULL)
-      if(is.null(deas <- DEAs()) || length(deas)==0) return(NULL)
-      d <- dplyr::bind_rows(lapply(deas, FUN=function(x){
-        .homogenizeDEA(x[selGene(),])
-      }), .id="Comparison")
-      d <- d[!is.na(d$FDR),]
-      d$LR <- NULL
-      if(!is.null(d$logCPM)) d$meanExpr <- NULL
-      if(!is.null(d$logFC)) d <- d[!is.na(d$logFC),]
-      if(nrow(d)==0) return(NULL)
-      dea_desc <- sapply(deas, FUN=function(x){
-        a <- attr(x, which="description")
-        if(is.null(a)) return("")
-        as.character(a[1])
-      })
-      dea_desc[sapply(dea_desc,is.null)] <- ""
-      if(any(dea_desc != "")){
-        d$test_description <- dea_desc[d$Comparison]
-      }
-      row.names(d) <- NULL
-      d
-    })
-
-    output$gene_inList <- renderText({
-      if(is.null(g <- selGene()) || g=="" || length(flists())==0)
-        return("")
-      if(grepl(".+\\.[a-zA-Z].+", g)) g <- gsub("^[^.]+\\.","",g)
-      g <- strsplit(g,"/")[[1]]
-      x <- which(sapply(flists(), FUN=function(x){ any(g %in% x) }))
-      if(length(x)==0)
-        return("This feature is included in none of the registered lists.")
-      out <- "This feature is included in the following list(s):"
-      paste(c(out, names(flists())[x]), collapse="\n")
-    })
-
-
-    ### END GENE TAB
-    ############
-    ### START feature.lists TAB
-
-    output$genelist_size <- renderText({
-      if(is.null(input$genelist_input) ||
-         is.null(gl <- flists()[[input$genelist_input]])) return(NULL)
-      length(gl)
-    })
-    output$genelist_out <- renderText({
-      if(is.null(input$genelist_input) ||
-         is.null(gl <- flists()[[input$genelist_input]])) return(NULL)
-      paste(gl, collapse=", ")
-    })
-    observeEvent(input$btn_importGenelist, {
-      if(is.null(input$genelist_input) ||
-         is.null(g <- flists()[[input$genelist_input]])) return(NULL)
-      g <- head(g,maxPlot)
-      updateTextAreaInput(session, "input_genes", value=paste(g, collapse=", "))
-      updateTabItems(session, "main_tabs", selected="tab_heatmap")
-    })
-
-
-    ### END feature.lists TAB
-    ############
 
 
     observeEvent(input$quickStart, showModal(.getHelp("general")))

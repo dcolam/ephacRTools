@@ -2,16 +2,15 @@
 % Please edit documentation in R/utilityTools.R
 \name{get_metric}
 \alias{get_metric}
-\title{Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf}
+\title{Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
+Make sure that Vhalf is present in rowData}
 \usage{
-get_metric(df, well, parameter = "Minima", plot = FALSE)
+get_metric(se, assay = "Minima", inward = TRUE)
 }
 \arguments{
 \item{se}{SummarizedExperiment Object with reducedDim data}
 
-\item{assayList}{assays that serves as the y-axis}
-
-\item{rowCol}{numeric row Column that serves as x-axis}
+\item{assay}{assay to be analyzed}
 
 \item{inward}{boolean stating whether the IV-curve shows in- or outward current}
 
@@ -21,5 +20,6 @@ get_metric(df, well, parameter = "Minima", plot = FALSE)
 se with updated colData
 }
 \description{
-Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf
+Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
+Make sure that Vhalf is present in rowData
 }

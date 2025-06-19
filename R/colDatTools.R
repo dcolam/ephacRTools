@@ -184,8 +184,9 @@ group_assignment <- function(data, se = c("Yes", "No"), pattern = c("Conditions"
 return(prepared_df)
 
     prepared_df$Group <- manual_map[as.character(prepared_df$Well)]
-  }
-  else if (pattern == "Cycle") {
+}
+
+  if (pattern == "Cycle") {
     if (is.null(cycle_pattern)) stop("Please provide cycle_pattern for 'cycle' pattern")
     prepared_df <- prepared_df[order(prepared_df$Well), ]
     prepared_df$Group <- rep(cycle_pattern, length.out = nrow(prepared_df))
