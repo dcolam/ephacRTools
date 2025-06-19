@@ -215,6 +215,32 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
   }
   return(se)
 }
+
+#' Function that generates all the files paths for the images
+#' @param se SummarizedExperiment to where the folders should be stored
+#' @param parent_folder Path to the TIF images outputed by Cluster Analysis, typically inside the folder Particle_Analysi
+#' @return updated se object
+#' @export
+addImgPaths <- function(se, parent_folder, wellposition = 10, sep="_") {
+
+  pathImg <-"Y:\\ephacoffice\\DColameo\\DATA\\iPSC_Tricultures\\iPSC_C4-C4-SFSC_GFP-Dlx1_mCherry-Camk2a_190325_DIV36_18T39265\\Particle_Analysis"
+  pathImgs <-list.files(path = pathImg ,pattern = "*.tif$", recursive = TRUE, full.names = TRUE)
+  pathImgs <-pathImgs[grepl("Particle_Analysis",  pathImgs)]
+
+
+  lapply(pathImgs, function(x){
+
+
+   f <-  basename(x)
+  well <- unlist(stringr::str_split(f, sep)[wellposition])
+  print(well)
+  return(well=x)
+  })
+
+
+  }
+
+
 #' Function that generates all the files paths for the images
 #' @param parent_folder Path to where your various experimental data is stored
 #' @param idx The well(s) you want to look at
@@ -226,6 +252,7 @@ image_paths <- function(parent_folder, idx, plate_ID, location) {
   all_dirs <- list.dirs(parent_folder, full.names = TRUE, recursive = FALSE)
   matched_dir <- NULL
   short_idx <- gsub("^([A-Z])0*", "\\1", idx)
+
   for (d in all_dirs) {
     dir_name <- basename(d)
     parts <- strsplit(dir_name, "_")[[1]]
