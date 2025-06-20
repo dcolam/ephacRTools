@@ -39,6 +39,11 @@ prepareDF <- function(pathDF){
   print(colnames(df))
 
   tryCatch({
+    if("\r" %in% colnames(df)){
+      df$`\r` <- NULL
+    }
+    print(colnames(df))
+
     names(df)[1:2] <- c("Well", "QC")
 
     if(!("Nanion Chip Barcode" %in% colnames(df))){
@@ -51,16 +56,15 @@ prepareDF <- function(pathDF){
       unlist(stringr::str_split(s, " "))[2]
     }))
 
-    volt <- df[which(df$Well == "Sweep Voltage"),]
-
-    if(nrow(volt) != 0){
-      df <- df[-1,]
+    if ("Sweep Voltage" %in% df$Well) {
+      volt <- df[df$Well == "Sweep Voltage", ]
+      df <- df[df$Well != "Sweep Voltage", ]
       volt <- volt[, grep("Compound", names(volt))]
       volt_steps <- TRUE
-    }else{
-      volt[1,] <- "NAm"
+    } else {
+      volt <- df[1, ]
+      volt[1, ] <- "NAm"
       volt_steps <- FALSE
-
     }
     new.cols <- sapply(grep(no.sweeps[1], sweeps, value=T), function(x){
       unlist(stringr::str_split(x, " "))[3]
