@@ -43,13 +43,13 @@ prepareSingleImgDF <- function(pathDB,
                                  .after = dplyr::all_of(col))
         }
       }
-
+      print("DB processed")
       tbl
     }
 
     con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
     on.exit(DBI::dbDisconnect(con), add = TRUE)
-
+    print("SQlite Loaded...")
     if (analysis == "pa") {
       tbl <- DBI::dbGetQuery(con, "
         SELECT *
@@ -111,11 +111,19 @@ prepareImgDF <- function(pathDB,
                          scale_fun=scale_fun)
     })
 
-    names(dfs) <- pathDB
+    safe_names <- lapply(l_files, function(x){basename(x)})
+    print(safe_names)
+    names(dfs) <- safe_names
+
+    #names(dfs) <- pathDB
     df <- dplyr::bind_rows(dfs, .id = "column_label")
-    df$Plate_ID <- sapply(df$Plate_ID, function(x){
-      unlist(stringr::str_split(x, "\\r"))[1]
-    })
+    if (!"Plate_ID" %in% colnames(df)) {
+      df$Plate_ID <- df$column_label
+    }else{
+      df$Plate_ID <- sapply(df$Plate_ID, function(x){
+        unlist(stringr::str_split(x, "\\r"))[1]
+      })
+    }
   }
   return(df)
 }

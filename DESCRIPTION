@@ -21,6 +21,7 @@ Imports:
     DT,
     ggbeeswarm,
     ggplot2,
+    ggpubr,
     hablar,
     HDF5Array,
     magrittr,
@@ -28,6 +29,7 @@ Imports:
     readxl,
     reshape2,
     RSQLite,
+    Rtsne,
     S4Vectors,
     sechm,
     shiny,
@@ -39,6 +41,9 @@ Imports:
     SingleCellExperiment,
     stringr,
     SummarizedExperiment,
+    tidyselect,
+    umap,
+    viridis,
     waiter
 Depends: 
     R (>= 3.5)

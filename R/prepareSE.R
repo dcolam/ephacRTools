@@ -14,6 +14,7 @@ NULL
 #' @export
 prepareDF <- function(pathDF){
   print("excel being loaded")
+  print(pathDF)
   df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
   print("excel loaded")
   df$`\r` <- NULL
@@ -99,6 +100,7 @@ prepareDF <- function(pathDF){
 prepareMultipleDFs <- function(l_files){
 
   dfs <- lapply(l_files, function(x) {
+    print(x)
     df <- prepareDF(x)
     return(df)
   })
