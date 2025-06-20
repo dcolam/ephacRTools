@@ -40,3 +40,4 @@ Suggests:
     rmarkdown
 URL: https://github.com/dcolam/ephacRTools
 BugReports: https://github.com/dcolam/ephacRTools/issues
+Remotes: dcolam/ephacRTools
