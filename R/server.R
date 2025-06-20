@@ -290,16 +290,24 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         }
 
       }, error = function(e) {
-        # Show detailed error message
+        # Ensure the error message is a valid length-one character vector
+        err_msg <- conditionMessage(e)
+
+        # Safely capture a traceback
+        tb <- tryCatch({
+          paste(utils::capture.output(utils::traceback(3)), collapse = "\n")
+        }, error = function(e2) {
+          "No traceback available."
+        })
+
         showModal(modalDialog(
           title = "Error with upload",
           easyClose = TRUE,
           "An error occurred while processing the uploaded file. Details:",
-          tags$pre(conditionMessage(e)),   # show actual message
-          tags$pre(paste(capture.output(traceback()), collapse = "\n"))  # full traceback
+          tags$pre(err_msg),
+          tags$pre(tb)
         ))
-      })
-    })
+      }
 
     observeEvent(input$mergeSE, {
       tryCatch({
