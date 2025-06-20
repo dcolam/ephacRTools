@@ -13,7 +13,7 @@ NULL
 #' @return A cleaned data.frame in long format
 #' @export
 prepareDF <- function(pathDF){
-
+  print("excel being loaded")
   df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
   print("excel loaded")
   df$`\r` <- NULL
