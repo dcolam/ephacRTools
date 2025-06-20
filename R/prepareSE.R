@@ -24,13 +24,7 @@ prepareDF <- function(pathDF){
 
 
   df <- tryCatch({
-    R.utils::withTimeout({
-      as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
-      #as.data.frame(openxlsx::read.xlsx(pathDF, sheet = "OA Export", colNames = T ))
-    }, timeout = 5)  # timeout after 5 seconds
-  }, TimeoutException = function(e) {
-    warning(paste("Timeout while reading:", pathDF))
-    return(NULL)
+    as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
   }, error = function(e) {
     warning(paste("Failed to read file:", pathDF))
     print(conditionMessage(e))
