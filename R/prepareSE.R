@@ -131,7 +131,7 @@ if(length(pathDF) > 1){
     print("multi")
 }else{
       df <- prepareDF(pathDF)
-
+      print("single")
       }
 
 df <- df %>% hablar::retype()

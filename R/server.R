@@ -257,40 +257,48 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
     observeEvent(input$fileEphys, {
       tryCatch({
-        if(!is.null(input$fileEphys)){
-          #x <- readRDS(input$fileEphys$datapath)
-
+        if (!is.null(input$fileEphys)) {
 
           print(input$fileEphys$datapath)
           print(length(input$fileEphys$datapath))
-          l_files <- ifelse(length(input$fileEphys$datapath) > 1,
-                            as.list(input$fileEphys$datapath),
-                            unlist(input$fileEphys$datapath))
 
+          # Fix ifelse() misuse: use plain if()
+          l_files <- if (length(input$fileEphys$datapath) > 1) {
+            as.list(input$fileEphys$datapath)
+          } else {
+            list(input$fileEphys$datapath)
+          }
 
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
-          incProgress(0.5, detail = "This may take a while..")
-          x <- prepareSE(l_files)
+            incProgress(0.5, detail = "This may take a while...")
+            x <- prepareSE(l_files)  # this is probably where it fails
 
-          print(x)
-          if(is(x,"SingleCellExperiment")){
-            SEname <- input$se_id
-            SEs[[SEname]] <- x
-            SEinit(SEs[[SEname]])
-            incProgress(0.75, detail = "Updating UI")
-            updateSelectInput(session, "object", selected=SEname,
-                              choices=union(names(input$objects), names(SEs)))
-          }
-          incProgress(1, detail = "SE loaded")
+            print(x)
+            if (is(x, "SingleCellExperiment")) {
+              SEname <- input$se_id
+              SEs[[SEname]] <- x
+              SEinit(SEs[[SEname]])
+              incProgress(0.75, detail = "Updating UI")
+              updateSelectInput(session, "object", selected = SEname,
+                                choices = union(names(input$objects), names(SEs)))
+            }
+            incProgress(1, detail = "SE loaded")
           })
-          }else{
-            stop("The object is not a SummarizedExperiment!")
-          }
-        }, error=function(e){
-          showModal(modalDialog(easyClose=TRUE, title="Error with upload",
-                                "The file was not recognized. Are you sure that it is an .excel file?",
-                                tags$pre(e)))
-        })
+
+        } else {
+          stop("The object is not a SummarizedExperiment!")
+        }
+
+      }, error = function(e) {
+        # Show detailed error message
+        showModal(modalDialog(
+          title = "Error with upload",
+          easyClose = TRUE,
+          "An error occurred while processing the uploaded file. Details:",
+          tags$pre(conditionMessage(e)),   # show actual message
+          tags$pre(paste(capture.output(traceback()), collapse = "\n"))  # full traceback
+        ))
+      })
     })
 
     observeEvent(input$mergeSE, {
