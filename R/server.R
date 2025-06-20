@@ -273,7 +273,18 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
             incProgress(0.5, detail = "This may take a while...")
-            x <- prepareSE(l_files)  # this is probably where it fails
+
+            tryCatch({
+              x <- tryCatch({
+                prepareSE(l_files)
+              }, error = function(e) {
+                stop(paste("prepareSE failed:", conditionMessage(e)))
+              })
+
+              # rest of your logic
+            }, error = function(e) {
+              showModal(modalDialog("Error", tags$pre(conditionMessage(e))))
+            })  # this is probably where it fails
 
             print(x)
             if (is(x, "SingleCellExperiment")) {
@@ -318,8 +329,23 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
             req(input$tabletype)
             for(tabletype in input$tabletype){
-              df_img <- prepareImgDF(l_files, analysis = tabletype)
+
+              tryCatch({
+                df_img <- tryCatch({
+                  prepareImgDF(l_files, analysis = tabletype)
+                }, error = function(e) {
+                  stop(paste("prepareSE failed:", conditionMessage(e)))
+                })
+
+                # rest of your logic
+              }, error = function(e) {
+                showModal(modalDialog("Error", tags$pre(conditionMessage(e))))
+              })
+
+              #df_img <- prepareImgDF(l_files, analysis = tabletype)
               SEname <- input$se_id
+
+
               SEs[[SEname]] <-  mergeSEandImg(SEs[[SEname]], df_img,
                                               tableType = tabletype)
 
