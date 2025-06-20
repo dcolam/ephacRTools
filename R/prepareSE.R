@@ -13,8 +13,10 @@ NULL
 #' @return A cleaned data.frame in long format
 #' @export
 prepareDF <- function(pathDF){
-  print("excel being loaded")
+  print("prepareDF called with:")
   print(pathDF)
+  print(typeof(pathDF))
+  print(file.exists(pathDF))
   df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
   print("excel loaded")
   df$`\r` <- NULL
@@ -100,8 +102,8 @@ prepareDF <- function(pathDF){
 prepareMultipleDFs <- function(l_files){
 
   dfs <- lapply(l_files, function(x) {
-    print(x)
-    df <- prepareDF(x)
+    print(paste("File:", x))
+    df <- prepareDF(as.character(x))  # ensure proper type
     return(df)
   })
   print("Excels Loaded")
