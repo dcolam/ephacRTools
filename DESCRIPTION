@@ -3,10 +3,9 @@ Type: Package
 Title: Analyze HT-APC Data
 Version: 0.1.0
 Authors@R: c(
-    person("Jane", "Doe", , "jane@example.com", role = c("aut", "cre")),
-    person("David", "Colameo", role = c("aut", "cre")),
-    person("Athena", "Schumacher", role = c("aut", "cre")),
-    person("Jiayi", "Wang", role = c("aut", "cre"))
+    person("David", "Colameo", role = c("aut", "cre"), email="david.colameo@uzh.ch"),
+    person("Athena", "Schumacher", role = c("aut")),
+    person("Jiayi", "Wang", role = c("aut"))
   )
 Description: More about what it does (maybe more than one line).
     Continuation lines should be indented.
@@ -39,3 +38,5 @@ Depends:
 Suggests: 
     knitr,
     rmarkdown
+URL: https://github.com/dcolam/ephacRTools
+BugReports: https://github.com/dcolam/ephacRTools/issues
