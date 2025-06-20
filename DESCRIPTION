@@ -16,6 +16,7 @@ RoxygenNote: 7.3.2
 Imports: 
     ComplexHeatmap,
     data.table,
+    DBI,
     dplyr,
     DT,
     ggbeeswarm,
@@ -26,6 +27,7 @@ Imports:
     plotly,
     readxl,
     reshape2,
+    RSQLite,
     S4Vectors,
     sechm,
     shiny,

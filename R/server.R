@@ -249,6 +249,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             stop("The object is not a SummarizedExperiment!")
           }
         }}, error=function(e){
+          print(conditionMessage(e))
+          print(traceback())
           showModal(modalDialog(easyClose=TRUE, title="Error with upload",
                                 "The file was not recognized. Are you sure that it is a R .rds file?",
                                 tags$pre(e)))
@@ -337,6 +339,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           stop("The object is not a SummarizedExperiment!")
         }
       }, error=function(e){
+        print(conditionMessage(e))
+        print(traceback())
         showModal(modalDialog(easyClose=TRUE, title="Error with upload",
                               "The file was not recognized. Are you sure that it is an .excel file?",
                               tags$pre(e)))
@@ -376,6 +380,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           }
 
         }}, error=function(e){
+          print(conditionMessage(e))
+          print(traceback())
           showModal(modalDialog(easyClose=TRUE, title="Error",
                                 "Choose at least one dataset.",
                                 tags$pre(e)))

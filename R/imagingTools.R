@@ -128,19 +128,19 @@ df_cleaned <- function(df){
 
   df$Well_clean <- sapply(df$Well, function(x){
 
-    unlist(str_split(x, "-"))[1]
+    unlist(stringr::str_split(x, "-"))[1]
 
   })
 
   df$Row <- sapply(df$Well_clean, function(x){
 
-    str_sub(x, 1, 1)
+    stringr::str_sub(x, 1, 1)
 
   })
 
   df$Column <- sapply(df$Well_clean, function(x){
 
-    str_sub(x, 2, 3)
+    stringr::str_sub(x, 2, 3)
 
   })
 
@@ -177,15 +177,15 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
     for (channel in channels) {
       # Subset df_img for current channel
       df_channel <- df_img %>%
-        filter(Channel_Name == channel) %>%
-        select(-Channel_Name)  # optional: remove the channel label
+        dplyr::filter(Channel_Name == channel) %>%
+        dplyr::select(-Channel_Name)  # optional: remove the channel label
       # Perform join
       joined <- cd %>%
         dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
       # Extract just the new columns (everything except original colData)
-      new_cols <- setdiff(names(joined), names(cd))
+      new_cols <- dplyr::setdiff(names(joined), names(cd))
       # Create a DataFrame object from just the new data
-      channel_data <- DataFrame(joined[, new_cols])
+      channel_data <- S4Vectors::DataFrame(joined[, new_cols])
       # Assign to colData(se), one column per channel, as a nested DataFrame
       SummarizedExperiment::colData(se)[[channel]] <- channel_data
     }
@@ -198,15 +198,15 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
       for (second_channel in second_channels){
       # Subset df_img for current channel
       df_channel <- df_img %>%
-        filter(Channel_Name == channel, Second_Channel == second_channel) %>%
-        select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
+        dplyr::filter(Channel_Name == channel, Second_Channel == second_channel) %>%
+        dplyr::select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
       # Perform join
       joined <- cd %>%
         dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
       # Extract just the new columns (everything except original colData)
-      new_cols <- setdiff(names(joined), names(cd))
+      new_cols <- dplyr::setdiff(names(joined), names(cd))
       # Create a DataFrame object from just the new data
-      channel_data <- DataFrame(joined[, new_cols])
+      channel_data <- S4Vectors::DataFrame(joined[, new_cols])
       # Assign to colData(se), one column per channel, as a nested DataFrame
       SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
       }

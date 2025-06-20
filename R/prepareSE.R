@@ -105,7 +105,6 @@ prepareMultipleDFs <- function(l_files){
 
   names(dfs) <- l_files
   df <- dplyr::bind_rows(dfs, .id = "column_label")
-  head(df)
   df$Plate_ID <- sapply(df$Plate_ID, function(x){
     unlist(stringr::str_split(x, "\\r"))[1]
   })
