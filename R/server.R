@@ -265,11 +265,13 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           print(length(input$fileEphys$datapath))
 
           # Fix ifelse() misuse: use plain if()
-          l_files <- if (length(input$fileEphys$datapath) > 1) {
-            as.list(input$fileEphys$datapath)
-          } else {
-            input$fileEphys$datapath
-          }
+          #l_files <- if (length(input$fileEphys$datapath) > 1) {
+          #  as.list(input$fileEphys$datapath)
+          #} else {
+          #  input$fileEphys$datapath
+          #}
+
+          l_files <- as.list(input$fileEphys$datapath)
 
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
             incProgress(0.5, detail = "This may take a while...")

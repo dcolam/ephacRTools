@@ -64,8 +64,11 @@ prepareDF <- function(pathDF){
     } else {
       volt <- df[1, ]
       volt[1, ] <- "NAm"
+      print(volt)
       volt_steps <- FALSE
     }
+
+
     new.cols <- sapply(grep(no.sweeps[1], sweeps, value=T), function(x){
       unlist(stringr::str_split(x, " "))[3]
     })
@@ -131,9 +134,16 @@ prepareMultipleDFs <- function(l_files){
 
   dfs <- lapply(l_files, function(x) {
     print(paste("File:", x))
-    df <- prepareDF(as.character(x))  # ensure proper type
+    df <- prepareDF(as.character(x))
+    if (is.null(df)) {
+      warning(paste("Skipping file due to read error:", x))
+    }
     return(df)
   })
+  dfs <- dfs[!sapply(dfs, is.null)]
+  if (length(dfs) == 0) {
+    stop("All uploaded files failed to read. Please check file format.")
+  }
   print("Excels Loaded")
   safe_names <- lapply(l_files, function(x){basename(x)})
   print(safe_names)
@@ -168,7 +178,7 @@ if(length(pathDF) > 1){
     df <- prepareMultipleDFs(pathDF)
     print("multi")
 }else{
-      df <- prepareDF(pathDF)
+      df <- prepareDF(as.character(pathDF))
       print("single")
       }
 
