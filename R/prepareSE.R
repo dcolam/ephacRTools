@@ -14,14 +14,19 @@ NULL
 #' @export
 prepareDF <- function(pathDF){
   print("prepareDF called with:")
+
+  #pathDF <- "C:\\Users\\davec\\Documents\\R-Markdowns\\ephacRTools\\data-raw\\ROMK\\NCI_ramp_ATP1A1_18.30.46.xlsx"
   print(pathDF)
   print(typeof(pathDF))
   print(file.exists(pathDF))
   #df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
+  print(readxl::excel_sheets(pathDF))
+
 
   df <- tryCatch({
     R.utils::withTimeout({
       as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
+      #as.data.frame(openxlsx::read.xlsx(pathDF, sheet = "OA Export", colNames = T ))
     }, timeout = 5)  # timeout after 5 seconds
   }, TimeoutException = function(e) {
     warning(paste("Timeout while reading:", pathDF))
@@ -32,75 +37,85 @@ prepareDF <- function(pathDF){
     return(NULL)
   })
 
-
   print("excel loaded")
-  df$`\r` <- NULL
-  names(df)[1:2] <- c("Well", "QC")
 
-  if(!("Nanion Chip Barcode" %in% colnames(df))){
-    df[,"Nanion Chip Barcode"] <- "NoPlateID"
+  if("\r" %in% colnames(df)){
+    df$`\r` <- NULL
   }
+  print(colnames(df))
 
-  df <- df[-1,]
-  sweeps <- grep("Sweep \\d", colnames(df), value=TRUE)
-  no.sweeps <- unique(sapply(sweeps, FUN=function(s){
-    unlist(stringr::str_split(s, " "))[2]
-  }))
+  tryCatch({
+    names(df)[1:2] <- c("Well", "QC")
 
-  volt <- df[which(df$Well == "Sweep Voltage"),]
+    if(!("Nanion Chip Barcode" %in% colnames(df))){
+      df[,"Nanion Chip Barcode"] <- "NoPlateID"
+    }
 
-  if(nrow(volt) != 0){
     df <- df[-1,]
-    volt <- volt[, grep("Compound", names(volt))]
-    volt_steps <- TRUE
-  }else{
-    #volt <- NA
-    volt[1,] <- "NAm"
-    volt_steps <- FALSE
+    sweeps <- grep("Sweep \\d", colnames(df), value=TRUE)
+    no.sweeps <- unique(sapply(sweeps, FUN=function(s){
+      unlist(stringr::str_split(s, " "))[2]
+    }))
 
-  }
-  new.cols <- sapply(grep(no.sweeps[1], sweeps, value=T), function(x){
-    unlist(stringr::str_split(x, " "))[3]
-  })
+    volt <- df[which(df$Well == "Sweep Voltage"),]
 
-  if(!volt_steps){
-    new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep")
+    if(nrow(volt) != 0){
+      df <- df[-1,]
+      volt <- volt[, grep("Compound", names(volt))]
+      volt_steps <- TRUE
     }else{
-  new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
-  }
-  new.df <- data.frame(matrix(ncol=length(new.cols),nrow=0, dimnames=list(NULL, new.cols)))
-  #print(new.cols)
-  for(s in no.sweeps){
-    cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value=T))
-    temp <- df[,cols]
-    temp$Sweep <- s
+      volt[1,] <- "NAm"
+      volt_steps <- FALSE
+
+    }
+    new.cols <- sapply(grep(no.sweeps[1], sweeps, value=T), function(x){
+      unlist(stringr::str_split(x, " "))[3]
+    })
+
+    if(!volt_steps){
+      new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep")
+    }else{
+      new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
+    }
+    new.df <- data.frame(matrix(ncol=length(new.cols),nrow=0, dimnames=list(NULL, new.cols)))
+    #print(new.cols)
+    for(s in no.sweeps){
+      cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value=T))
+      temp <- df[,cols]
+      temp$Sweep <- s
+      if(volt_steps){
+        temp$V_Clamp <- volt[,grep(s, names(volt), value=T)]
+      }
+      colnames(temp) <- colnames(new.df)
+      new.df <- rbind(new.df,temp)
+    }
+
     if(volt_steps){
-    temp$V_Clamp <- volt[,grep(s, names(volt), value=T)]
+      new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
+      for(cols in colnames(new.df)){
+        tryCatch(expr = {
+          recoverCol <- new.df[,cols]
+          new.df[,cols] <- as.numeric(new.df[,cols])
+        }, warning = function(w){
+          new.df[,cols] <- new.df[,cols]
+        })
+      }
     }
-    colnames(temp) <- colnames(new.df)
-    new.df <- rbind(new.df,temp)
-  }
 
-  if(volt_steps){
-    new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
-    for(cols in colnames(new.df)){
-      tryCatch(expr = {
-        recoverCol <- new.df[,cols]
-        new.df[,cols] <- as.numeric(new.df[,cols])
-      }, warning = function(w){
-        new.df[,cols] <- new.df[,cols]
-      })
-    }
-  }
+    new.df$Well <- sapply(new.df$Well, function(x){
+      unlist(stringr::str_split(x, "\\r"))[1]
+    })
+    new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
+      unlist(stringr::str_split(x, "\\r"))[1]
+    })
+    print(head(new.df, n=3))
+    return(new.df)
 
-  new.df$Well <- sapply(new.df$Well, function(x){
-    unlist(stringr::str_split(x, "\\r"))[1]
+  }, error = function(e) {
+    warning(paste("Failed to read file:", pathDF))
+    print(conditionMessage(e))
+    return(NULL)
   })
-  new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
-    unlist(stringr::str_split(x, "\\r"))[1]
-  })
-  print(head(new.df, n=3))
-  return(new.df)
 
 }
 
