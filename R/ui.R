@@ -52,12 +52,12 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                        skin="blue", hasLogin=FALSE){
   if(is.null(waiterContent) || isTRUE(waiterContent)){
     waiterContent <- tagList(
-      tags$h3("Please wait while the application is initialized..."), spin_1())
+      tags$h3("Please wait while the application is initialized..."), waiter::spin_1())
   }
   if(isFALSE(waiterContent)){
     waiterContent <- NULL
   }else{
-    waiterContent <- waiter_show_on_load(html=waiterContent)
+    waiterContent <- waiter::waiter_show_on_load(html=waiterContent)
   }
   if(hasLogin) waiterContent <- tagList(shinyauthr::loginUI("login"))
   aboutMenu <- NULL

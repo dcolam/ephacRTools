@@ -1,13 +1,12 @@
 Package: ephacRTools
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Analyze HT-APC Data
 Version: 0.1.0
 Authors@R: c(
-    person(
-      "Jane", "Doe",
-      email = "jane@example.com",
-      role = c("aut", "cre")
-    )
+    person("Jane", "Doe", , "jane@example.com", role = c("aut", "cre")),
+    person("David", "Colameo", role = c("aut", "cre")),
+    person("Athena", "Schumacher", role = c("aut", "cre")),
+    person("Jiayi", "Wang", role = c("aut", "cre"))
   )
 Description: More about what it does (maybe more than one line).
     Continuation lines should be indented.
@@ -16,7 +15,25 @@ Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.2
 Imports: 
-    magrittr
+    ComplexHeatmap,
+    data.table,
+    DT,
+    ggbeeswarm,
+    ggplot2,
+    HDF5Array,
+    magrittr,
+    plotly,
+    S4Vectors,
+    sechm,
+    shiny,
+    shinyauthr,
+    shinycssloaders,
+    shinydashboard,
+    shinyjqui,
+    shinyjs,
+    SingleCellExperiment,
+    SummarizedExperiment,
+    waiter
 Depends: 
     R (>= 3.5)
 Suggests: 
