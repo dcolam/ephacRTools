@@ -103,11 +103,21 @@ prepareMultipleDFs <- function(l_files){
     return(df)
   })
   print("Excels Loaded")
-  names(dfs) <- l_files
+  safe_names <- lapply(l_files, function(x){basename(x)})
+  print(safe_names)
+  names(dfs) <- safe_names
+
   df <- dplyr::bind_rows(dfs, .id = "column_label")
-  df$Plate_ID <- sapply(df$Plate_ID, function(x){
-    unlist(stringr::str_split(x, "\\r"))[1]
-  })
+  print(df)
+  if (!"Plate_ID" %in% colnames(df)) {
+    df$Plate_ID <- df$column_label
+  }else{
+    df$Plate_ID <- sapply(df$Plate_ID, function(x){
+      unlist(stringr::str_split(x, "\\r"))[1]
+    })
+  }
+
+
 
   return(df)
 }
