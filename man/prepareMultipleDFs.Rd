@@ -9,7 +9,7 @@ Make sure that it contains Online Analysis Results as well as QCs per sweep:
 - Capacitance
 Make sure that the Excel file contains a "Nanion Chip Barcode" column}
 \usage{
-prepareMultipleDFs(pathDF.list)
+prepareMultipleDFs(l_files)
 }
 \arguments{
 \item{vector}{list of Paths to DataControl Excel files}

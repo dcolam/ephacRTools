@@ -80,6 +80,11 @@ prep_df <- function(wd_path, df) {
   return(df)
 
 }
+#' Internal Aggregation function
+#' @param df The data frame to be aggregated
+#' @param cols by which columns to aggregate
+#' @return Aggregated df
+#' @export
 ag <- function(df, cols, fun=mean) {
 
   c <- colnames(df[,unlist(lapply(df, is.numeric))])
@@ -91,10 +96,6 @@ ag <- function(df, cols, fun=mean) {
 #' Filter your newly adjusted data frame so that it doesn't include the "empty" wells
 #' @param prepared_df The data frame that you just adjusted in prep_df
 #' @param plate_ID The plate ID that you are focusing on
-#' @return A filtered data frame
-#' @export
-
-#' @param ion The compound that was added or removed during the measurements
 #' @return A filtered data frame
 #' @export
 filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("Well", "QC", "Compound", "Conditions", "Plate_ID")) {

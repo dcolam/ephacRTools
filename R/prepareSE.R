@@ -102,7 +102,7 @@ prepareMultipleDFs <- function(l_files){
     df <- prepareDF(x)
     return(df)
   })
-
+  print("Excels Loaded")
   names(dfs) <- l_files
   df <- dplyr::bind_rows(dfs, .id = "column_label")
   df$Plate_ID <- sapply(df$Plate_ID, function(x){

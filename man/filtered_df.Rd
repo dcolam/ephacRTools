@@ -15,12 +15,8 @@ filtered_df(
 \item{prepared_df}{The data frame that you just adjusted in prep_df}
 
 \item{plate_ID}{The plate ID that you are focusing on}
-
-\item{ion}{The compound that was added or removed during the measurements}
 }
 \value{
-A filtered data frame
-
 A filtered data frame
 }
 \description{
