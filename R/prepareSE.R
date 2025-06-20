@@ -96,7 +96,7 @@ prepareDF <- function(pathDF){
 #'
 #' @return A cleaned data.frame in long format
 #' @export
-prepareMultipleDFs <- function(pathDF.list){
+prepareMultipleDFs <- function(l_files){
 
   dfs <- lapply(l_files, function(x) {
     df <- prepareDF(x)

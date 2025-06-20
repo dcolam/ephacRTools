@@ -266,7 +266,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           l_files <- if (length(input$fileEphys$datapath) > 1) {
             as.list(input$fileEphys$datapath)
           } else {
-            list(input$fileEphys$datapath)
+            input$fileEphys$datapath
           }
 
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
