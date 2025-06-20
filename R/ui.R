@@ -97,7 +97,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                       menuItem("Define Groupings", tabName="tab_groupings"),
                                                       menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
-                                                              tags$span(paste0("tinySEV v",
+                                                              tags$span(paste0("ephacRTools v",
                                                                                as.character(packageVersion("ephacRTools")))))
                                           )
                          ),

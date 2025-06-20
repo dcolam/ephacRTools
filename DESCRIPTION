@@ -19,9 +19,11 @@ Imports:
     DT,
     ggbeeswarm,
     ggplot2,
+    hablar,
     HDF5Array,
     magrittr,
     plotly,
+    reshape2,
     S4Vectors,
     sechm,
     shiny,
@@ -31,6 +33,7 @@ Imports:
     shinyjqui,
     shinyjs,
     SingleCellExperiment,
+    stringr,
     SummarizedExperiment,
     waiter
 Depends: 

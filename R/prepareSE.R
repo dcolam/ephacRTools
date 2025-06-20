@@ -15,6 +15,7 @@ NULL
 prepareDF <- function(pathDF){
 
   df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
+  print("excel loaded")
   df$`\r` <- NULL
   names(df)[1:2] <- c("Well", "QC")
 
@@ -127,8 +128,10 @@ prepareSE <- function(pathDF, conditionColumns= c("Compound")){
 
 if(length(pathDF) > 1){
     df <- prepareMultipleDFs(pathDF)
+    print("multi")
 }else{
       df <- prepareDF(pathDF)
+
       }
 
 df <- df %>% hablar::retype()
@@ -159,13 +162,13 @@ cd <- cd[cols,]
 
 cd$Row <- sapply(cd$Well, function(x){
 
-  str_sub(x, 1, 1)
+  stringr::str_sub(x, 1, 1)
 
 })
 
 cd$Column <- sapply(cd$Well, function(x){
 
-  str_sub(x, 2, 3)
+  stringr::str_sub(x, 2, 3)
 
 })
 
@@ -211,7 +214,6 @@ se <- SingleCellExperiment::SingleCellExperiment(
   colData=colData(se),
   rowData= rowData(se)
 )
-
 return(se)
 
 }

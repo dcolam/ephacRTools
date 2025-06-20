@@ -260,9 +260,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         if(!is.null(input$fileEphys)){
           #x <- readRDS(input$fileEphys$datapath)
 
+
+          print(input$fileEphys$datapath)
+          print(length(input$fileEphys$datapath))
           l_files <- ifelse(length(input$fileEphys$datapath) > 1,
                             as.list(input$fileEphys$datapath),
-                            input$fileEphys$datapath)
+                            unlist(input$fileEphys$datapath))
 
 
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
