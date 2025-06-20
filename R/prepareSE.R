@@ -82,7 +82,7 @@ prepareDF <- function(pathDF){
   new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
     unlist(stringr::str_split(x, "\\r"))[1]
   })
-
+  print(new.df)
   return(new.df)
 
 }
