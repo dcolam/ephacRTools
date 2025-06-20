@@ -338,12 +338,21 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         }else{
           stop("The object is not a SummarizedExperiment!")
         }
-      }, error=function(e){
-        print(conditionMessage(e))
+      }, error = function(e){
+        # Print error details to console/logs
+        message("Caught an error:")
+        message(conditionMessage(e))
+        message("Traceback:")
         print(traceback())
-        showModal(modalDialog(easyClose=TRUE, title="Error with upload",
-                              "The file was not recognized. Are you sure that it is an .excel file?",
-                              tags$pre(e)))
+
+        # Show detailed error to user in a modal dialog
+        showModal(modalDialog(
+          title = "Error with upload",
+          easyClose = TRUE,
+          "An error occurred while processing the uploaded file. Details:",
+          tags$pre(conditionMessage(e)),  # show error message only
+          tags$pre(paste(capture.output(traceback()), collapse = "\n"))  # show traceback
+        ))
       })
     })
 

@@ -108,7 +108,6 @@ prepareMultipleDFs <- function(l_files){
   names(dfs) <- safe_names
 
   df <- dplyr::bind_rows(dfs, .id = "column_label")
-  print(df)
   if (!"Plate_ID" %in% colnames(df)) {
     df$Plate_ID <- df$column_label
   }else{
@@ -116,8 +115,6 @@ prepareMultipleDFs <- function(l_files){
       unlist(stringr::str_split(x, "\\r"))[1]
     })
   }
-
-
 
   return(df)
 }
