@@ -26,6 +26,7 @@ Imports:
     HDF5Array,
     magrittr,
     plotly,
+    R.utils,
     readxl,
     reshape2,
     RSQLite,

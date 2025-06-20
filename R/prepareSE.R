@@ -20,7 +20,7 @@ prepareDF <- function(pathDF){
   #df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
 
   df <- tryCatch({
-    withTimeout({
+    R.utils::withTimeout({
       as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
     }, timeout = 5)  # timeout after 5 seconds
   }, TimeoutException = function(e) {
