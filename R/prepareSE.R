@@ -17,7 +17,22 @@ prepareDF <- function(pathDF){
   print(pathDF)
   print(typeof(pathDF))
   print(file.exists(pathDF))
-  df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
+  #df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
+
+  df <- tryCatch({
+    withTimeout({
+      as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
+    }, timeout = 5)  # timeout after 5 seconds
+  }, TimeoutException = function(e) {
+    warning(paste("Timeout while reading:", pathDF))
+    return(NULL)
+  }, error = function(e) {
+    warning(paste("Failed to read file:", pathDF))
+    print(conditionMessage(e))
+    return(NULL)
+  })
+
+
   print("excel loaded")
   df$`\r` <- NULL
   names(df)[1:2] <- c("Well", "QC")
