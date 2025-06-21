@@ -76,7 +76,7 @@ prepareDF <- function(pathDF){
   if("\r" %in% colnames(df)){
     df$`\r` <- NULL
   }
-  print(colnames(df))
+
 
   tryCatch({
     if("\r" %in% colnames(df)){
@@ -100,10 +100,12 @@ prepareDF <- function(pathDF){
       volt <- df[df$Well == "Sweep Voltage", ]
       df <- df[df$Well != "Sweep Voltage", ]
       volt <- volt[, grep("Compound", names(volt))]
+      print(volt)
       volt_steps <- TRUE
     } else {
       volt <- df[1, ]
       volt[1, ] <- "NAm"
+      volt <- volt[, grep("Compound", names(volt))]
       print(volt)
       volt_steps <- FALSE
     }
