@@ -115,25 +115,27 @@ prepareDF <- function(pathDF){
       unlist(stringr::str_split(x, " "))[3]
     })
 
-    if(!volt_steps){
-      new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep")
-    }else{
-      new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
-    }
+    #if(!volt_steps){
+    #  new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep")
+    #}else{
+    #  new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
+
+    #}
+    new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
     new.df <- data.frame(matrix(ncol=length(new.cols),nrow=0, dimnames=list(NULL, new.cols)))
     #print(new.cols)
     for(s in no.sweeps){
       cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value=T))
       temp <- df[,cols]
       temp$Sweep <- s
-      if(volt_steps){
+      #if(volt_steps){
         temp$V_Clamp <- volt[,grep(s, names(volt), value=T)]
-      }
+      #}
       colnames(temp) <- colnames(new.df)
       new.df <- rbind(new.df,temp)
     }
 
-    if(volt_steps){
+    #if(volt_steps){
       new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
       for(cols in colnames(new.df)){
         tryCatch(expr = {
@@ -143,7 +145,7 @@ prepareDF <- function(pathDF){
           new.df[,cols] <- new.df[,cols]
         })
       }
-    }
+    #}
 
     new.df$Well <- sapply(new.df$Well, function(x){
       unlist(stringr::str_split(x, "\\r"))[1]
