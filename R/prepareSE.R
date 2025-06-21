@@ -13,25 +13,66 @@ NULL
 #' @return A cleaned data.frame in long format
 #' @export
 prepareDF <- function(pathDF){
-  print("prepareDF called with:")
 
-  #pathDF <- "C:\\Users\\davec\\Documents\\R-Markdowns\\ephacRTools\\data-raw\\ROMK\\NCI_ramp_ATP1A1_18.30.46.xlsx"
-  print(pathDF)
-  print(typeof(pathDF))
-  print(file.exists(pathDF))
-  #df <- as.data.frame(readxl::read_excel(pathDF, sheet="OA Export", col_types = "text"))
-  print(readxl::excel_sheets(pathDF))
+  prepareDF <- function(pathDF) {
+    cat("prepareDF called with:\n")
+    cat("📁 Path:", pathDF, "\n")
+    cat("📄 File exists:", file.exists(pathDF), "\n")
 
+    safeRead <- function(path) {
+      cat("📝 Attempting to read Excel file...\n")
+      sheets <- tryCatch({
+        readxl::excel_sheets(path)
+      }, error = function(e) {
+        cat("❌ Failed to list sheets\n")
+        cat("Reason:", conditionMessage(e), "\n")
+        return(NULL)
+      })
 
-  df <- tryCatch({
-    as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
-  }, error = function(e) {
-    warning(paste("Failed to read file:", pathDF))
-    print(conditionMessage(e))
-    return(NULL)
-  })
+      if (is.null(sheets)) {
+        return(NULL)
+      }
 
-  print("excel loaded")
+      cat("📄 Sheets found:", paste(sheets, collapse = ", "), "\n")
+
+      sheet <- "OA Export"
+      if (!(sheet %in% sheets)) {
+        cat("❌ Sheet not found:", sheet, "\n")
+        return(NULL)
+      }
+
+      df <- tryCatch({
+        readxl::read_excel(path, sheet = sheet, n_max = 5)
+      }, error = function(e) {
+        cat("❌ Failed to read sheet:", sheet, "\n")
+        cat("Reason:", conditionMessage(e), "\n")
+        return(NULL)
+      })
+
+      cat("✅ Sample read successful\n")
+      return(df)
+    }
+
+    # Diagnostic test read
+    preview <- safeRead(pathDF)
+
+    if (is.null(preview)) {
+      cat("🛑 Aborting prepareDF: Excel read failed\n")
+      return(NULL)
+    }
+
+    cat("✅ Excel test read passed. Proceeding to full read...\n")
+
+    # Now do full read
+    df <- tryCatch({
+      as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
+    }, error = function(e) {
+      cat("❌ Full read failed\n")
+      cat("Reason:", conditionMessage(e), "\n")
+      return(NULL)
+    })
+
+    cat("📦 Full Excel loaded successfully\n")
 
   if("\r" %in% colnames(df)){
     df$`\r` <- NULL
