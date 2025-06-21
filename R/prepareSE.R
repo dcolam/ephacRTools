@@ -55,14 +55,14 @@ prepareDF <- function(pathDF){
     }
 
     # Diagnostic test read
-    preview <- safeRead(pathDF)
+    #preview <- safeRead(pathDF)
 
-    if (is.null(preview)) {
-      cat("🛑 Aborting prepareDF: Excel read failed\n")
-      return(NULL)
-    }
+    #if (is.null(preview)) {
+    #  cat("🛑 Aborting prepareDF: Excel read failed\n")
+    #  return(NULL)
+    #}
 
-    cat("✅ Excel test read passed. Proceeding to full read...\n")
+    #cat("✅ Excel test read passed. Proceeding to full read...\n")
 
     # Now do full read
     df <- tryCatch({

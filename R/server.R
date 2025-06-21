@@ -271,6 +271,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           #  input$fileEphys$datapath
           #}
 
+          print(input$fileEphys)
+
           l_files <- as.list(input$fileEphys$datapath)
 
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
