@@ -26,6 +26,8 @@ df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
 se_iN <- mergeSEandImg(se_iN, df_img, tableType = "coloc")
 df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
 se_iN <- mergeSEandImg(se_iN, df_img, tableType = "pa")
+colData(se_iN)
+rowData(se_iN)
 usethis::use_data(se_iN, overwrite = TRUE)
 
 ## Primary neurons dataset with imaging data
