@@ -67,7 +67,7 @@ prepareDF <- function(pathDF){
     # Now do full read
     df <- tryCatch({
       #as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
-      openxlsx2::read_xlsx(pathDF, sheet =  "OA Export")
+      openxlsx2::read_xlsx(pathDF, sheet =  "OA Export", check_names = TRUE)
     }, error = function(e) {
       cat("❌ Full read failed\n")
       cat("Reason:", conditionMessage(e), "\n")
@@ -99,9 +99,9 @@ prepareDF <- function(pathDF){
       unlist(stringr::str_split(s, " "))[2]
     }))
     volt_steps <- FALSE
-    if ("Sweep Voltage" %in% df$Well) {
-      volt <- df[df$Well == "Sweep Voltage", ]
-      df <- df[df$Well != "Sweep Voltage", ]
+    if (grepl("Sweep Voltage", df$Well)) {
+      volt <- df[grepl("Sweep Voltage", df$Well), ]
+      df <- df[!grepl("Sweep Voltage", df$Well), ]
       volt <- volt[, grep("Compound", names(volt))]
       print(volt)
       volt_steps <- TRUE
