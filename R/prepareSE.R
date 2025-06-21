@@ -55,7 +55,7 @@ prepareDF <- function(pathDF){
     no.sweeps <- unique(sapply(sweeps, FUN=function(s){
       unlist(stringr::str_split(s, " "))[2]
     }))
-
+    volt_steps <- FALSE
     if ("Sweep Voltage" %in% df$Well) {
       volt <- df[df$Well == "Sweep Voltage", ]
       df <- df[df$Well != "Sweep Voltage", ]
