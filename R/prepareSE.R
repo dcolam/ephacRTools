@@ -21,7 +21,8 @@ prepareDF <- function(pathDF){
     safeRead <- function(path) {
       cat("📝 Attempting to read Excel file...\n")
       sheets <- tryCatch({
-        readxl::excel_sheets(path)
+        #readxl::excel_sheets(path)
+        sheets <- openxlsx2::wb_get_sheet_names(pathDF)
       }, error = function(e) {
         cat("❌ Failed to list sheets\n")
         cat("Reason:", conditionMessage(e), "\n")
@@ -41,7 +42,8 @@ prepareDF <- function(pathDF){
       }
 
       df <- tryCatch({
-        readxl::read_excel(path, sheet = sheet, n_max = 5)
+        #readxl::read_excel(path, sheet = sheet, n_max = 5)
+        openxlsx2::read_xlsx(pathDF, sheet = sheet)
       }, error = function(e) {
         cat("❌ Failed to read sheet:", sheet, "\n")
         cat("Reason:", conditionMessage(e), "\n")
@@ -64,7 +66,8 @@ prepareDF <- function(pathDF){
 
     # Now do full read
     df <- tryCatch({
-      as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
+      #as.data.frame(readxl::read_excel(pathDF, sheet = "OA Export", col_types = "text"))
+      openxlsx2::read_xlsx(pathDF, sheet =  "OA Export")
     }, error = function(e) {
       cat("❌ Full read failed\n")
       cat("Reason:", conditionMessage(e), "\n")
