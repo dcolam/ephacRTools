@@ -25,6 +25,7 @@ Imports:
     hablar,
     HDF5Array,
     magrittr,
+    openxlsx2,
     plotly,
     R.utils,
     readxl,
