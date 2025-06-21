@@ -14,7 +14,6 @@ NULL
 #' @export
 prepareDF <- function(pathDF){
 
-  prepareDF <- function(pathDF) {
     cat("prepareDF called with:\n")
     cat("📁 Path:", pathDF, "\n")
     cat("📄 File exists:", file.exists(pathDF), "\n")
