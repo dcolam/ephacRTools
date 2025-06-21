@@ -22,7 +22,7 @@ prepareDF <- function(pathDF){
       cat("📝 Attempting to read Excel file...\n")
       sheets <- tryCatch({
         #readxl::excel_sheets(path)
-        sheets <- openxlsx2::wb_get_sheet_names(pathDF)
+        sheets <- openxlsx2::wb_get_sheet_names(path)
       }, error = function(e) {
         cat("❌ Failed to list sheets\n")
         cat("Reason:", conditionMessage(e), "\n")
@@ -43,7 +43,7 @@ prepareDF <- function(pathDF){
 
       df <- tryCatch({
         #readxl::read_excel(path, sheet = sheet, n_max = 5)
-        openxlsx2::read_xlsx(pathDF, sheet = sheet)
+        openxlsx2::read_xlsx(path, sheet = sheet)
       }, error = function(e) {
         cat("❌ Failed to read sheet:", sheet, "\n")
         cat("Reason:", conditionMessage(e), "\n")
