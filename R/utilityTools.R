@@ -115,7 +115,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
     dplyr::rename(UMAP1="V1",
            UMAP2="V2")
 
-  SingleCellExperiment::reducedDims(se) <- list(PCA=pca_result$x, TSNE=DataFrame(tsne_data), UMAP=DataFrame(umap_df))
+  SingleCellExperiment::reducedDims(se) <- list(PCA=pca_result$x, TSNE=S4Vectors::DataFrame(tsne_data), UMAP=S4Vectors::DataFrame(umap_df))
 
   se$cluster.umap <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
   se$cluster.tsne <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "TSNE")[,1:2], k_clusters, iter.max = 100)$cluster)
