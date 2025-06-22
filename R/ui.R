@@ -152,12 +152,14 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                            column(
                                              width = 6,
                                              fileInput("fileEphys", "Ephys Excel File (.xlsx)", multiple = TRUE,
-                                                       accept = ".xlsx")
+                                                       accept = ".xlsx"),
+                                             actionButton("loadEphys", label = "Load Excel into SE")
                                            ),
                                            column(
                                              width = 6,
                                              fileInput("fileDB", "Imaging Results (.db)", multiple = TRUE,
-                                                       accept = ".db")
+                                                       accept = ".db"),
+                                             actionButton("loadDB", label = "Connect Ephys and Imaging Results")
                                            )
                                          ),
 

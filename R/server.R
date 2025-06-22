@@ -257,7 +257,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         })
     })
 
-    observeEvent(input$fileEphys, {
+    observeEvent(input$loadEphys, {
       tryCatch({
         if (!is.null(input$fileEphys)) {
 
@@ -271,8 +271,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           #  input$fileEphys$datapath
           #}
 
-          print(input$fileEphys)
-
+          print(input$loadEphys)
+          req(input$fileEphys)
           PathFiles <- input$fileEphys$datapath
           print(PathFiles)
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
