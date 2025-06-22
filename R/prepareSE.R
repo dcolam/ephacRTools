@@ -18,51 +18,20 @@ prepareDF <- function(pathToDF){
     cat("📁 Path:", pathToDF, "\n")
     cat("📄 File exists:", file.exists(pathToDF), "\n")
 
-    safeRead <- function(path) {
-      cat("📝 Attempting to read Excel file...\n")
-      sheets <- tryCatch({
-        readxl::excel_sheets(path)
-        #sheets <- openxlsx2::wb_get_sheet_names(path)
-      }, error = function(e) {
-        cat("❌ Failed to list sheets\n")
-        cat("Reason:", conditionMessage(e), "\n")
-        return(NULL)
-      })
 
-      if (is.null(sheets)) {
-        return(NULL)
-      }
+    cat("🔍 Variables in this function:\n")
+    print(mget(ls(), environment()))
 
-      cat("📄 Sheets found:", paste(sheets, collapse = ", "), "\n")
-
-      sheet <- "OA Export"
-      if (!(sheet %in% sheets)) {
-        cat("❌ Sheet not found:", sheet, "\n")
-        return(NULL)
-      }
-
-      df <- tryCatch({
-        readxl::read_excel(path, sheet = sheet, n_max = 5)
-        #openxlsx2::read_xlsx(path, sheet = sheet)
-      }, error = function(e) {
-        cat("❌ Failed to read sheet:", sheet, "\n")
-        cat("Reason:", conditionMessage(e), "\n")
-        return(NULL)
-      })
-
-      cat("✅ Sample read successful\n")
-      return(df)
-    }
 
     # Diagnostic test read
-    preview <- safeRead(pathToDF)
+    #preview <- safeRead(pathToDF)
 
-    if (is.null(preview)) {
-      cat("🛑 Aborting prepareDF: Excel read failed\n")
-      return(NULL)
-    }
+    #if (is.null(preview)) {
+    #  cat("🛑 Aborting prepareDF: Excel read failed\n")
+    #  return(NULL)
+    #}
 
-    cat("✅ Excel test read passed. Proceeding to full read...\n")
+    #cat("✅ Excel test read passed. Proceeding to full read...\n")
 
     # Now do full read
     df <- tryCatch({
@@ -83,6 +52,7 @@ prepareDF <- function(pathToDF){
     if("\r" %in% colnames(df)){
       df$`\r` <- NULL
     }
+
 
 
     names(df)[1:2] <- c("Well", "QC")
@@ -145,20 +115,24 @@ prepareDF <- function(pathToDF){
 
     if(volt_steps){
       new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
-      for(cols in colnames(new.df)){
-        tryCatch(expr = {
-          recoverCol <- new.df[,cols]
-          new.df[,cols] <- as.numeric(new.df[,cols])
-        }, warning = function(w){
-          new.df[,cols] <- new.df[,cols]
-        })
-      }
+      #for(cols in colnames(new.df)){
+      #  tryCatch(expr = {
+      #    recoverCol <- new.df[,cols]
+      #    new.df[,cols] <- as.numeric(new.df[,cols])
+      #  }, warning = function(w){
+      #    new.df[,cols] <- new.df[,cols]
+      #  })
+      #}
+      new.df <- new.df %>% hablar::retype()
+
     }
 
     new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
       unlist(stringr::str_split(x, "\\r"))[1]
     })
-    print(head(new.df, n=3))
+    #print(head(new.df, n=3))
+    cat("🔍 Variables in this function:\n")
+    print(mget(ls(), environment()))
     return(new.df)
 
   }, error = function(e) {
