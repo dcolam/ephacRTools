@@ -62,7 +62,7 @@ prepareDF <- function(pathToDF){
       return(NULL)
     }
 
-    cv cat("✅ Excel test read passed. Proceeding to full read...\n")
+    cat("✅ Excel test read passed. Proceeding to full read...\n")
 
     # Now do full read
     df <- tryCatch({
