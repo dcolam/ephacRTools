@@ -21,8 +21,8 @@ prepareDF <- function(pathToDF){
     safeRead <- function(path) {
       cat("📝 Attempting to read Excel file...\n")
       sheets <- tryCatch({
-        #readxl::excel_sheets(path)
-        sheets <- openxlsx2::wb_get_sheet_names(path)
+        readxl::excel_sheets(path)
+        #sheets <- openxlsx2::wb_get_sheet_names(path)
       }, error = function(e) {
         cat("❌ Failed to list sheets\n")
         cat("Reason:", conditionMessage(e), "\n")
