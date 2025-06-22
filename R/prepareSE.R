@@ -35,20 +35,16 @@ prepareDF <- function(pathToDF){
 
     # Now do full read
     df <- tryCatch({
-      as.data.frame(readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text"))
+      readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text")
       #as.data.frame(openxlsx2::read_xlsx(pathDF, sheet =  "OA Export", check_names = TRUE))
     }, error = function(e) {
       cat("❌ Full read failed\n")
       cat("Reason:", conditionMessage(e), "\n")
       return(NULL)
     })
-
+    df <- as.data.frame(df)
     cat("📦 Full Excel loaded successfully\n")
 
-
-
-
-  tryCatch({
     if("\r" %in% colnames(df)){
       df$`\r` <- NULL
     }
@@ -107,7 +103,7 @@ prepareDF <- function(pathToDF){
       tempdf <- df[,cols]
       tempdf$Sweep <- s
       #if(volt_steps){
-        tempdf$V_Clamp <- volt[,grep(s, names(volt), value=T)]
+      tempdf$V_Clamp <- volt[,grep(s, names(volt), value=T)]
       #}
       colnames(tempdf) <- colnames(new.df)
       new.df <- rbind(new.df, tempdf)
@@ -134,13 +130,8 @@ prepareDF <- function(pathToDF){
     cat("🔍 Variables in this function:\n")
     #print(mget(ls(), environment()))
     new.df <- new.df %>% hablar::retype()
+    print(head(new.df, n=3))
     return(new.df)
-
-  }, error = function(e) {
-    warning(paste("Failed to read file:", pathToDF))
-    print(conditionMessage(e))
-    return(NULL)
-  })
 
 }
 
@@ -157,7 +148,7 @@ prepareDF <- function(pathToDF){
 prepareMultipleDFs <- function(pathList){
 
   dfs <- lapply(pathList, function(x) {
-    print(paste("File:", x))
+    print(paste("File:", x, "exists:", file.exists(x)))
     df <- prepareDF(as.character(x))
     if (is.null(df)) {
       warning(paste("Skipping file due to read error:", x))

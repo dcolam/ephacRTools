@@ -258,10 +258,11 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
 
     observeEvent(input$loadEphys, {
+      req(input$fileEphys)
       tryCatch({
         if (!is.null(input$fileEphys)) {
 
-          print(input$fileEphys$datapath)
+          print(input$fileEphys)
           print(length(input$fileEphys$datapath))
 
           # Fix ifelse() misuse: use plain if()
@@ -272,15 +273,16 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           #}
 
           print(input$loadEphys)
-          req(input$fileEphys)
+
           PathFiles <- input$fileEphys$datapath
+
           print(PathFiles)
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
             incProgress(0.5, detail = "This may take a while...")
 
             tryCatch({
               x <- tryCatch({
-                prepareSE(PathFiles)
+                ephacRTools::prepareSE(PathFiles)
               }, error = function(e) {
                 stop(paste("prepareSE failed:", conditionMessage(e)))
               })
