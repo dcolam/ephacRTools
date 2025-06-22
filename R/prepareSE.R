@@ -55,7 +55,7 @@ prepareDF <- function(pathToDF){
     }
 
     # Diagnostic test read
-    preview <- safeRead(pathDF)
+    preview <- safeRead(pathToDF)
 
     if (is.null(preview)) {
       cat("🛑 Aborting prepareDF: Excel read failed\n")
