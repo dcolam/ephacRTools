@@ -55,14 +55,14 @@ prepareDF <- function(pathToDF){
     }
 
     # Diagnostic test read
-    #preview <- safeRead(pathDF)
+    preview <- safeRead(pathDF)
 
-    #if (is.null(preview)) {
-    #  cat("🛑 Aborting prepareDF: Excel read failed\n")
-    #  return(NULL)
-    #}
+    if (is.null(preview)) {
+      cat("🛑 Aborting prepareDF: Excel read failed\n")
+      return(NULL)
+    }
 
-    #cat("✅ Excel test read passed. Proceeding to full read...\n")
+    cv cat("✅ Excel test read passed. Proceeding to full read...\n")
 
     # Now do full read
     df <- tryCatch({
@@ -79,7 +79,7 @@ prepareDF <- function(pathToDF){
 
 
 
-  #tryCatch({
+  tryCatch({
     if("\r" %in% colnames(df)){
       df$`\r` <- NULL
     }
@@ -134,16 +134,16 @@ prepareDF <- function(pathToDF){
     #print(new.cols)
     for(s in no.sweeps){
       cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value=T))
-      temp <- df[,cols]
-      temp$Sweep <- s
+      tempdf <- df[,cols]
+      tempdf$Sweep <- s
       #if(volt_steps){
-        temp$V_Clamp <- volt[,grep(s, names(volt), value=T)]
+        tempdf$V_Clamp <- volt[,grep(s, names(volt), value=T)]
       #}
-      colnames(temp) <- colnames(new.df)
-      new.df <- rbind(new.df,temp)
+      colnames(tempdf) <- colnames(new.df)
+      new.df <- rbind(new.df, tempdf)
     }
 
-    #if(volt_steps){
+    if(volt_steps){
       new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
       for(cols in colnames(new.df)){
         tryCatch(expr = {
@@ -153,7 +153,7 @@ prepareDF <- function(pathToDF){
           new.df[,cols] <- new.df[,cols]
         })
       }
-    #}
+    }
 
     new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
       unlist(stringr::str_split(x, "\\r"))[1]
@@ -161,11 +161,11 @@ prepareDF <- function(pathToDF){
     print(head(new.df, n=3))
     return(new.df)
 
-  #}, error = function(e) {
-  #  warning(paste("Failed to read file:", pathToDF))
-  #  print(conditionMessage(e))
-  #  return(NULL)
-  #})
+  }, error = function(e) {
+    warning(paste("Failed to read file:", pathToDF))
+    print(conditionMessage(e))
+    return(NULL)
+  })
 
 }
 

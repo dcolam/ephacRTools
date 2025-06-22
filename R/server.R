@@ -273,14 +273,14 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
           print(input$fileEphys)
 
-          l_files <- as.list(input$fileEphys$datapath)
-
+          PathFiles <- input$fileEphys$datapath
+          print(PathFiles)
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
             incProgress(0.5, detail = "This may take a while...")
 
             tryCatch({
               x <- tryCatch({
-                prepareSE(l_files)
+                prepareSE(PathFiles)
               }, error = function(e) {
                 stop(paste("prepareSE failed:", conditionMessage(e)))
               })
