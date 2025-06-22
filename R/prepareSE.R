@@ -20,7 +20,7 @@ prepareDF <- function(pathToDF){
 
 
     cat("🔍 Variables in this function:\n")
-    print(mget(ls(), environment()))
+    #print(mget(ls(), environment()))
 
 
     # Diagnostic test read
@@ -123,7 +123,7 @@ prepareDF <- function(pathToDF){
       #    new.df[,cols] <- new.df[,cols]
       #  })
       #}
-      new.df <- new.df %>% hablar::retype()
+
 
     }
 
@@ -132,7 +132,8 @@ prepareDF <- function(pathToDF){
     })
     #print(head(new.df, n=3))
     cat("🔍 Variables in this function:\n")
-    print(mget(ls(), environment()))
+    #print(mget(ls(), environment()))
+    new.df <- new.df %>% hablar::retype()
     return(new.df)
 
   }, error = function(e) {
