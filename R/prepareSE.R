@@ -34,14 +34,15 @@ prepareDF <- function(pathToDF){
     #cat("✅ Excel test read passed. Proceeding to full read...\n")
 
     # Now do full read
-    df <- tryCatch({
-      readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text")
+    df <- readxl::read_excel(pathToDF, sheet = "OA Export")
+    #df <- tryCatch({
+    #  readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text")
       #as.data.frame(openxlsx2::read_xlsx(pathDF, sheet =  "OA Export", check_names = TRUE))
-    }, error = function(e) {
-      cat("❌ Full read failed\n")
-      cat("Reason:", conditionMessage(e), "\n")
-      return(NULL)
-    })
+    #}, error = function(e) {
+    #  cat("❌ Full read failed\n")
+    #  cat("Reason:", conditionMessage(e), "\n")
+    #  return(NULL)
+    #})
     df <- as.data.frame(df)
     cat("📦 Full Excel loaded successfully\n")
 
