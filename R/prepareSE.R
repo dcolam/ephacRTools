@@ -12,128 +12,90 @@ NULL
 #'
 #' @return A cleaned data.frame in long format
 #' @export
-prepareDF <- function(pathToDF){
+prepareDF <- function(pathToDF) {
 
-    cat("prepareDF called with:\n")
-    cat("📁 Path:", pathToDF, "\n")
-    cat("📄 File exists:", file.exists(pathToDF), "\n")
+  cat("📦 Starting prepareDF\n")
+  cat("📁 Path:", pathToDF, "\n")
+  cat("📄 File exists:", file.exists(pathToDF), "\n")
+  cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
 
+  # Read file
+  df <- readxl::read_excel(pathToDF, sheet = "OA Export")
+  df <- as.data.frame(df)
+  cat("✅ Full Excel loaded\n")
+  cat("🧠 Memory (after read):", format(object.size(df), units = "auto"), "\n")
 
-    cat("🔍 Variables in this function:\n")
-    #print(mget(ls(), environment()))
+  # Clean up unwanted column
+  if ("\r" %in% colnames(df)) df$`\r` <- NULL
 
+  # Standardize columns
+  names(df)[1:2] <- c("Well", "QC")
+  df$Well <- sapply(df$Well, function(x) unlist(stringr::str_split(x, "\\r"))[1])
 
-    # Diagnostic test read
-    #preview <- safeRead(pathToDF)
+  # Ensure barcode column exists
+  if (!("Nanion Chip Barcode" %in% colnames(df))) {
+    df[,"Nanion Chip Barcode"] <- "NoPlateID"
+  }
 
-    #if (is.null(preview)) {
-    #  cat("🛑 Aborting prepareDF: Excel read failed\n")
-    #  return(NULL)
-    #}
+  # Handle voltage sweep info
+  volt_steps <- FALSE
+  if ("Sweep Voltage" %in% df$Well) {
+    volt <- df[grepl("Sweep Voltage", df$Well), ]
+    df <- df[!grepl("Sweep Voltage", df$Well), ]
+    volt <- volt[, grep("Compound", names(volt))]
+    volt_steps <- TRUE
+  } else {
+    volt <- df[1, ]
+    volt[1, ] <- "NAm"
+    volt <- volt[, grep("Compound", names(volt))]
+  }
 
-    #cat("✅ Excel test read passed. Proceeding to full read...\n")
+  # Filter to acceptable wells
+  acceptable_wells <- as.vector(outer(LETTERS[1:16], sprintf("%02d", 1:24), paste0))
+  df <- df[df$Well %in% acceptable_wells,]
 
-    # Now do full read
-    df <- readxl::read_excel(pathToDF, sheet = "OA Export")
-    #df <- tryCatch({
-    #  readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text")
-      #as.data.frame(openxlsx2::read_xlsx(pathDF, sheet =  "OA Export", check_names = TRUE))
-    #}, error = function(e) {
-    #  cat("❌ Full read failed\n")
-    #  cat("Reason:", conditionMessage(e), "\n")
-    #  return(NULL)
-    #})
-    df <- as.data.frame(df)
-    cat("📦 Full Excel loaded successfully\n")
+  # Sweep parsing
+  sweeps <- grep("Sweep \\d", colnames(df), value = TRUE)
+  no.sweeps <- unique(sapply(sweeps, function(s) unlist(stringr::str_split(s, " "))[2]))
 
-    if("\r" %in% colnames(df)){
-      df$`\r` <- NULL
-    }
+  new.cols <- sapply(grep(no.sweeps[1], sweeps, value = TRUE), function(x) {
+    unlist(stringr::str_split(x, " "))[3]
+  })
+  new.cols <- c("Well", "QC", "Plate_ID", new.cols, "Sweep", "V_Clamp")
+  new.df <- data.frame(matrix(ncol = length(new.cols), nrow = 0, dimnames = list(NULL, new.cols)))
 
+  # Rebuild the long-format dataframe
+  for (s in no.sweeps) {
+    cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value = TRUE))
+    tempdf <- df[, cols]
+    tempdf$Sweep <- s
+    tempdf$V_Clamp <- volt[, grep(s, names(volt), value = TRUE)]
+    colnames(tempdf) <- colnames(new.df)
+    new.df <- rbind(new.df, tempdf)
+  }
 
+  # Optional numeric conversion for V_Clamp
+  if (volt_steps) {
+    new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
+  }
 
-    names(df)[1:2] <- c("Well", "QC")
-    df$Well <- sapply(df$Well, function(x){
-      unlist(stringr::str_split(x, "\\r"))[1]
-    })
+  # Standardize Plate_ID column
+  new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x) unlist(stringr::str_split(x, "\\r"))[1])
 
-    if(!("Nanion Chip Barcode" %in% colnames(df))){
-      df[,"Nanion Chip Barcode"] <- "NoPlateID"
-    }
+  # Re-type using hablar
+  new.df <- new.df %>% hablar::retype()
 
-    volt_steps <- FALSE
-    if ("Sweep Voltage" %in% df$Well) {
-      volt <- df[grepl("Sweep Voltage", df$Well), ]
-      df <- df[!grepl("Sweep Voltage", df$Well), ]
-      volt <- volt[, grep("Compound", names(volt))]
+  cat("📈 Preview of final dataframe:\n")
+  print(head(new.df, 3))
+  cat("🧠 Memory (before cleanup):", format(object.size(new.df), units = "auto"), "\n")
 
-      volt_steps <- TRUE
-    } else {
-      volt <- df[1, ]
-      volt[1, ] <- "NAm"
-      volt <- volt[, grep("Compound", names(volt))]
+  # Cleanup: Remove all but new.df
+  rm(list = setdiff(ls(), "new.df"))
+  gc()
+  cat("✅ prepareDF complete\n")
+  cat("🧠 Memory (after cleanup):", format(object.size(new.df), units = "auto"), "\n")
 
-      volt_steps <- FALSE
-    }
-
-    acceptable_wells <- as.vector(outer(LETTERS[1:16], sprintf("%02d", 1:24), paste0))
-
-    df <- df[df$Well %in% acceptable_wells,]
-
-    sweeps <- grep("Sweep \\d", colnames(df), value=TRUE)
-    no.sweeps <- unique(sapply(sweeps, FUN=function(s){
-      unlist(stringr::str_split(s, " "))[2]
-    }))
-
-
-    new.cols <- sapply(grep(no.sweeps[1], sweeps, value=T), function(x){
-      unlist(stringr::str_split(x, " "))[3]
-    })
-
-    #if(!volt_steps){
-    #  new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep")
-    #}else{
-    #  new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
-
-    #}
-    new.cols <- c("Well", "QC","Plate_ID", new.cols, "Sweep", "V_Clamp")
-    new.df <- data.frame(matrix(ncol=length(new.cols),nrow=0, dimnames=list(NULL, new.cols)))
-    #print(new.cols)
-    for(s in no.sweeps){
-      cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value=T))
-      tempdf <- df[,cols]
-      tempdf$Sweep <- s
-      #if(volt_steps){
-      tempdf$V_Clamp <- volt[,grep(s, names(volt), value=T)]
-      #}
-      colnames(tempdf) <- colnames(new.df)
-      new.df <- rbind(new.df, tempdf)
-    }
-
-    if(volt_steps){
-      new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
-      #for(cols in colnames(new.df)){
-      #  tryCatch(expr = {
-      #    recoverCol <- new.df[,cols]
-      #    new.df[,cols] <- as.numeric(new.df[,cols])
-      #  }, warning = function(w){
-      #    new.df[,cols] <- new.df[,cols]
-      #  })
-      #}
-
-
-    }
-
-    new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x){
-      unlist(stringr::str_split(x, "\\r"))[1]
-    })
-    #print(head(new.df, n=3))
-    cat("🔍 Variables in this function:\n")
-    #print(mget(ls(), environment()))
-    new.df <- new.df %>% hablar::retype()
-    print(head(new.df, n=3))
-    return(new.df)
-
+  return(new.df)
 }
 
 #' Prepare several DataControl Excel File into a DataFrame in long format

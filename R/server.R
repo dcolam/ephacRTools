@@ -286,7 +286,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
               }, error = function(e) {
                 stop(paste("prepareSE failed:", conditionMessage(e)))
               })
-
+              gc()
               # rest of your logic
             }, error = function(e) {
               showModal(modalDialog("Error", tags$pre(conditionMessage(e))))
