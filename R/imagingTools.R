@@ -43,7 +43,7 @@ prepareSingleImgDF <- function(pathDB,
                                  .after = dplyr::all_of(col))
         }
       }
-      rm(list = setdiff(ls(), "new.df"))
+      rm(list = setdiff(ls(), "tbl"))
       gc()
       print("DB processed")
       tbl
@@ -111,7 +111,8 @@ prepareImgDF <- function(pathDB,
                          scale_num=scale_num,
                          scale_cols=scale_cols,
                          scale_fun=scale_fun)
-      safe_names <- lapply(pathDB, function(x){basename(x)})
+    })
+      safe_names <- lapply(pathDB, function(x){basename(x)
       print(safe_names)
       names(dfs) <- safe_names
 
