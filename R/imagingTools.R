@@ -127,7 +127,7 @@ prepareImgDF <- function(pathDB,
         unlist(stringr::str_split(x, "\\r"))[1]
       })
     }
-  }
+
   return(df)
 }
 #' Clean and normalize dataframe. Adds column and row identifiers and finds the
