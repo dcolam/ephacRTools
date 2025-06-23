@@ -112,13 +112,13 @@ prepareImgDF <- function(pathDB,
                          scale_cols=scale_cols,
                          scale_fun=scale_fun)
     })
-      safe_names <- lapply(pathDB, function(x){basename(x)
+      safe_names <- lapply(pathDB, function(x){basename(x)})
       print(safe_names)
       names(dfs) <- safe_names
 
       #names(dfs) <- pathDB
       df <- dplyr::bind_rows(dfs, .id = "column_label")
-    })
+    }
 
     if (!"Plate_ID" %in% colnames(df)) {
       df$Plate_ID <- df$column_label
