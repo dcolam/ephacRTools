@@ -25,10 +25,20 @@ p1 <- p + theme_void() + theme_transparent() + guides(color="none", ) + facet_gr
                                                                                                          strip.text.x = element_blank())
 
 p1
-
+library(magick)
 
 sticker(p1, package="ephacRTools", p_size=6, s_x=1, s_y=.75, s_width=1.3, s_height=1,
-        filename="inst/figures/ggplot2.svg", h_fill = "#008280E5", h_color = "#38595c", white_around_sticker = T)
+        filename="inst/figures/ggplot2.svg", h_fill = "#008280E5", h_color = "#38595c",h_fill = "transparent", white_around_sticker = F)
+fuzz <- 50
+p <- image_read("inst/figures/ggplot2.svg")
+pp <- p %>%
+  image_fill(color = "transparent", refcolor = "white", fuzz = fuzz, point = "+1+1") %>%
+  image_fill(color = "transparent", refcolor = "white", fuzz = fuzz, point = paste0("+", image_info(p)$width-1, "+1")) %>%
+  image_fill(color = "transparent", refcolor = "white", fuzz = fuzz, point = paste0("+1", "+", image_info(p)$height-1)) %>%
+  image_fill(color = "transparent", refcolor = "white", fuzz = fuzz, point = paste0("+", image_info(p)$width-1, "+", image_info(p)$height-1))
+image_write(image = pp, path = "inst/figures/ggplot2.svg")
+file.show("inst/figures/ggplot2.svg")
+
 
 redDim.melt <- reducedDims(se_pn)$UMAP
 redDim.melt$Well <- row.names(redDim.melt)
