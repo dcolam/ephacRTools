@@ -43,10 +43,12 @@ prepareSingleImgDF <- function(pathDB,
                                  .after = dplyr::all_of(col))
         }
       }
+      rm(list = setdiff(ls(), "new.df"))
+      gc()
       print("DB processed")
       tbl
     }
-
+    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
     on.exit(DBI::dbDisconnect(con), add = TRUE)
     print("SQlite Loaded...")
@@ -63,7 +65,7 @@ prepareSingleImgDF <- function(pathDB,
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
     }
-
+    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
 
 }
@@ -109,14 +111,14 @@ prepareImgDF <- function(pathDB,
                          scale_num=scale_num,
                          scale_cols=scale_cols,
                          scale_fun=scale_fun)
+      safe_names <- lapply(pathDB, function(x){basename(x)})
+      print(safe_names)
+      names(dfs) <- safe_names
+
+      #names(dfs) <- pathDB
+      df <- dplyr::bind_rows(dfs, .id = "column_label")
     })
 
-    safe_names <- lapply(pathDB, function(x){basename(x)})
-    print(safe_names)
-    names(dfs) <- safe_names
-
-    #names(dfs) <- pathDB
-    df <- dplyr::bind_rows(dfs, .id = "column_label")
     if (!"Plate_ID" %in% colnames(df)) {
       df$Plate_ID <- df$column_label
     }else{
