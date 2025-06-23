@@ -106,6 +106,26 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       })
     }
 
+    mem_used <- reactiveVal()
+
+    # Update on button click
+    observeEvent(input$refreshMem, {
+      used_mb <- round(sum(gc()[, 2]), 1)
+      mem_used(paste(used_mb, "MB RAM used"))
+    })
+
+    # Initialize once at startup
+    observe({
+      gc()
+      used_mb <- round(sum(gc()[, 2]), 1)
+      mem_used(paste(used_mb, "MB RAM used"))
+    })
+
+    # Display the memory usage
+    output$memoryUsage <- renderText({
+      mem_used()
+    })
+
     output$uploadMenu <- renderUI({
       if(!(uploadMaxSize>0)) return(NULL)
       menuSubItem("Upload object", tabName="tab_fileinput")
@@ -204,6 +224,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                              server=T)
         initialized(TRUE)
         }
+        updateSelectizeInput(session, "seDataset", choices = names(SEs), selected = input$object)
 
       x <- mergeFlists(x)
       return(x)
@@ -257,7 +278,29 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         })
     })
 
-    observeEvent(input$loadEphys, {
+    output$importXl <- renderTable({
+      req(input$fileEphys)
+
+      df <- input$fileEphys
+      df$size_MB <- round(df$size / (1024^2), 2)  # Convert bytes to MB and round to 2 decimals
+      df <- df[, c("name", "size_MB")]   # Select relevant columns
+
+      df
+    }, striped = TRUE, spacing = "s", bordered = TRUE)
+
+    output$importDB <- renderTable({
+      req(input$fileDB)
+
+      df <- input$fileDB
+      df$size_MB <- round(df$size / (1024^2), 2)  # Convert bytes to MB and round to 2 decimals
+      df <- df[, c("name", "size_MB")]   # Select relevant columns
+
+      df
+    }, striped = TRUE, spacing = "s", bordered = TRUE)
+
+
+
+    observeEvent(input$fileEphys, {
       req(input$fileEphys)
       tryCatch({
         if (!is.null(input$fileEphys)) {
@@ -299,7 +342,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
               SEinit(SEs[[SEname]])
               incProgress(0.75, detail = "Updating UI")
               updateSelectInput(session, "object", selected = SEname,
-                                choices = union(names(input$objects), names(SEs)))
+                                choices = union(names(objects), names(SEs)))
             }
             incProgress(1, detail = "SE loaded")
           })
@@ -324,11 +367,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
     observeEvent(input$mergeSE, {
       tryCatch({
-        if(!is.null(input$fileEphys) & !is.null(input$fileDB)){
+        if(!is.null(input$seDataset) & !is.null(input$fileDB)){
           #x <- readRDS(input$fileEphys$datapath)
-          l_files <- ifelse(length(input$fileDB$datapath) > 1,
-                            as.list(input$fileDB$datapath),
-                            input$fileDB$datapath)
+          #l_files <- ifelse(length(input$fileDB$datapath) > 1,
+          #                  as.list(input$fileDB$datapath),
+          #                  input$fileDB$datapath)
+          l_files <- input$fileDB$datapath
 
           withProgress(message = 'Loading Imaging Results', value = 0, {
             incProgress(0.5, detail = "This may take a while..")
@@ -336,26 +380,27 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             req(input$tabletype)
             for(tabletype in input$tabletype){
 
-              tryCatch({
-                df_img <- tryCatch({
-                  prepareImgDF(l_files, analysis = tabletype)
-                }, error = function(e) {
-                  stop(paste("prepareSE failed:", conditionMessage(e)))
-                })
+
+
+                #df_img <- tryCatch({
+                #  prepareImgDF(l_files, analysis = tabletype)
+                #}, error = function(e) {
+                #  stop(paste("prepareSE failed:", conditionMessage(e)))
+                #})
 
                 # rest of your logic
-              }, error = function(e) {
-                showModal(modalDialog("Error", tags$pre(conditionMessage(e))))
-              })
+              #}, error = function(e) {
+              #  showModal(modalDialog("Error", tags$pre(conditionMessage(e))))
+              #})
 
-              #df_img <- prepareImgDF(l_files, analysis = tabletype)
-              SEname <- input$se_id
+              df_img <- prepareImgDF(l_files, analysis = tabletype)
+              SEname <- input$seDataset
 
 
               SEs[[SEname]] <-  mergeSEandImg(SEs[[SEname]], df_img,
                                               tableType = tabletype)
 
-            }
+              print("imported")
 
             #se <- SEs[[SEname]]
             #se <- mergeSEandImg(se, df_img)
@@ -366,10 +411,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                               choices=union(names(objects), names(SEs)))
 
             incProgress(1, detail = "SE updated")
+            }
           })
-        }else{
-          stop("The object is not a SummarizedExperiment!")
         }
+
       }, error = function(e){
         # Print error details to console/logs
         message("Caught an error:")

@@ -98,7 +98,18 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                       menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
                                                               tags$span(paste0("ephacRTools v",
-                                                                               as.character(packageVersion("ephacRTools")))))
+                                                                               as.character(packageVersion("ephacRTools"))))),
+                                                      tags$li(
+                                                        class = "shinydashboard-menu-output memory-monitor",
+                                                        style = "padding-left: 15px; padding-top: 5px; font-size: 13px; color: #888;",
+                                                        fluidRow(
+                                                          column(width = 6, style = "padding-left: 15px; padding-top: 5px; font-size: 13px; color: #888;",
+                                                                 icon("microchip"),
+                                                                 textOutput("memoryUsage", inline = TRUE)),
+                                                          column(width = 3, actionButton("refreshMem", label = NULL, icon = icon("refresh"),
+                                                                                         style = "padding: 2px 6px; font-size: 6px;"))
+                                                        )
+                                                      )
                                           )
                          ),
                          dashboardBody(
@@ -124,6 +135,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                            tabItems(
                              tabItem("tab_object", withSpinner(uiOutput("objOverview"))),
                              tabItem("tab_fileinput",
+                                     fluidRow(
                                      box(width=6,
                                          tags$p("You may upload your own SummarizedExperiment (SE) object
                      saved as a R .rds file. Once uploaded, it will be added to
@@ -141,40 +153,95 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                                      "iPSC-Tricultures" = "se_iN",
                                                                      "ROMK" = "se_romk"), multiple = T),
                                          actionButton("dataset_button", label = "Load pre-bundled datasets")
+                                         )
+                                     ),
+
+
+                                      fluidRow(
+                                     box(
+                                       width = 6,
+                                       tags$p("You may upload one or more Excel files generated directly by DataControl. Make sure to follow the guidelines."),
+
+
+                                       fluidRow(
+                                         column(
+                                           width = 6,
+                                           textInput("se_id", "Name your Dataset:", value = "Custom Dataset")
                                          ),
-                                     box(width = 12,
-                                         tags$p("You may upload one or more Excel-files generated directly by DataControl and one or more imaging results (.db) from Cluster_Analysis. For guidelines ",
-                                                actionLink("help_SE", "click here"), "."),
+                                         column(
+                                           width = 6,
+                                           fileInput("fileEphys", "Ephys Excel File (.xlsx)", multiple = TRUE, accept = ".xlsx")
+                                         )
+                                       ),
 
-                                         textInput("se_id", "Name your Dataset:", value = "Custom Dataset"),
 
-                                         fluidRow(
-                                           column(
-                                             width = 6,
-                                             fileInput("fileEphys", "Ephys Excel File (.xlsx)", multiple = TRUE,
-                                                       accept = ".xlsx"),
-                                             actionButton("loadEphys", label = "Load Excel into SE")
-                                           ),
-                                           column(
-                                             width = 6,
-                                             fileInput("fileDB", "Imaging Results (.db)", multiple = TRUE,
-                                                       accept = ".db"),
-                                             actionButton("loadDB", label = "Connect Ephys and Imaging Results")
+                                       tableOutput("importXl")
+                                       # actionButton("loadEphys", label = "Load Excel into SE")
+                                     ),
+                                     box(
+                                       width = 6,
+                                       tags$p("You may upload imaging result `.db` files and link them to a selected SummarizedExperiment (SE) dataset. Make sure the data types match."),
+
+                                       # Row with selectizeInput and fileInput side-by-side
+                                       fluidRow(
+                                         column(
+                                           width = 6,
+                                           selectizeInput(
+                                             "seDataset",
+                                             label = "Select SE",
+                                             choices = c(),
+                                             multiple = FALSE
                                            )
                                          ),
+                                         column(
+                                           width = 6,
+                                           fileInput(
+                                             "fileDB",
+                                             label = "Imaging Results (.db)",
+                                             multiple = TRUE,
+                                             accept = ".db"
+                                           )
+                                         )
+                                       ),
 
-                                         box(
-                                           title = "Extra Options",
-                                           collapsible = TRUE, collapsed = TRUE, width = 12,
-                                           selectInput("tabletype", label= "Choose Imaging Table type:",
-                                                       choices = list("Particle Analysis Table" = "pa",
-                                                                      "Colocalization Table" = "coloc"),
-                                                       multiple = T,selected = "pa"),
+                                       # Table type selector
+                                       fluidRow(
+                                         column(
+                                           width = 12,
+                                           selectInput(
+                                             "tabletype",
+                                             label = "Choose Imaging Table type:",
+                                             choices = list(
+                                               "Particle Analysis Table" = "pa",
+                                               "Colocalization Table" = "coloc"
+                                             ),
+                                             multiple = TRUE,
+                                             selected = "pa"
+                                           ),
+                                           tableOutput("importDB")
+
+                                         )
+                                       ),
+
+                                       # Optional UI controls
+                                       fluidRow(
+                                         column(
+                                           width = 12,
                                            uiOutput("optionalControls")
-                                         ),
+                                         )
+                                       ),
 
-                                         actionButton("mergeSE", label = "Connect Ephys and Imaging Results")
+                                       # Action button
+                                       fluidRow(
+                                         column(
+                                           width = 12,
+                                           actionButton("mergeSE", label = "Connect Ephys and Imaging Results")
+                                         )
+                                       )
                                      )
+                                      )
+
+
                              ),
                              tabItem("tab_samples",
                                      box(width=12, tags$div(style="width: 100%; overflow-x: scroll;",

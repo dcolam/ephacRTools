@@ -20,7 +20,7 @@ prepareDF <- function(pathToDF) {
   cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
 
   # Read file
-  df <- readxl::read_excel(pathToDF, sheet = "OA Export")
+  df <- readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text")
   df <- as.data.frame(df)
   cat("✅ Full Excel loaded\n")
   cat("🧠 Memory (after read):", format(object.size(df), units = "auto"), "\n")
