@@ -279,10 +279,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           print(PathFiles)
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
             incProgress(0.5, detail = "This may take a while...")
-
+            gc()
             tryCatch({
               x <- tryCatch({
-                ephacRTools::prepareSE(PathFiles)
+                prepareSE(PathFiles)
               }, error = function(e) {
                 stop(paste("prepareSE failed:", conditionMessage(e)))
               })
