@@ -27,8 +27,8 @@ p1 <- p + theme_void() + theme_transparent() + guides(color="none", ) + facet_gr
 p1
 
 
-sticker(p1, package="ephacRTools", p_size=20, s_x=1, s_y=.75, s_width=1.3, s_height=1,
-        filename="inst/figures/ggplot2.png", h_fill = "#008280E5", h_color = "#38595c")
+sticker(p1, package="ephacRTools", p_size=6, s_x=1, s_y=.75, s_width=1.3, s_height=1,
+        filename="inst/figures/ggplot2.svg", h_fill = "#008280E5", h_color = "#38595c", white_around_sticker = T)
 
 redDim.melt <- reducedDims(se_pn)$UMAP
 redDim.melt$Well <- row.names(redDim.melt)
