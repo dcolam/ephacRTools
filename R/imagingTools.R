@@ -43,8 +43,8 @@ prepareSingleImgDF <- function(pathDB,
                                  .after = dplyr::all_of(col))
         }
       }
-      rm(list = setdiff(ls(), "tbl"))
-      gc()
+      #rm(list = setdiff(ls(), "tbl"))
+      #gc()
       print("DB processed")
       tbl
     }
