@@ -113,7 +113,7 @@ prepareImgDF <- function(pathDB,
                          scale_fun=scale_fun)
     })
       safe_names <- lapply(pathDB, function(x){basename(x)})
-      print(safe_names)
+      #print(safe_names)
       names(dfs) <- safe_names
 
       #names(dfs) <- pathDB
