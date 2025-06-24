@@ -1,29 +1,11 @@
 .getHelp <- function(topic){
   switch(topic,
          general=modalDialog(title="Quick start", easyClose=TRUE, tags$p(
-           "The ", tags$em("tiny SummarizedExperiment Viewer")," (tinySEV) is
-      organized around SummarizedExperiment (SE) objects, which contain all data
-      relative to an experiment. You can select among the different SE objects
-      available using the drowndown list at the top-left of the dashboard, just
-      below the application's title. If the list is empty, it means that the app
-      was not preloaded with objects, but you can upload your own object in the
-      'Upload object' tab on the left (assuming the feature hasn't been
-      disabled)."),
-           tags$p("When selecting an object, the 'DEA' and 'Enrichments' tabs on the
-        left will be updated with the number of differential expression analyses
-        (DEAs) and enrichment analyses included in the object (if none are
-        included, 'N/A' will be shown. These can be browsed as tables in the
-        respective tabs; in addition, DEA results can also be visualized as
-        volcano plots."),
-           tags$p("Independently of whether DEA or enrichment results are available,
-        the expression of single genes or features can be plotted in the
-        'Plot gene' tab."),
-           tags$p("The heatmap functionalities instead allow you to visualize sets
-        of genes. To this end, first enter your genes of interest in the 'Genes'
-        tab, and then go to the 'Heatmap' tab to visualize them."),
-           tags$p("Finally, note that gene selections can be transferred form the
-        DEA/Enrichments tabs into the gene/heatmap tabs!"),
-           footer=paste("tinySEV version", as.character(packageVersion("tinySEV")))
+           "The ", tags$em("ephacRTools")," is an R-package that facilitates the analysis of
+           High-throughput Automated patch-clamp experiments (HT-APC) into standardized SummarizedExperiment objects.
+           Furthermore, we included the integration for imaging results, coined as correlative imaging. This allows
+           us to determine the identity of the patched cell."),
+           footer=paste("ephacRTools version", as.character(packageVersion("ephacRTools")))
          ),
          genelists=modalDialog(title="Gene lists", easyClose=TRUE,
                                "Gene lists are simply pre-loaded lists of genes/features, which can be
@@ -59,51 +41,37 @@
                                "Note that this parameter is only used for symmetrical scales, such as
       log-foldchanges or scaled data."),
          SE=modalDialog(title="Preparing a SummarizedExperiment object", easyClose=TRUE,
-                        tags$ul(
-                          tags$li("See the ", tags$a(
+                        tags$ul("See the ", tags$a(
                             href=paste0("https://bioconductor.org/packages/release/bioc/vignettes/",
                                         "SummarizedExperiment/inst/doc/SummarizedExperiment.html"),
                             "SummarizedExperiment documentation", target="_blank"),
-                            " for a general introduction to SummarizedExperiment objects."),
-                          tags$li(tags$b("Differential expression analyses (DEAs): "),
-                                  "To be available to tinySEV, differential expression analyses
-        should be placed in the ", tags$code("rowData"), " of the object, in a
-        column prefixed with 'DEA.'. For example, assuming that ",
-                                  tags$code("dea"), " is your dataframe of differential expression results
-        (with feature names as row names), you can simply do:",
-                                  tags$pre("rowData(se)$DEA.myAnalysis <- dea[row.names(se),]"),
-                                  "DEAs are accepted in formats of common differential expression packages
-        (e.g. edgeR, limma, DESeq2)."),
-                          tags$li(tags$b("Enrichment analysis: "),
-                                  "Enrichment analysis results should be stored as a named list of
-        data.frames in the metadata as follows:",
-                                  tags$pre("metadata(se)$EA <- list( analysis1=df1, analysis2=df2 )"),
-                                  "The dataframes will be displayed as such and require no special
-        formatting. However, if a column named 'genes' is present (containing
-        comma-separated lists of genes), it will be used to support extra
-        functionalities."),
-                          tags$li(tags$b("Metadata: "), "Additional meta-data information can be
-        saved as text in the 'title', 'name', 'source', or 'description' slots,
-        e.g. ",
-                                  tags$pre(
-                                    'metadata(se)$description <- "Whatever description you wish displayed..."')),
-                          tags$li(tags$b("Default plotting parameters: "),
-                                  "Some default plotting parameters can be stored in the ",
-                                  tags$code('default_view'), "metadata slot. For example, if the object
-        contains an assay 'logcpm' which we would like to be selected by
-        default, we can save this information in the object as follows:",
-                                  tags$pre("metadata(se)$default_view <- list(assay='logcpm')"),
-                                  "The following 'default_view' elements are recognized: assay, groupvar,
-        colvar, and gridvar."),
-                          tags$li(tags$b("Annotation colors: "), "Instead of the randomly-generated
-        annotation colors, colors for specific annotation variables can be
-        specified via the", tags$code("anno_colors"), " metadata slot, for
-        example:", tags$pre(
-          'metadata(se)anno_colors <- list(genotype=c(WT="grey", mutant="red"))'),
-          "See the ", tags$a("sechm documentation", target="_blank",
-                             href=paste0("https://bioconductor.org/packages/release/bioc/",
-                                         "vignettes/sechm/inst/doc/sechm")),
-          " for more information.")
+                            " for a general introduction to SummarizedExperiment (SE) objects. Here,
+                            you can find a brief introduction on how to initialize an SE object using the ephacRTools package:",
+                          tags$li(tags$b("Prepare SE object"),
+                                  "In R, you can use the", tags$code("prepareSE"), " function to load an Excel file
+                                  created by DataControl. The Excel-file should contain Online Analyses outpu values per sweep.
+                                  We additionally recommend to add the Nanion Barcode ID (which becomes Plate_ID), the QC as well as
+                                  QC metrices such as Series, Seal and Capacitance.",
+                                  tags$code("prepareSE"), " will detect the single sweeps and all numeric columns which are then
+                                  automatically transformed into", tags$code("rowData(se)"), " and ", tags$code("assays(se)"), ". On
+                                  the other hand, Plate_ID, QC and Well information will be loaded into ", tags$code("colData(se)"),".
+                                  You can add and manipulate whichever table asociated with the se",
+                                  tags$pre("se <- prepare('path/to/excel')\nrowData(se)$LiquidPeriod <- paste('LP',rep(1:nrow(se)), sep='')\ncolData(se)$Condition <- ifelse(as.numeric(se$Column) %% 2 == 0,
+                                           'WT',
+                                           'KO')\nassays(se)$CurrenDensity <- assays(se)$Current / assays(se)$Capacitance")
+                                  ),
+                          tags$li(tags$b("Adding Image Data: "),
+                                  "We integrated the ability to import SQLite databases outputed by the Fiji ", tags$a(
+                                    href="https://github.com/dcolam/Cluster-Analysis-Plugin", "Cluster Analysis Plugin.", target="_blank"),
+                          "Refer to our original publication for optimal setup of the imaging pipeline,
+                          as well as the segmentation of the patching pore. To connect the two datasets you can follow these steps: ",
+                          tags$pre("df_img <- prepareImgDF('path/to/database.db', scale_num = TRUE)\nse <- mergeSEandImg(se, df_img)"),
+                          "You can import both single channels and colocalized channels.
+                          In order for the function to work, you will need a column with Well information of the image and ideally a Plate_ID.
+                          If your database does not have that, you can also add it after importing the .db into a dataframe with ", tags$code("prepareImgDF"),
+                          ". Your se object is now ready for saving and importing into this ShinyApp.",
+                          tags$pre("saveRDS(se, 'path/to/save/se.rds)'\nephacRTools::tinySEV(list('My SE' = se)")
+                                  )
                         )
          ),
          modalDialog(title="Unknown topic", easyClose=TRUE,

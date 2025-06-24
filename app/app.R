@@ -17,4 +17,4 @@ waiterContent <- tagList(
 
 login <- data.frame(user="guest", password_hash="$7$C6..../....KBtKRNulXGoaOUSNltgKqkOukRedn06odEeU1CkM3X/$BrdNlK7/U1rVOnJKy2qRPqtKrWd3zyK6c009oZ68VVB")
 data("se_romk")
-ephacRTools::tinySEV(title = "ephacRTools",waiterContent =waiterContent, logins = login, objects = list("ROMK"= se_romk))
+ephacRTools::tinySEV(title = "ephacRTools",waiterContent =waiterContent, objects = list("ROMK"= se_romk))

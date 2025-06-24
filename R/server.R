@@ -603,8 +603,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
 
-            if(length(selected_wells$data[[input$plate_id]]) > 0){
-              melted.dat$is_selected <- ifelse(melted.dat$Well %in% selected_wells$data[[input$plate_id]], TRUE, FALSE)
+            if(length(get_wells(input$plate_id)) > 0){
+              melted.dat$is_selected <- ifelse(melted.dat$Well %in% get_wells(input$plate_id), TRUE, FALSE)
 
             }else{
               melted.dat$is_selected <- TRUE
@@ -625,7 +625,13 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             if(numID){p <- p + scale_fill_viridis_c(option = "magma")}
 
             # Register click events and return the plot
-            p_plotly <- ggplotly(p, source = "plate_plot")
+            p_plotly <- ggplotly(p, source = "plate_plot") %>%
+              layout(dragmode = "select") %>%  # Makes box selection the default
+              config(
+                displayModeBar = TRUE,
+                modeBarButtonsToAdd = list('select2d'),  # Ensures the select tool is in the toolbar
+                displaylogo = FALSE
+              )
             #plotly::event_register(p_plotly, "plotly_click")
             #slider_initialized(TRUE)
 
@@ -636,86 +642,121 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
 
+        ############
+        ### Definition of Well Selection
 
+        # --- Reactive storage ---
+        selected_wells <- reactiveValues(
+          data = data.frame(
+            well = character(),
+            plate_id = character(),
+            stringsAsFactors = FALSE
+          )
+        )
 
-      # Observe plate click and update well selection inputs
-      observeEvent(plotly::event_data("plotly_click", source = "plate_plot"), {
-        click <- plotly::event_data("plotly_click", source = "plate_plot")
-        print(click)
-        if (!is.null(click)) {
+        get_wells <- function(plate_id) {
+          unique(selected_wells$data[selected_wells$data$plate_id %in% plate_id,]$well)
+        }
 
-          #number2letter <- function(n) {
-          #  intToUtf8(n + utf8ToInt("A") - 1L)
+        set_wells <- function(plate_id, wells) {
+          current <- get_wells(plate_id)
+          if (!identical(sort(current), sort(wells))) {
+            selected_wells$data <- rbind(
+              selected_wells$data[selected_wells$data$plate_id != plate_id, ],
+              data.frame(well = wells, plate_id = plate_id, stringsAsFactors = FALSE)
+            )
+          }
+        }
+
+        update_all_select_inputs <- function() {
+          if (!is.null(input$plate_id) && nzchar(input$plate_id)) {
+            updateSelectizeInput(session, "selected_well", selected = get_wells(input$plate_id))
+          }
+          if (!is.null(input$plate_id1) && nzchar(input$plate_id1)) {
+            updateSelectizeInput(session, "selected_well1", selected = get_wells(input$plate_id1))
+          }
+          if (!is.null(input$plate_id3) && nzchar(input$plate_id3)) {
+            updateSelectizeInput(session, "clusteredwells", selected = get_wells(input$plate_id3))
+          }
+        }
+
+        handle_plotly_interaction <- function(event_data, type = c("click", "selected"), source_id) {
+          type <- match.arg(type)
+          print(paste0("plotly_", type))
+          event <- plotly::event_data(paste0("plotly_", type), source = source_id)
+          req(event)
+
+          df <- do.call(rbind, lapply(event$key, function(k) {
+            parts <- strsplit(k, ",\\s*")[[1]]
+            data.frame(well = parts[1], plate_id = parts[2], stringsAsFactors = FALSE)
+          }))
+
+          plate_ids <- unique(df$plate_id)
+          if (length(plate_ids) != 1) return(NULL)  # Only allow one plate per event
+
+          plate_id <- plate_ids
+          current_wells <- get_wells(plate_id)
+
+          if (type == "click") {
+            for (well in df$well) {
+              if (well %in% current_wells) {
+                current_wells <- setdiff(current_wells, well)
+              } else {
+                current_wells <- union(current_wells, well)
+              }
+            }
+          }
+
+          if (type == "selected") {
+            current_wells <- unique(df$well)
+          }
+
+          set_wells(plate_id, current_wells)
+
+          #if (source_id == "cluster_plot") {
+          #  updateSelectizeInput(session, "plate_id3", selected = plate_id)
           #}
-          #wells <- paste(number2letter(17-click$y), stringr::str_pad(click$x, 2, pad = "0"), sep="")
-          clicked_info <- unlist(strsplit(unlist(click$key), ", "))
-          well <- clicked_info[1]
-          plate_id <- clicked_info[2]
 
-          if(well %in% selected_wells$data[[plate_id]]){
-
-            selected_wells$data[[plate_id]] <- selected_wells$data[[plate_id]][ selected_wells$data[[plate_id]] != well]
-          }else{
-            selected_wells$data[[plate_id]] <- unique(c(
-              selected_wells$data[[plate_id]], well
-            ))
-          }
-
-          updateSelectizeInput(session, "selected_well", selected =  selected_wells$data[[input$plate_id]])
-          updateSelectizeInput(session, "selected_well1", selected = selected_wells$data[[input$plate_id1]])
-          updateSelectizeInput(session, "clusteredwells", selected = selected_wells$data[[input$plate_id3]])
+          update_all_select_inputs()
         }
-      })
 
-      # Observe plate click and update well selection inputs
-      observeEvent(plotly::event_data("plotly_click", source = "cluster_plot"), {
-        click <- plotly::event_data("plotly_click", source = "cluster_plot")
-        print(click)
-        if (!is.null(click)) {
+        # --- Observe plot events ---
+        observeEvent(plotly::event_data("plotly_click", source = "plate_plot"), {
+          handle_plotly_interaction("plotly_click", "click", source_id = "plate_plot")
+        })
 
-          number2letter <- function(n) {
-            intToUtf8(n + utf8ToInt("A") - 1L)
+        observeEvent(plotly::event_data("plotly_selected", source = "plate_plot"), {
+          handle_plotly_interaction("plotly_selected", "selected", source_id = "plate_plot")
+        })
+
+
+        # --- Reset selection (only for current plate) ---
+        observeEvent(input$reset_well, {
+          if (!is.null(input$plate_id) && nzchar(input$plate_id)) {
+            selected_wells$data <- subset(selected_wells$data, plate_id != input$plate_id)
+            update_all_select_inputs()
           }
-          #selected_well <- click$key
-          #selected_wells(unique(c(selected_wells(), click$key)))
-          clicked_info <- unlist(strsplit(unlist(click$key), ", "))
-          well <- clicked_info[1]
-          plate_id <- clicked_info[2]
+        })
 
-          # Append the well to the plate-specific list
-
-          if(well %in% selected_wells$data[[plate_id]]){
-
-            selected_wells$data[[plate_id]] <- selected_wells$data[[plate_id]][ selected_wells$data[[plate_id]] != well]
-          }else{
-          selected_wells$data[[plate_id]] <- unique(c(
-            selected_wells$data[[plate_id]], well
-          ))
-          }
-
-          updateSelectizeInput(session, "plate_id3", selected =  plate_id)
-          updateSelectizeInput(session, "clusteredwells", selected = selected_wells$data[[input$plate_id3]])
-          updateSelectizeInput(session, "selected_well", selected =  selected_wells$data[[input$plate_id]])
-          updateSelectizeInput(session, "selected_well1", selected = selected_wells$data[[input$plate_id1]])
-
+        # --- Abstract observer for plate/well syncing ---
+        observe_plate_select_sync <- function(plate_input, well_input) {
+          observeEvent(input[[plate_input]], {
+            plate_id <- input[[plate_input]]
+            if (!is.null(plate_id) && nzchar(plate_id)) {
+              updateSelectizeInput(session, well_input, selected = get_wells(plate_id))
+            }
+          })
+          observeEvent(input[[well_input]], {
+            plate_id <- input[[plate_input]]
+            if (!is.null(plate_id) && nzchar(plate_id)) {
+              set_wells(plate_id, input[[well_input]])
+            }
+          })
         }
-      })
 
-
-
-
-      # Reset button clears selection
-      observeEvent(input$reset_well, {
-        selected_wells$data <- list()
-        updateSelectizeInput(session, "selected_well", selected = character(0))
-        updateSelectizeInput(session, "selected_well1", selected = character(0))
-        updateSelectizeInput(session, "clusteredwells", selected = character(0))
-      })
-
-
-
-
-
+        observe_plate_select_sync("plate_id", "selected_well")
+        observe_plate_select_sync("plate_id1", "selected_well1")
+        observe_plate_select_sync("plate_id3", "clusteredwells")
 
       ############
       ### BEGIN Plot Sweeps
@@ -737,8 +778,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           }
 
 
-        if(length(selected_wells$data[[input$plate_id1]]) > 0){
-            se <- se[,se$Well %in% selected_wells$data[[input$plate_id1]]]
+        if(length(get_wells(input$plate_id1)) > 0){
+            se <- se[,se$Well %in% get_wells(input$plate_id1)]
 
         }
 
@@ -754,75 +795,6 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     ############
     ### BEGIN Clustering
 
-
-      selected_wells <- reactiveValues(data = list())
-
-      observeEvent(input$selected_well, {
-        selected_wells$data[[input$plate_id]] <- input$selected_well
-        updateSelectizeInput(session, "clusteredwells",
-                             selected = selected_wells$data[[input$plate_id]])
-        updateSelectizeInput(session, "selected_well",
-                             selected = selected_wells$data[[input$plate_id]])
-        updateSelectizeInput(session, "selected_well1",
-                             selected = selected_wells$data[[input$plate_id]])
-      })
-
-      observeEvent(input$selected_well1, {
-        selected_wells$data[[input$plate_id1]] <- input$selected_well1
-        updateSelectizeInput(session, "clusteredwells",
-                             selected = selected_wells$data[[input$plate_id1]])
-        updateSelectizeInput(session, "selected_well",
-                             selected = selected_wells$data[[input$plate_id1]])
-        updateSelectizeInput(session, "selected_well1",
-                             selected = selected_wells$data[[input$plate_id1]])
-      })
-
-      observeEvent(input$clusteredwells, {
-        selected_wells$data[[input$plate_id3]] <- input$clusteredwells
-        updateSelectizeInput(session, "clusteredwells",
-                          selected = selected_wells$data[[input$plate_id3]])
-        updateSelectizeInput(session, "selected_well",
-                             selected = selected_wells$data[[input$plate_id3]])
-        updateSelectizeInput(session, "selected_well1",
-                             selected = selected_wells$data[[input$plate_id3]])
-      })
-
-
-      observeEvent(input$plate_id, {
-        wells_for_plate <- selected_wells$data[[input$plate_id]]
-
-        # If NULL or empty, set to character(0) so selectInput clears properly
-        if (is.null(wells_for_plate) || length(wells_for_plate) == 0) {
-          wells_for_plate <- character(0)
-        }
-
-        updateSelectInput(session, "selected_well",
-                          selected = wells_for_plate)
-      })
-
-      observeEvent(input$plate_id1, {
-        wells_for_plate <- selected_wells$data[[input$plate_id1]]
-
-        # If NULL or empty, set to character(0) so selectInput clears properly
-        if (is.null(wells_for_plate) || length(wells_for_plate) == 0) {
-          wells_for_plate <- character(0)
-        }
-
-        updateSelectInput(session, "selected_well1",
-                          selected = wells_for_plate)
-      })
-
-      observeEvent(input$plate_id3, {
-        wells_for_plate <- selected_wells$data[[input$plate_id3]]
-
-        # If NULL or empty, set to character(0) so selectInput clears properly
-        if (is.null(wells_for_plate) || length(wells_for_plate) == 0) {
-          wells_for_plate <- character(0)
-        }
-
-        updateSelectizeInput(session, "clusteredwells",
-                          selected = wells_for_plate)
-      })
 
 
 
@@ -874,13 +846,20 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     }
 
 
-    if(!is.null(unlist(selected_wells))){
+    # if(length(get_wells(unique(df$Plate_ID))) > 0){
+    #
+    # highlighted_df <- df %>%
+    #   dplyr::filter(Plate_ID %in% selected_wells$data$plate_id) %>%  # only plates with selected wells
+    #   dplyr::rowwise() %>%
+    #   dplyr::filter(Well %in% get_wells(Plate_ID)) %>%
+    #   dplyr::ungroup()
+    # print(highlighted_df)
 
-    highlighted_df <- df %>%
-      dplyr::filter(Plate_ID %in% names(selected_wells)) %>%  # only plates with selected wells
-      dplyr::rowwise() %>%
-      dplyr::filter(Well %in% selected_wells[[Plate_ID]]) %>%
-      dplyr::ungroup()
+    selected <- selected_wells$data
+
+    if (!is.null(selected) && nrow(selected) > 0 && !is.null(df) && nrow(df) > 0) {
+    highlighted_df <- dplyr::semi_join(df, selected, by = c("Plate_ID" = "plate_id", "Well" = "well"))
+    print(highlighted_df)
 
       if (nrow(highlighted_df) > 0) {
         p <- p +
@@ -889,12 +868,18 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                      inherit.aes = FALSE)
       }
 
-  }
+}
 
     # Add independent title and legend
-    ggplotly(p, tooltip = "text", source = "cluster_plot") %>%
+    ggplotly(p, tooltip = "text", source = "plate_plot") %>%
       layout(title = list(text = color_var, x = 0.5, xanchor = "center"),
-             showlegend = TRUE)
+             showlegend = TRUE)%>%
+      layout(dragmode = "lasso") %>%  # Makes box selection the default
+      config(
+        displayModeBar = TRUE,
+        modeBarButtonsToAdd = list('select2d'),  # Ensures the select tool is in the toolbar
+        displaylogo = FALSE
+      )
 
   }
 
@@ -949,7 +934,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             color_var = v,
             xlab = "TSNE1",
             ylab = "TSNE2",
-            selected_wells = selected_wells$data,
+            selected_wells = selected_wells,
             plot_source = paste0("tsne_", v)
           )
         })
@@ -1009,7 +994,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             color_var = v,
             xlab = "UMAP1",
             ylab = "UMAP2",
-            selected_wells = selected_wells$data,
+            selected_wells = selected_wells,
             plot_source = paste0("umap_", v)
           )
         })
@@ -1067,7 +1052,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             color_var = v,
             xlab = "PC1",
             ylab = "PC2",
-            selected_wells = selected_wells$data,
+            selected_wells = selected_wells,
             plot_source = paste0("pca_", v)
           )
         })
