@@ -10,61 +10,61 @@ NULL
 #' @return A dataframe
 #' @export
 prepareSingleImgDF <- function(pathDB,
-                               analysis   = c("pa", "coloc"),
-                               id_cols    = c("Date","Plate_ID","Well",
-                                              "Image_ID","Channel_Name",
-                                              "Selection","Selection_Area"),
-                               num_cols   = c("Area","Mean","IntDen"),
-                               scale_num  = FALSE,
-                               scale_cols = NULL,
-                               scale_fun  = function(x)
-                                 as.numeric(scale(x, TRUE, TRUE))) {
+                                  analysis   = c("pa", "coloc"),
+                                  id_cols    = c("Date","Plate_ID","Well",
+                                                 "Image_ID","Channel_Name",
+                                                 "Selection","Selection_Area"),
+                                  num_cols   = c("Area","Mean","IntDen"),
+                                  scale_num  = FALSE,
+                                  scale_cols = NULL,
+                                  scale_fun  = function(x)
+                                    as.numeric(scale(x, TRUE, TRUE))) {
 
-  analysis <- match.arg(analysis)
+    analysis <- match.arg(analysis)
 
-  ## ---------- helper that does your existing pipeline ------------------
-  process_tbl <- function(tbl) {
+    ## ---------- helper that does your existing pipeline ------------------
+    process_tbl <- function(tbl) {
 
-    tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
+      tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
 
-    tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
-    tbl <- df_cleaned(tbl)                       # your ROI labelling
-    tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
-    tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
+      tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
+      tbl <- df_cleaned(tbl)                       # your ROI labelling
+      tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
+      tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
 
-    # optional scaling
-    if (isTRUE(scale_num)) {
-      if (is.null(scale_cols))
-        scale_cols <- intersect(num_cols, names(tbl))
-      for (col in scale_cols) {
-        new_col <- paste0(col, "_Scaled")
-        tbl[[new_col]] <- scale_fun(tbl[[col]])
-        tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
-                               .after = dplyr::all_of(col))
+      # optional scaling
+      if (isTRUE(scale_num)) {
+        if (is.null(scale_cols))
+          scale_cols <- intersect(num_cols, names(tbl))
+        for (col in scale_cols) {
+          new_col <- paste0(col, "_Scaled")
+          tbl[[new_col]] <- scale_fun(tbl[[col]])
+          tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
+                                 .after = dplyr::all_of(col))
+        }
       }
+
+      tbl
     }
 
-    tbl
-  }
+    con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-
-  if (analysis == "pa") {
-    tbl <- DBI::dbGetQuery(con, "
+    if (analysis == "pa") {
+      tbl <- DBI::dbGetQuery(con, "
         SELECT *
         FROM Particle_Analysis_Table  AS pa
         JOIN  PA_Measurement_Tables   AS meas
              ON meas.PA_ID = pa.PA_ID")
-  } else {                          # analysis == "coloc"
-    tbl <- DBI::dbGetQuery(con, "
+    } else {                          # analysis == "coloc"
+      tbl <- DBI::dbGetQuery(con, "
         SELECT *
         FROM Coloc_Analysis_Table  AS ca
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
-  }
+    }
 
-  process_tbl(tbl)
+    process_tbl(tbl)
 
 }
 #' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
@@ -78,16 +78,16 @@ prepareSingleImgDF <- function(pathDB,
 #' @return A dataframe
 #' @export
 prepareImgDF <- function(pathDB,
-                         analysis   = "pa",
-                         id_cols    = c("Date","Plate_ID","Well",
-                                        "Image_ID","Channel_Name",
-                                        "Selection","Selection_Area"),
-                         num_cols   = c("Area","Mean","IntDen"),
-                         coloc_cols = c("Second_Channel","Mask_Area"),
-                         scale_num  = FALSE,
-                         scale_cols = NULL,
-                         scale_fun  = function(x)
-                           as.numeric(scale(x, TRUE, TRUE))){
+                               analysis   = "pa",
+                               id_cols    = c("Date","Plate_ID","Well",
+                                              "Image_ID","Channel_Name",
+                                              "Selection","Selection_Area"),
+                               num_cols   = c("Area","Mean","IntDen"),
+                                coloc_cols = c("Second_Channel","Mask_Area"),
+                               scale_num  = FALSE,
+                               scale_cols = NULL,
+                               scale_fun  = function(x)
+                                 as.numeric(scale(x, TRUE, TRUE))){
 
   if("coloc" %in% analysis){
     id_cols <- c(id_cols,
@@ -196,19 +196,19 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
     for (channel in channels) {
       second_channels <- unique(subset(df_img, Channel_Name == channel)$Second_Channel)
       for (second_channel in second_channels){
-        # Subset df_img for current channel
-        df_channel <- df_img %>%
-          filter(Channel_Name == channel, Second_Channel == second_channel) %>%
-          select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
-        # Perform join
-        joined <- cd %>%
-          dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
-        # Extract just the new columns (everything except original colData)
-        new_cols <- setdiff(names(joined), names(cd))
-        # Create a DataFrame object from just the new data
-        channel_data <- DataFrame(joined[, new_cols])
-        # Assign to colData(se), one column per channel, as a nested DataFrame
-        SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
+      # Subset df_img for current channel
+      df_channel <- df_img %>%
+        filter(Channel_Name == channel, Second_Channel == second_channel) %>%
+        select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
+      # Perform join
+      joined <- cd %>%
+        dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+      # Extract just the new columns (everything except original colData)
+      new_cols <- setdiff(names(joined), names(cd))
+      # Create a DataFrame object from just the new data
+      channel_data <- DataFrame(joined[, new_cols])
+      # Assign to colData(se), one column per channel, as a nested DataFrame
+      SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
       }
     }
 
@@ -277,7 +277,7 @@ brighten_image <- function(img, factor = 1.5) {
 #' @param plate_ID Plate number you are interested in exploring
 #' @return A plot of four images (brightfield, green and red channels and overlay of the two channels on top of the BF)
 #' @export
-imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
+imageval <- function(se, idx, plate_ID) {
   load_bright <- function(file, factor)
     brighten_image(readImage(file), factor = factor)
 
@@ -305,8 +305,7 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
   bf_img <- all_imgs[grepl("BF\\.tif$", all_imgs)]
   img1 <- load_bright(bf_img, factor = 2)
   bf_channel <- normalize(img1)
-  img1_grob <- make_grob(rotate(img1, 180))
-  #img1_grob <- make_grob(img1)
+  img1_grob <- make_grob(rotate(img1, -90))
 
   ## ---- fluorescence image (second file) -------------------------------
   fluorescent_img <- all_imgs[grepl("nm\\.tif$", all_imgs)]
@@ -316,13 +315,13 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
   }
 
   img2 <- load_bright(fluorescent_img, factor = 40)
-  img2_grob_green <- make_grob(img2, src_slice = green_slice, colour = "green")  # plane 2 → green
-  img2_grob_red   <- make_grob(img2, src_slice = red_slice, colour = "red")    # plane 3 → red
+  img2_grob_green <- make_grob(img2, src_slice = 2, colour = "green")  # plane 2 → green
+  img2_grob_red   <- make_grob(img2, src_slice = 3, colour = "red")    # plane 3 → red
 
   ## composite: R=red, G=green, B=bright‑field
   comp_rgb <- array(0, dim = c(dim(img2[,,3]), 3))
-  comp_rgb[,,1] <- normalize(img2[,,red_slice]) #3
-  comp_rgb[,,2] <- normalize(img2[,,green_slice]) #2
+  comp_rgb[,,1] <- normalize(img2[,,3])
+  comp_rgb[,,2] <- normalize(img2[,,2])
   comp_rgb[,,3] <- bf_channel
   img2_grob_color <- rasterGrob(comp_rgb, interpolate = TRUE)
 
@@ -330,8 +329,5 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
   grid.arrange(img1_grob, img2_grob_color, img2_grob_green, img2_grob_red, ncol = 2)
 
 }
-
-
-
 
 
