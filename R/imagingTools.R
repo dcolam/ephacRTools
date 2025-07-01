@@ -30,7 +30,7 @@ prepareSingleImgDF <- function(pathDB,
     tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
     tbl <- df_cleaned(tbl)                       # your ROI labelling
     tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
-    tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
+    #tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
 
     # optional scaling
     if (isTRUE(scale_num)) {
