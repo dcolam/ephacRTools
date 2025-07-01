@@ -284,14 +284,19 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
   short_idx <- gsub("^([A-Z])0*", "\\1", idx)
 
   # helper function: take one channel and put it in the desired colour slot
-  make_grob <- function(img, src_slice = NULL, colour = c("red","green","blue")) {
-    if (is.null(src_slice)) {                        # full RGB
-      x <- normalize(img)
-    } else {                                         # monochrome as chosen colour
-      colour  <- match.arg(colour)
-      chan    <- normalize(img[,,src_slice])
+  make_grob <- function(img, src_slice = NULL, colour = c("red", "green", "blue")) {
+    if (is.null(src_slice)) {
+      # Check if img is an EBImage Image object; extract array before normalize
+      if (inherits(img, "Image")) {
+        x <- normalize(as.array(img))
+      } else {
+        x <- normalize(img)
+      }
+    } else {
+      colour <- match.arg(colour)
+      chan <- normalize(img[,,src_slice])
       rgb_arr <- array(0, dim = c(dim(chan), 3))
-      rgb_arr[,, match(colour, c("red","green","blue")) ] <- chan
+      rgb_arr[,, match(colour, c("red", "green", "blue"))] <- chan
       x <- rgb_arr
     }
     rasterGrob(x, interpolate = TRUE)
@@ -305,7 +310,7 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
   bf_img <- all_imgs[grepl("BF\\.tif$", all_imgs)]
   img1 <- load_bright(bf_img, factor = 2)
   bf_channel <- normalize(img1)
-  img1_grob <- make_grob(rotate(img1, 180))
+  img1_grob <- make_grob(EBImage::rotate(img1, 180))
   #img1_grob <- make_grob(img1)
 
   ## ---- fluorescence image (second file) -------------------------------
