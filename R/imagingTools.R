@@ -24,7 +24,7 @@ prepareSingleImgDF <- function(pathDB,
 
   ## ---------- helper that does your existing pipeline ------------------
   process_tbl <- function(tbl) {
-
+    print(names(tbl))
     tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
 
     tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
@@ -111,11 +111,23 @@ prepareImgDF <- function(pathDB,
                          scale_fun=scale_fun)
     })
 
-    names(dfs) <- pathDB
+    # names(dfs) <- pathDB
+    # df <- dplyr::bind_rows(dfs, .id = "column_label")
+    # df$Plate_ID <- sapply(df$Plate_ID, function(x){
+    #   unlist(stringr::str_split(x, "\\r"))[1]
+    # })
+
+    names(dfs) <- paste0("DB", seq_along(pathDB))
     df <- dplyr::bind_rows(dfs, .id = "column_label")
-    df$Plate_ID <- sapply(df$Plate_ID, function(x){
-      unlist(stringr::str_split(x, "\\r"))[1]
-    })
+  }
+
+    if (!"Plate_ID" %in% colnames(df)) {
+      df$Plate_ID <- df$column_label
+    }else{
+      df$Plate_ID <- sapply(df$Plate_ID, function(x){
+        unlist(stringr::str_split(x, "\\r"))[1]
+      })
+
   }
   return(df)
 }
@@ -124,7 +136,7 @@ prepareImgDF <- function(pathDB,
 #' @param df dataframe of image results
 #' @return A dataframe
 #' @export
-df_cleaned <- function(df){
+df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 
   df$Well_clean <- sapply(df$Well, function(x){
 
@@ -156,9 +168,9 @@ df_cleaned <- function(df){
 
   df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
 
-  df$Channel <- ifelse(df$Channel_Name == "C1", "DAPI",
-                       ifelse(df$Channel_Name == "C2", "Green",
-                              ifelse(df$Channel_Name == "C3", "Red", NA)))
+  df$Channel <- ifelse(df$Channel_Name == "C1", channels[1],
+                       ifelse(df$Channel_Name == "C2", channels[2],
+                              ifelse(df$Channel_Name == "C3", channels[3], NA)))
   df$Well <- paste(df$Row, stringr::str_pad(df$Column, 2, pad = "0"), sep="")
 
   df
@@ -168,8 +180,13 @@ df_cleaned <- function(df){
 #' @param df_img DataFrame with imaging results returned by prepareImgDF()
 #' @return A dataframe
 #' @export
-mergeSEandImg <- function(se, df_img, tableType = "pa"){
-  df_img <- subset(df_img, Image_Type == "fluor")
+mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI", "background_ROI"), suffix = "hole"){
+  if (Selection == "Hole_ROI"){
+    df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "Hole_ROI")
+  }
+  if (Selection == "background_ROI"){
+    df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "background_ROI")
+  }
   cd <- as.data.frame(SummarizedExperiment::colData(se))
   # Loop through each channel
   if(tableType == "pa"){
@@ -182,12 +199,11 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
       # Perform join
       joined <- cd %>%
         dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
-      # Extract just the new columns (everything except original colData)
       new_cols <- setdiff(names(joined), names(cd))
-      # Create a DataFrame object from just the new data
       channel_data <- DataFrame(joined[, new_cols])
       # Assign to colData(se), one column per channel, as a nested DataFrame
-      SummarizedExperiment::colData(se)[[channel]] <- channel_data
+      #SummarizedExperiment::colData(se)[[channel]] <- channel_data
+      SummarizedExperiment::colData(se)[[paste(channel, suffix, sep=".")]] <- channel_data
     }
 
   }else{
@@ -207,8 +223,9 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
         new_cols <- setdiff(names(joined), names(cd))
         # Create a DataFrame object from just the new data
         channel_data <- DataFrame(joined[, new_cols])
-        # Assign to colData(se), one column per channel, as a nested DataFrame
-        SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
+        # Assign to colData(se), one column per channel
+        #SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
+        SummarizedExperiment::colData(se)[[paste(channel, second_channel, suffix, sep=".")]] <- channel_data
       }
     }
 
