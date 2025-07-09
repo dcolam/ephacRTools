@@ -1,3 +1,7 @@
+#' @importFrom magrittr %>%
+NULL
+#' @import SingleCellExperiment
+NULL
 #' Add column-wise aggregation such as mean of any given assay and store it into colData
 #' @param assayName list of assay names to check
 #' @param assayList list of assays in the SE
@@ -27,7 +31,8 @@ colAG <- function(se, assayList, fun=mean, sweeps=row.names(se)){
 
   for (assayName in assayList) {
     colName <- paste(assayName, "mean", sep = "_")
-    se[[colName]] <- colMeans(assay(se, assayName), na.rm = TRUE)
+    subse <- se[sweeps,]
+    se[[colName]] <- colMeans(assay(subse, assayName), na.rm = TRUE)
   }
   return(se)
 }
@@ -49,7 +54,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   pca_data <- lapply(assayList, function(x){
     if(scaling == "within"){
       #scale(t(assay(se, x)))
-      temp <- sechm::safescale(t(assay(se_iN, x)), byRow = byRow)
+      temp <- sechm::safescale(t(assay(se, x)), byRow = byRow)
     }else{
       temp <-t(assay(se, x))
     }
@@ -70,7 +75,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   col_Data <- lapply(colNames, function(x){
                      if(scaling == "within"){
 
-                       temp <- sechm::safescale(flattened.df[[x]], byRow = byRow)
+                       temp <- sechm::safescale(flattened.df[[x]])
                      }else{
                        temp <-flattened.df[[x]]
                      }
@@ -86,7 +91,8 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   pca_data <- dplyr::bind_cols(pca_data)
   #print(class(pca_data))
   if(scaling == "global"){
-    pca_data <- sechm::safescale(pca_data, byRow = byRow)
+    print(pca_data)
+    pca_data <- sechm::safescale(as.matrix(pca_data), byRow = byRow)
   }
   ## handling missing values
   pca_data <-as.data.frame(pca_data)
@@ -96,21 +102,24 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
 
   pca_result <- prcomp(pca_data, rank=50)
 
-  tsne_data <- Rtsne(pca_data, pca = FALSE,  check_duplicates = FALSE)
+  tsne_data <- Rtsne::Rtsne(pca_data, pca = TRUE,  check_duplicates = FALSE)
+
   tsne_data <- tsne_data$Y %>%
     as.data.frame()%>%
-    rename(tsne1="V1",
+    dplyr::rename(tsne1="V1",
            tsne2="V2")
-  umap_data <- umap(pca_data)
+
+  umap_data <- umap::umap(pca_data)
   umap_df <- umap_data$layout %>%
     as.data.frame()%>%
-    rename(UMAP1="V1",
+    dplyr::rename(UMAP1="V1",
            UMAP2="V2")
-  reducedDims(se) <- list(PCA=pca_result$x, TSNE=DataFrame(tsne_data), UMAP=DataFrame(umap_df))
 
-  se$cluster.umap <- as.factor(kmeans(reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
-  se$cluster.tsne <- as.factor(kmeans(reducedDim(se, "TSNE")[,1:2], k_clusters, iter.max = 100)$cluster)
-  se$cluster.pca <- as.factor(kmeans(reducedDim(se, "PCA")[,1:2], k_clusters, iter.max = 100)$cluster)
+  SingleCellExperiment::reducedDims(se) <- list(PCA=pca_result$x, TSNE=S4Vectors::DataFrame(tsne_data), UMAP=S4Vectors::DataFrame(umap_df))
+
+  se$cluster.umap <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.tsne <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "TSNE")[,1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.pca <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "PCA")[,1:2], k_clusters, iter.max = 100)$cluster)
 
   return(se)
 }
@@ -123,7 +132,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
 #' @export
 plotDimRed <- function(se, redDim.method, colorColumns = character()) {
   flattened.df <- as.data.frame(colData(se))
-  redDF <- as.data.frame(reducedDim(se, redDim.method))
+  redDF <- as.data.frame(SingleCellExperiment::reducedDim(se, redDim.method))
 
   clustername <- grep(tolower(redDim.method), colnames(flattened.df), value = TRUE)
   if (length(clustername) == 0) clustername <- colorColumns[1]
@@ -166,7 +175,7 @@ plotDimRed <- function(se, redDim.method, colorColumns = character()) {
 plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula=NULL, grouped=TRUE){
   assayList <- assayList[assayList %in% assayNames(se)]
   rowCol <- rowCol[rowCol %in% colnames(rowData(se))]
-  melted.se <- sechm::meltSE(se, features=row.names(se_iN), assayName=assayList, rowDat.columns = rowCol)
+  melted.se <- sechm::meltSE(se, features=row.names(se), assayName=assayList, rowDat.columns = rowCol)
 
   melted.se <-reshape2::melt(melted.se, measure.vars = assayList)
   if(!grouped){
@@ -192,8 +201,75 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
   p
   }
 }
+#' Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
+#' Make sure that Vhalf is present in rowData
+#' @param se SummarizedExperiment Object with reducedDim data
+#' @param assay assay to be analyzed
+#' @param inward boolean stating whether the IV-curve shows in- or outward current
+#' @param getErev boolean to try to get Erev or value where y = 0
+#' @return se with updated colData
+#' @export
+get_metric <- function(se, assay = "Minima", inward = TRUE) {
+  suffix <- tolower(assay)
 
+  imax_col <- paste0("Imax.", suffix)
+  vhalf_col <- paste0("Vhalf.", suffix)
+  vmax_col <- paste0("Vmax.", suffix)
 
+  wells <- unique(se$Well)
+  results <- data.frame(Well = wells,
+                        Imax = NA_real_,
+                        Vhalf = NA_real_,
+                        Vmax = NA_real_)
 
+  assay_data <- assay(se, assay)
+  v_clamp <- rowData(se)$V_Clamp
+  well_ids <- se$Well
+
+  for (i in seq_along(wells)) {
+    well <- wells[i]
+    indices <- which(well_ids == well)
+
+    x_vals <- v_clamp
+    y_vals <- assay_data[, indices]
+
+    # Skip if all NA
+    if (all(is.na(y_vals))) next
+
+    if (inward) {
+      Imax <- min(y_vals, na.rm = TRUE)
+      Vmax1 <- min(x_vals[y_vals == Imax])
+    } else {
+      Imax <- max(y_vals, na.rm = TRUE)
+      Vmax1 <- max(x_vals[y_vals == Imax])
+    }
+
+    y_vals[!complete.cases(y_vals)] <- 1  # Avoid smooth.spline errors
+
+    spl <- smooth.spline(x_vals, y = y_vals)
+    fit <- predict(spl, seq(min(x_vals), max(x_vals), length.out = 100))
+
+    Vhalf <- NA
+    fit_sub <- fit$x[fit$x < Vmax1]
+    pred_sub <- fit$y[fit$x < Vmax1]
+
+    if (length(pred_sub) > 0) {
+      idx <- which.min(abs(pred_sub - Imax / 2))
+      Vhalf <- fit_sub[idx]
+    }
+
+    results$Imax[i] <- Imax
+    results$Vhalf[i] <- Vhalf
+    results$Vmax[i] <- Vmax1
+  }
+
+  coldata <- colData(se)
+  coldata[[imax_col]] <- results$Imax[match(se$Well, results$Well)]
+  coldata[[vhalf_col]] <- results$Vhalf[match(se$Well, results$Well)]
+  coldata[[vmax_col]] <- results$Vmax[match(se$Well, results$Well)]
+
+  colData(se) <- coldata
+  return(se)
+}
 
 

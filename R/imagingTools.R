@@ -42,16 +42,17 @@ prepareSingleImgDF <- function(pathDB,
         tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
                                .after = dplyr::all_of(col))
       }
+      #rm(list = setdiff(ls(), "tbl"))
+      #gc()
+      print("DB processed")
+      tbl
     }
-
-    tbl
-  }
-
-  con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-
-  if (analysis == "pa") {
-    tbl <- DBI::dbGetQuery(con, "
+    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
+    con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    print("SQlite Loaded...")
+    if (analysis == "pa") {
+      tbl <- DBI::dbGetQuery(con, "
         SELECT *
         FROM Particle_Analysis_Table  AS pa
         JOIN  PA_Measurement_Tables   AS meas
@@ -62,9 +63,9 @@ prepareSingleImgDF <- function(pathDB,
         FROM Coloc_Analysis_Table  AS ca
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
-  }
-
-  process_tbl(tbl)
+    }
+    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
+    process_tbl(tbl)
 
 }
 #' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
@@ -78,16 +79,16 @@ prepareSingleImgDF <- function(pathDB,
 #' @return A dataframe
 #' @export
 prepareImgDF <- function(pathDB,
-                         analysis   = "pa",
-                         id_cols    = c("Date","Plate_ID","Well",
-                                        "Image_ID","Channel_Name",
-                                        "Selection","Selection_Area"),
-                         num_cols   = c("Area","Mean","IntDen"),
-                         coloc_cols = c("Second_Channel","Mask_Area"),
-                         scale_num  = FALSE,
-                         scale_cols = NULL,
-                         scale_fun  = function(x)
-                           as.numeric(scale(x, TRUE, TRUE))){
+                               analysis   = "pa",
+                               id_cols    = c("Date","Plate_ID","Well",
+                                              "Image_ID","Channel_Name",
+                                              "Selection","Selection_Area"),
+                               num_cols   = c("Area","Mean","IntDen"),
+                                coloc_cols = c("Second_Channel","Mask_Area"),
+                               scale_num  = FALSE,
+                               scale_cols = NULL,
+                               scale_fun  = function(x)
+                                 as.numeric(scale(x, TRUE, TRUE))){
 
   if("coloc" %in% analysis){
     id_cols <- c(id_cols,
@@ -110,16 +111,13 @@ prepareImgDF <- function(pathDB,
                          scale_cols=scale_cols,
                          scale_fun=scale_fun)
     })
+      #safe_names <- lapply(pathDB, function(x){basename(x)})
+      #print(safe_names)
+      #names(dfs) <- safe_names
 
-    # names(dfs) <- pathDB
-    # df <- dplyr::bind_rows(dfs, .id = "column_label")
-    # df$Plate_ID <- sapply(df$Plate_ID, function(x){
-    #   unlist(stringr::str_split(x, "\\r"))[1]
-    # })
-
-    names(dfs) <- paste0("DB", seq_along(pathDB))
-    df <- dplyr::bind_rows(dfs, .id = "column_label")
-  }
+      names(dfs) <- paste0("DB", seq_along(pathDB))
+      df <- dplyr::bind_rows(dfs, .id = "column_label")
+    }
 
     if (!"Plate_ID" %in% colnames(df)) {
       df$Plate_ID <- df$column_label
@@ -127,8 +125,9 @@ prepareImgDF <- function(pathDB,
       df$Plate_ID <- sapply(df$Plate_ID, function(x){
         unlist(stringr::str_split(x, "\\r"))[1]
       })
+    }
 
-  }
+
   return(df)
 }
 #' Clean and normalize dataframe. Adds column and row identifiers and finds the
@@ -141,19 +140,19 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 
   df$Well_clean <- sapply(df$Well, function(x){
 
-    unlist(str_split(x, "-"))[1]
+    unlist(stringr::str_split(x, "-"))[1]
 
   })
 
   df$Row <- sapply(df$Well_clean, function(x){
 
-    str_sub(x, 1, 1)
+    stringr::str_sub(x, 1, 1)
 
   })
 
   df$Column <- sapply(df$Well_clean, function(x){
 
-    str_sub(x, 2, 3)
+    stringr::str_sub(x, 2, 3)
 
   })
 
@@ -198,13 +197,15 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI"
     for (channel in channels) {
       # Subset df_img for current channel
       df_channel <- df_img %>%
-        filter(Channel_Name == channel) %>%
-        select(-Channel_Name)  # optional: remove the channel label
+        dplyr::filter(Channel_Name == channel) %>%
+        dplyr::select(-Channel_Name)  # optional: remove the channel label
       # Perform join
       joined <- cd %>%
         dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
-      new_cols <- setdiff(names(joined), names(cd))
-      channel_data <- DataFrame(joined[, new_cols])
+      # Extract just the new columns (everything except original colData)
+      new_cols <- dplyr::setdiff(names(joined), names(cd))
+      # Create a DataFrame object from just the new data
+      channel_data <- S4Vectors::DataFrame(joined[, new_cols])
       # Assign to colData(se), one column per channel, as a nested DataFrame
       #SummarizedExperiment::colData(se)[[channel]] <- channel_data
       SummarizedExperiment::colData(se)[[paste(channel, suffix, sep=".")]] <- channel_data
@@ -216,26 +217,51 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI"
     for (channel in channels) {
       second_channels <- unique(subset(df_img, Channel_Name == channel)$Second_Channel)
       for (second_channel in second_channels){
-        # Subset df_img for current channel
-        df_channel <- df_img %>%
-          filter(Channel_Name == channel, Second_Channel == second_channel) %>%
-          select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
-        # Perform join
-        joined <- cd %>%
-          dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
-        # Extract just the new columns (everything except original colData)
-        new_cols <- setdiff(names(joined), names(cd))
-        # Create a DataFrame object from just the new data
-        channel_data <- DataFrame(joined[, new_cols])
-        # Assign to colData(se), one column per channel
-        #SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
-        SummarizedExperiment::colData(se)[[paste(channel, second_channel, suffix, sep=".")]] <- channel_data
+      # Subset df_img for current channel
+      df_channel <- df_img %>%
+        dplyr::filter(Channel_Name == channel, Second_Channel == second_channel) %>%
+        dplyr::select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
+      # Perform join
+      joined <- cd %>%
+        dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+      # Extract just the new columns (everything except original colData)
+      new_cols <- dplyr::setdiff(names(joined), names(cd))
+      # Create a DataFrame object from just the new data
+      channel_data <- S4Vectors::DataFrame(joined[, new_cols])
+      # Assign to colData(se), one column per channel, as a nested DataFrame
+      SummarizedExperiment::colData(se)[[paste(channel, second_channel, sep=".")]] <- channel_data
       }
     }
 
   }
   return(se)
 }
+
+#' Function that generates all the files paths for the images
+#' @param se SummarizedExperiment to where the folders should be stored
+#' @param parent_folder Path to the TIF images outputed by Cluster Analysis, typically inside the folder Particle_Analysi
+#' @return updated se object
+#' @export
+addImgPaths <- function(se, parent_folder, wellposition = 10, sep="_") {
+
+  pathImg <-"Y:\\ephacoffice\\DColameo\\DATA\\iPSC_Tricultures\\iPSC_C4-C4-SFSC_GFP-Dlx1_mCherry-Camk2a_190325_DIV36_18T39265\\Particle_Analysis"
+  pathImgs <-list.files(path = pathImg ,pattern = "*.tif$", recursive = TRUE, full.names = TRUE)
+  pathImgs <-pathImgs[grepl("Particle_Analysis",  pathImgs)]
+
+
+  lapply(pathImgs, function(x){
+
+
+   f <-  basename(x)
+  well <- unlist(stringr::str_split(f, sep)[wellposition])
+  print(well)
+  return(well=x)
+  })
+
+
+  }
+
+
 #' Function that generates all the files paths for the images
 #' @param parent_folder Path to where your various experimental data is stored
 #' @param idx The well(s) you want to look at
@@ -247,6 +273,7 @@ image_paths <- function(parent_folder, idx, plate_ID, location) {
   all_dirs <- list.dirs(parent_folder, full.names = TRUE, recursive = FALSE)
   matched_dir <- NULL
   short_idx <- gsub("^([A-Z])0*", "\\1", idx)
+
   for (d in all_dirs) {
     dir_name <- basename(d)
     parts <- strsplit(dir_name, "_")[[1]]

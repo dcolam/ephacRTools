@@ -2,7 +2,7 @@
 % Please edit documentation in R/imagingTools.R
 \name{mergeSEandImg}
 \alias{mergeSEandImg}
-\title{Merge together the imgaging-results into the Column Data of the SE}
+\title{Merge together the imaging-results into the Column Data of the SE}
 \usage{
 mergeSEandImg(se, df_img, tableType = "pa")
 }
@@ -15,5 +15,5 @@ mergeSEandImg(se, df_img, tableType = "pa")
 A dataframe
 }
 \description{
-Merge together the imgaging-results into the Column Data of the SE
+Merge together the imaging-results into the Column Data of the SE
 }
