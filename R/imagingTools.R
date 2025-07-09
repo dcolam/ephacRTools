@@ -64,7 +64,7 @@ prepareSingleImgDF <- function(pathDB,
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
     }
-    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
+    #cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
 
 }
@@ -383,10 +383,6 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
 
   ## ---- arrange --------------------------------------------------------
   grid.arrange(img1_grob, img2_grob_color, img2_grob_green, img2_grob_red, ncol = 2)
-
 }
-
-
-
 
 
