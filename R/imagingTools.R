@@ -383,10 +383,6 @@ imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
 
   ## ---- arrange --------------------------------------------------------
   grid.arrange(img1_grob, img2_grob_color, img2_grob_green, img2_grob_red, ncol = 2)
-
 }
-
-
-
 
 
