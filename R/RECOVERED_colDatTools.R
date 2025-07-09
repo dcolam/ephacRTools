@@ -92,98 +92,100 @@ ag <- function(df, cols, fun=mean) {
 #' @param prepared_df The data frame that you just adjusted in prep_df
 #' @param plate_ID The plate ID that you are focusing on
 #' @param ion The compound that was added or removed during the measurements
+#' @param columns The columns you want to pass onto your aggregation function
 #' @return A filtered data frame
 #' @export
-    filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("Well", "QC", "Compound", "Conditions", "Plate_ID")) {
+filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("Well", "QC", "Compound", "Conditions", "Plate_ID")) {
 
-      # Filter condition: rows B–O and cols 2–23
-      valid_rows <- prepared_df$Row %in% LETTERS[2:15]   # B (2) to O (15)
-      valid_cols <- prepared_df$Column >= 2 & prepared_df$Column <= 23
-      valid_indices <- valid_rows & valid_cols
+  # Filter condition: rows B–O and cols 2–23
+  valid_rows <- prepared_df$Row %in% LETTERS[2:15]   # B (2) to O (15)
+  valid_cols <- prepared_df$Column >= 2 & prepared_df$Column <= 23
+  valid_indices <- valid_rows & valid_cols
 
-      filtered_wells <- prepared_df$Well[valid_indices]
+  filtered_wells <- prepared_df$Well[valid_indices]
 
-      prepared_df <- prepared_df %>%
-        filter(Plate_ID == plate_ID) %>%
-        filter(Well %in% filtered_wells)
+  prepared_df <- prepared_df %>%
+    filter(Plate_ID == plate_ID) %>%
+    filter(Well %in% filtered_wells)
 
+  prepared_df$Compound <- ifelse(prepared_df$RowNum %in% 1:4 | prepared_df$RowNum %in% 9:12, "Na Addition", "Na Removal")
+
+  prepared_df <- ag(subset(prepared_df), cols= c("Well", "QC", "Compound", "Conditions", "Plate_ID"))
+
+    if (ion == "Na") {
       prepared_df$Compound <- ifelse(prepared_df$RowNum %in% 1:4 | prepared_df$RowNum %in% 9:12, "Na Addition", "Na Removal")
-
-      prepared_df <- ag(subset(prepared_df), cols= c("Well", "QC", "Compound", "Conditions", "Plate_ID"))
-
-        if (ion == "Na") {
-          prepared_df$Compound <- ifelse(prepared_df$RowNum %in% 1:4 | prepared_df$RowNum %in% 9:12, "Na Addition", "Na Removal")
-        } else if (ion == "K") {
-          mapping <- prepared_df %>%
-            select(Well, Plate_ID, Compound) %>%
-            distinct()
-          prepared_df <- prepared_df %>%
-            left_join(mapping, by = c("Well", "Plate_ID"), suffix = c("", ".mapped"), relationship = "many-to-many") %>%
-            mutate(Compound = Compound.mapped) %>%
-            select(-Compound.mapped)
-        }
-
-
-      prepared_df <- ag(subset(prepared_df), cols= columns)
-
-
-      return(prepared_df)
-
+    } else if (ion == "K") {
+      mapping <- prepared_df %>%
+        select(Well, Plate_ID, Compound) %>%
+        distinct()
+      prepared_df <- prepared_df %>%
+        left_join(mapping, by = c("Well", "Plate_ID"), suffix = c("", ".mapped"), relationship = "many-to-many") %>%
+        mutate(Compound = Compound.mapped) %>%
+        select(-Compound.mapped)
     }
+
+
+  prepared_df <- ag(subset(prepared_df), cols= columns)
+
+
+  return(prepared_df)
+
+}
   #' Assign your wells to their corresponding groups (wildtype, hyperplasia, donors etc)
-  #' @param prepared_df The data frame that you just filtered in filtered_df
+  #' @param data The data frame that you just filtered in filtered_df or your summarizedExperiment
+  #' @param se Indicate whether your data is a summarizedExperiment or not
   #' @param pattern The pattern by which you separated your groups in the experiment
   #' @param manual_map A named vector like c("A01" = "HP", "A02" = "WT", ...)
   #' @param block_size Parameter that determines after how many rows the condition alternates from HP to WT
   #' @param cycle_pattern A vector containing a custom, repeating sequence like the triplet c("HP", "WT", "HP")
   #' @return A data frame with group assignment
   #' @export
-      group_assignment <- function(data, se = c("Yes", "No"), pattern = c("Conditions", "Alternating", "Block", "Manual", "Cycle"),
+  group_assignment <- function(data, se = c("Yes", "No"), pattern = c("Conditions", "Alternating", "Block", "Manual", "Cycle"),
                                    manual_map = NULL, block_size = NULL, cycle_pattern = NULL) {
-        se <- match.arg(se)
-        pattern <- match.arg(pattern)
+    se <- match.arg(se)
+    pattern <- match.arg(pattern)
 
-        if (se == "Yes") {
-          se_obj <- data
-          prepared_df <- as.data.frame(colData(se_obj))
-        } else {
-          prepared_df <- data
-        }
+    if (se == "Yes") {
+      se_obj <- data
+      prepared_df <- as.data.frame(colData(se_obj))
+    } else {
+      prepared_df <- data
+    }
 
-        prepared_df$Group <- NA   #initialize the column
+    prepared_df$Group <- NA   #initialize the column
 
-        if (pattern == "Conditions") {
-          prepared_df$Group <- ifelse(df$Conditions %in% c("Donor", "Donor1", "Donor2"), "WT", "HP")
-        }
-        else if (pattern == "Alternating") {
-          prepared_df$Group <- ifelse(seq_len(nrow(prepared_df)) %% 2 == 0, "WT", "HP")
-        }
-        else if (pattern == "Block") {
-          if (is.null(block_size)) stop("block_size must be provided for pattern = 'Block'")
-          reps <- rep(c("HP", "WT"), length.out = ceiling(nrow(prepared_df) / block_size))
-          prepared_df$Group <- rep(reps, each = block_size, length.out = nrow(prepared_df))
-        }
-        else if (pattern == "Manual") {
-          if (is.null(manual_map)) stop("manual_map must be provided for pattern = 'manual'")
-          prepared_df <- manual_map[as.character(prepared_df$Well)]
-        }
-        else if (pattern == "Cycle") {
-          if (is.null(cycle_pattern)) stop("Please provide cycle_pattern for 'cycle' pattern")
-          prepared_df$Group <- rep(cycle_pattern, length.out = nrow(prepared_df))
-        }
-        else if (pattern == "Cycle") {
-          if (is.null(cycle_pattern)) stop("Please provide cycle_pattern for 'cycle' pattern")
-          prepared_df <- prepared_df[order(prepared_df$Well), ]
-          prepared_df$Group <- rep(cycle_pattern, length.out = nrow(prepared_df))
-        }
+    if (pattern == "Conditions") {
+      prepared_df$Group <- ifelse(df$Conditions %in% c("Donor", "Donor1", "Donor2"), "WT", "HP")
+    }
+    else if (pattern == "Alternating") {
+      prepared_df$Group <- ifelse(seq_len(nrow(prepared_df)) %% 2 == 0, "WT", "HP")
+    }
+    else if (pattern == "Block") {
+      if (is.null(block_size)) stop("block_size must be provided for pattern = 'Block'")
+      reps <- rep(c("HP", "WT"), length.out = ceiling(nrow(prepared_df) / block_size))
+      prepared_df$Group <- rep(reps, each = block_size, length.out = nrow(prepared_df))
+    }
+    else if (pattern == "Manual") {
+      if (is.null(manual_map)) stop("manual_map must be provided for pattern = 'manual'")
+      prepared_df <- manual_map[as.character(prepared_df$Well)]
+    }
+    else if (pattern == "Cycle") {
+      if (is.null(cycle_pattern)) stop("Please provide cycle_pattern for 'cycle' pattern")
+      prepared_df$Group <- rep(cycle_pattern, length.out = nrow(prepared_df))
+    }
+    else if (pattern == "Cycle") {
+      if (is.null(cycle_pattern)) stop("Please provide cycle_pattern for 'cycle' pattern")
+      prepared_df <- prepared_df[order(prepared_df$Well), ]
+      prepared_df$Group <- rep(cycle_pattern, length.out = nrow(prepared_df))
+    }
 
-      if (se == "Yes") {
-        colData(se_obj)$Group  <- prepared_df$Group
-        return(se_obj)
-      } else {
-        return(prepared_df)
-      }
+  if (se == "Yes") {
+    colData(se_obj)$Group  <- prepared_df$Group
+    return(se_obj)
+  } else {
+    return(prepared_df)
   }
+}
   #' Create a data frame with the feature you want to add to your summarized experiment's colData
   #' @param se The summarized experiment you have created previously
   #' @param assay_name The metric / features you want to add
@@ -256,7 +258,7 @@ ag <- function(df, cols, fun=mean) {
   }
   #' Create a SE with assays for the additions (Add1 - Add4)
   #' @param se The summarized experiment you have created previously
-  #' @param assay_name The metric / features you want to have as assays
+  #' @param metrics The metric / features you want to have as assays
   #' @param FUN The method you would like to aggregate by
   #' @param na.rm Remove NAs
   #' @param periods Define your liquid periods
