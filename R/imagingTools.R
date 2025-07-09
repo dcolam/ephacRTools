@@ -10,38 +10,37 @@ NULL
 #' @return A dataframe
 #' @export
 prepareSingleImgDF <- function(pathDB,
-                                  analysis   = c("pa", "coloc"),
-                                  id_cols    = c("Date","Plate_ID","Well",
-                                                 "Image_ID","Channel_Name",
-                                                 "Selection","Selection_Area"),
-                                  num_cols   = c("Area","Mean","IntDen"),
-                                  scale_num  = FALSE,
-                                  scale_cols = NULL,
-                                  scale_fun  = function(x)
-                                    as.numeric(scale(x, TRUE, TRUE))) {
+                               analysis   = c("pa", "coloc"),
+                               id_cols    = c("Date","Plate_ID","Well",
+                                              "Image_ID","Channel_Name",
+                                              "Selection","Selection_Area"),
+                               num_cols   = c("Area","Mean","IntDen"),
+                               scale_num  = FALSE,
+                               scale_cols = NULL,
+                               scale_fun  = function(x)
+                                 as.numeric(scale(x, TRUE, TRUE))) {
 
-    analysis <- match.arg(analysis)
+  analysis <- match.arg(analysis)
 
-    ## ---------- helper that does your existing pipeline ------------------
-    process_tbl <- function(tbl) {
+  ## ---------- helper that does your existing pipeline ------------------
+  process_tbl <- function(tbl) {
+    print(names(tbl))
+    tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
 
-      tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
+    tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
+    tbl <- df_cleaned(tbl)                       # your ROI labelling
+    tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
+    #tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
 
-      tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
-      tbl <- df_cleaned(tbl)                       # your ROI labelling
-      tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
-      tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
-
-      # optional scaling
-      if (isTRUE(scale_num)) {
-        if (is.null(scale_cols))
-          scale_cols <- intersect(num_cols, names(tbl))
-        for (col in scale_cols) {
-          new_col <- paste0(col, "_Scaled")
-          tbl[[new_col]] <- scale_fun(tbl[[col]])
-          tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
-                                 .after = dplyr::all_of(col))
-        }
+    # optional scaling
+    if (isTRUE(scale_num)) {
+      if (is.null(scale_cols))
+        scale_cols <- intersect(num_cols, names(tbl))
+      for (col in scale_cols) {
+        new_col <- paste0(col, "_Scaled")
+        tbl[[new_col]] <- scale_fun(tbl[[col]])
+        tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
+                               .after = dplyr::all_of(col))
       }
       #rm(list = setdiff(ls(), "tbl"))
       #gc()
@@ -58,8 +57,8 @@ prepareSingleImgDF <- function(pathDB,
         FROM Particle_Analysis_Table  AS pa
         JOIN  PA_Measurement_Tables   AS meas
              ON meas.PA_ID = pa.PA_ID")
-    } else {                          # analysis == "coloc"
-      tbl <- DBI::dbGetQuery(con, "
+  } else {                          # analysis == "coloc"
+    tbl <- DBI::dbGetQuery(con, "
         SELECT *
         FROM Coloc_Analysis_Table  AS ca
         JOIN  Coloc_Measurement_Tables  AS meas
@@ -128,14 +127,16 @@ prepareImgDF <- function(pathDB,
       })
     }
 
+
   return(df)
 }
 #' Clean and normalize dataframe. Adds column and row identifiers and finds the
 #' selections with the Hole-ROI
 #' @param df dataframe of image results
+#' @param channels The names of the channels you are using (in the right order)
 #' @return A dataframe
 #' @export
-df_cleaned <- function(df){
+df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 
   df$Well_clean <- sapply(df$Well, function(x){
 
@@ -167,9 +168,9 @@ df_cleaned <- function(df){
 
   df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
 
-  df$Channel <- ifelse(df$Channel_Name == "C1", "DAPI",
-                       ifelse(df$Channel_Name == "C2", "Green",
-                              ifelse(df$Channel_Name == "C3", "Red", NA)))
+  df$Channel <- ifelse(df$Channel_Name == "C1", channels[1],
+                       ifelse(df$Channel_Name == "C2", channels[2],
+                              ifelse(df$Channel_Name == "C3", channels[3], NA)))
   df$Well <- paste(df$Row, stringr::str_pad(df$Column, 2, pad = "0"), sep="")
 
   df
@@ -177,10 +178,18 @@ df_cleaned <- function(df){
 #' Merge together the imaging-results into the Column Data of the SE
 #' @param se SummarizedExperiment Object with the Ephys-Data
 #' @param df_img DataFrame with imaging results returned by prepareImgDF()
+#' @param tableType Indicate whether the merge should be using particle analysis data or colocalization
+#' @param Selection Indicate whether the focus should be on the hole or the background
+#' @param suffix Indicate how the new columns should be identified at the end of the name
 #' @return A dataframe
 #' @export
-mergeSEandImg <- function(se, df_img, tableType = "pa"){
-  df_img <- subset(df_img, Image_Type == "fluor")
+mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI", "background_ROI"), suffix = "hole"){
+  if (Selection == "Hole_ROI"){
+    df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "Hole_ROI")
+  }
+  if (Selection == "background_ROI"){
+    df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "background_ROI")
+  }
   cd <- as.data.frame(SummarizedExperiment::colData(se))
   # Loop through each channel
   if(tableType == "pa"){
@@ -198,7 +207,8 @@ mergeSEandImg <- function(se, df_img, tableType = "pa"){
       # Create a DataFrame object from just the new data
       channel_data <- S4Vectors::DataFrame(joined[, new_cols])
       # Assign to colData(se), one column per channel, as a nested DataFrame
-      SummarizedExperiment::colData(se)[[channel]] <- channel_data
+      #SummarizedExperiment::colData(se)[[channel]] <- channel_data
+      SummarizedExperiment::colData(se)[[paste(channel, suffix, sep=".")]] <- channel_data
     }
 
   }else{
@@ -313,23 +323,30 @@ brighten_image <- function(img, factor = 1.5) {
 #' @param se_imagepath Path to your summarized experiment
 #' @param idx Well number you want to look at, in the form of "H14" or "H09"
 #' @param plate_ID Plate number you are interested in exploring
+#' @param green_slice Identicate which slice is the green image (if working with GFP and ROMK for instance)
+#' @param red_slice Identicate which slice is the red image
 #' @return A plot of four images (brightfield, green and red channels and overlay of the two channels on top of the BF)
 #' @export
-imageval <- function(se, idx, plate_ID) {
+imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
   load_bright <- function(file, factor)
     brighten_image(readImage(file), factor = factor)
 
   short_idx <- gsub("^([A-Z])0*", "\\1", idx)
 
   # helper function: take one channel and put it in the desired colour slot
-  make_grob <- function(img, src_slice = NULL, colour = c("red","green","blue")) {
-    if (is.null(src_slice)) {                        # full RGB
-      x <- normalize(img)
-    } else {                                         # monochrome as chosen colour
-      colour  <- match.arg(colour)
-      chan    <- normalize(img[,,src_slice])
+  make_grob <- function(img, src_slice = NULL, colour = c("red", "green", "blue")) {
+    if (is.null(src_slice)) {
+      # Check if img is an EBImage Image object; extract array before normalize
+      if (inherits(img, "Image")) {
+        x <- normalize(as.array(img))
+      } else {
+        x <- normalize(img)
+      }
+    } else {
+      colour <- match.arg(colour)
+      chan <- normalize(img[,,src_slice])
       rgb_arr <- array(0, dim = c(dim(chan), 3))
-      rgb_arr[,, match(colour, c("red","green","blue")) ] <- chan
+      rgb_arr[,, match(colour, c("red", "green", "blue"))] <- chan
       x <- rgb_arr
     }
     rasterGrob(x, interpolate = TRUE)
@@ -343,7 +360,8 @@ imageval <- function(se, idx, plate_ID) {
   bf_img <- all_imgs[grepl("BF\\.tif$", all_imgs)]
   img1 <- load_bright(bf_img, factor = 2)
   bf_channel <- normalize(img1)
-  img1_grob <- make_grob(rotate(img1, -90))
+  img1_grob <- make_grob(EBImage::rotate(img1, 180))
+  #img1_grob <- make_grob(img1)
 
   ## ---- fluorescence image (second file) -------------------------------
   fluorescent_img <- all_imgs[grepl("nm\\.tif$", all_imgs)]
@@ -353,13 +371,13 @@ imageval <- function(se, idx, plate_ID) {
   }
 
   img2 <- load_bright(fluorescent_img, factor = 40)
-  img2_grob_green <- make_grob(img2, src_slice = 2, colour = "green")  # plane 2 → green
-  img2_grob_red   <- make_grob(img2, src_slice = 3, colour = "red")    # plane 3 → red
+  img2_grob_green <- make_grob(img2, src_slice = green_slice, colour = "green")  # plane 2 → green
+  img2_grob_red   <- make_grob(img2, src_slice = red_slice, colour = "red")    # plane 3 → red
 
   ## composite: R=red, G=green, B=bright‑field
   comp_rgb <- array(0, dim = c(dim(img2[,,3]), 3))
-  comp_rgb[,,1] <- normalize(img2[,,3])
-  comp_rgb[,,2] <- normalize(img2[,,2])
+  comp_rgb[,,1] <- normalize(img2[,,red_slice]) #3
+  comp_rgb[,,2] <- normalize(img2[,,green_slice]) #2
   comp_rgb[,,3] <- bf_channel
   img2_grob_color <- rasterGrob(comp_rgb, interpolate = TRUE)
 
@@ -367,5 +385,8 @@ imageval <- function(se, idx, plate_ID) {
   grid.arrange(img1_grob, img2_grob_color, img2_grob_green, img2_grob_red, ncol = 2)
 
 }
+
+
+
 
 
