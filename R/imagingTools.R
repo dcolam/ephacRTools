@@ -134,6 +134,7 @@ prepareImgDF <- function(pathDB,
 #' Clean and normalize dataframe. Adds column and row identifiers and finds the
 #' selections with the Hole-ROI
 #' @param df dataframe of image results
+#' @param channels The names of the channels you are using (in the right order)
 #' @return A dataframe
 #' @export
 df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
@@ -178,6 +179,9 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 #' Merge together the imaging-results into the Column Data of the SE
 #' @param se SummarizedExperiment Object with the Ephys-Data
 #' @param df_img DataFrame with imaging results returned by prepareImgDF()
+#' @param tableType Indicate whether the merge should be using particle analysis data or colocalization
+#' @param Selection Indicate whether the focus should be on the hole or the background
+#' @param suffix Indicate how the new columns should be identified at the end of the name
 #' @return A dataframe
 #' @export
 mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI", "background_ROI"), suffix = "hole"){
@@ -292,6 +296,8 @@ brighten_image <- function(img, factor = 1.5) {
 #' @param se_imagepath Path to your summarized experiment
 #' @param idx Well number you want to look at, in the form of "H14" or "H09"
 #' @param plate_ID Plate number you are interested in exploring
+#' @param green_slice Identicate which slice is the green image (if working with GFP and ROMK for instance)
+#' @param red_slice Identicate which slice is the red image
 #' @return A plot of four images (brightfield, green and red channels and overlay of the two channels on top of the BF)
 #' @export
 imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
