@@ -67,6 +67,7 @@ prepareSingleImgDF <- function(pathDB,
     #cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
 
+  }
 }
 #' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
 #' @param pathDB Path to SQlite-DB
