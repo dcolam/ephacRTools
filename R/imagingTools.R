@@ -64,7 +64,7 @@ prepareSingleImgDF <- function(pathDB,
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
     }
-    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
+    #cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
 
 }
