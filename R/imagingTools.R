@@ -132,7 +132,7 @@ prepareImgDF <- function(pathDB,
         unlist(stringr::str_split(x, "\\r"))[1]
       })
     }
-
+  df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
 
   return(df)
 }
