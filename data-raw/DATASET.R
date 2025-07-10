@@ -34,7 +34,7 @@ usethis::use_data(se_iN, overwrite = TRUE)
 l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_romk <- prepareSE(l_files)
 
-l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
+l_files <- list.files(path = "data-raw/ROMK" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
 df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
 se_romk <- mergeSEandImg(se_romk, df_img, tableType = "coloc")
 df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
