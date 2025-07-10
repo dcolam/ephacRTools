@@ -34,8 +34,8 @@ prepareSingleImgDF <- function(pathDB,
 
     # optional scaling
     if (isTRUE(scale_num)) {
-      if (is.null(scale_cols))
-        scale_cols <- intersect(num_cols, names(tbl))
+      if (is.null(scale_cols)){
+        scale_cols <- intersect(num_cols, names(tbl))}
       for (col in scale_cols) {
         new_col <- paste0(col, "_Scaled")
         tbl[[new_col]] <- scale_fun(tbl[[col]])
@@ -45,8 +45,9 @@ prepareSingleImgDF <- function(pathDB,
       #rm(list = setdiff(ls(), "tbl"))
       #gc()
       print("DB processed")
-      tbl
+      return(tbl)
     }
+  }
     cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
     on.exit(DBI::dbDisconnect(con), add = TRUE)
@@ -66,8 +67,6 @@ prepareSingleImgDF <- function(pathDB,
     }
     #cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
-
-  }
 }
 #' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
 #' @param pathDB Path to SQlite-DB
@@ -85,7 +84,7 @@ prepareImgDF <- function(pathDB,
                                               "Image_ID","Channel_Name",
                                               "Selection","Selection_Area"),
                                num_cols   = c("Area","Mean","IntDen"),
-                                coloc_cols = c("Second_Channel","Mask_Area"),
+                               coloc_cols = c("Second_Channel","Mask_Area"),
                                scale_num  = FALSE,
                                scale_cols = NULL,
                                scale_fun  = function(x)
@@ -105,17 +104,23 @@ prepareImgDF <- function(pathDB,
                              scale_fun=scale_fun)
   }else{
     dfs <- lapply(pathDB, function(x) {
-      prepareSingleImgDF(x, analysis=analysis,
-                         id_cols = id_cols,
-                         num_cols = num_cols,
-                         scale_num=scale_num,
-                         scale_cols=scale_cols,
-                         scale_fun=scale_fun)
+      out <- prepareSingleImgDF(x, analysis=analysis,
+                                id_cols = id_cols,
+                                num_cols = num_cols,
+                                scale_num=scale_num,
+                                scale_cols=scale_cols,
+                                scale_fun=scale_fun)
+      if (!is.data.frame(out)) {
+        warning(paste("prepareSingleImgDF failed for", x))
+        return(NULL)
+      }
+      return(out)
     })
+
       #safe_names <- lapply(pathDB, function(x){basename(x)})
       #print(safe_names)
       #names(dfs) <- safe_names
-
+      dfs <- Filter(Negate(is.null), dfs)
       names(dfs) <- paste0("DB", seq_along(pathDB))
       df <- dplyr::bind_rows(dfs, .id = "column_label")
     }
