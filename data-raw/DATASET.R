@@ -29,6 +29,17 @@ se_iN <- mergeSEandImg(se_iN, df_img, tableType = "pa")
 colData(se_iN)
 rowData(se_iN)
 usethis::use_data(se_iN, overwrite = TRUE)
+## ROMK
+
+l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
+se_romk <- prepareSE(l_files)
+
+l_files <- list.files(path = "data-raw/ROMK" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
+se_romk <- mergeSEandImg(se_romk, df_img, tableType = "coloc", Selection = "Hole_ROI")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
+se_romk <- mergeSEandImg(se_romk, df_img, tableType = "pa", Selection = "Hole_ROI")
+usethis::use_data(se_romk, overwrite = TRUE)
 
 ## Primary neurons dataset with imaging data
 l_files <- list.files(path = "data-raw/PrimaryNeurons/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
@@ -41,10 +52,4 @@ se_pn <- mergeSEandImg(se_pn, df_img, tableType = "coloc")
 df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
 se_pn <- mergeSEandImg(se_pn, df_img, tableType = "pa")
 usethis::use_data(se_pn, overwrite = TRUE)
-
-# ROMK dataset
-l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
-se_romk <- prepareSE(l_files)
-usethis::use_data(se_romk, overwrite = TRUE)
-
 
