@@ -4,12 +4,16 @@
 \alias{imageval}
 \title{Plot the images with the different channels for a given well and plate}
 \usage{
-imageval(se, idx, plate_ID)
+imageval(se, idx, plate_ID, green_slice = 2, red_slice = 3)
 }
 \arguments{
 \item{idx}{Well number you want to look at, in the form of "H14" or "H09"}
 
 \item{plate_ID}{Plate number you are interested in exploring}
+
+\item{green_slice}{Identicate which slice is the green image (if working with GFP and ROMK for instance)}
+
+\item{red_slice}{Identicate which slice is the red image}
 
 \item{se_imagepath}{Path to your summarized experiment}
 }

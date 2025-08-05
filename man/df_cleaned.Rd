@@ -5,10 +5,12 @@
 \title{Clean and normalize dataframe. Adds column and row identifiers and finds the
 selections with the Hole-ROI}
 \usage{
-df_cleaned(df)
+df_cleaned(df, channels = c("Green", "Red", "ROMK"))
 }
 \arguments{
 \item{df}{dataframe of image results}
+
+\item{channels}{The names of the channels you are using (in the right order)}
 }
 \value{
 A dataframe
