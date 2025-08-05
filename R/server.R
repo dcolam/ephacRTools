@@ -15,7 +15,7 @@
 #'
 #' @return A shiny server function.
 #' @export
-#' @import shiny ggplot2 SummarizedExperiment sechm waiter plotly
+#' @import shiny ggplot2 SummarizedExperiment sechm waiter plotly shinyjs
 #' @importFrom shinydashboard updateTabItems
 #' @importFrom shinyjs showElement hideElement
 #' @importFrom DT datatable renderDT
@@ -170,12 +170,19 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                         selected=unique(colData(x)$Plate_ID)[1])
       updateSelectInput(session, "plate_id3", choices=unique(colData(x)$Plate_ID),
                         selected=unique(colData(x)$Plate_ID)[1])
+      updateSelectInput(session, "plate_id4", choices=unique(colData(x)$Plate_ID),
+                        selected=unique(colData(x)$Plate_ID)[1])
       updateSelectInput(session, "assay_id1", choices=assayNames(x),
                         selected=assayNames(x)[1])
       updateSelectInput(session, "color_group1", choices=colnames(as.data.frame(colData(x))),
-                        selected=NULL)
+                        selected=FALSE)
+      updateSelectInput(session, "facet_group1", choices=colnames(as.data.frame(colData(x))),
+                        selected=FALSE)
       updateSelectizeInput(session, "group_by_meta1",
                            choices=colnames(rowData(x)))
+      coldat <- colnames(as.data.frame(colData(x))[ , !purrr::map_lgl(as.data.frame(colData(x)), is.numeric)])
+
+      updateSelectInput(session, "condition", choices=coldat)
 
 
 
@@ -225,6 +232,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         initialized(TRUE)
         }
         updateSelectizeInput(session, "seDataset", choices = names(SEs), selected = input$object)
+        updateSelectInput(session, "rdsObject", choices = names(SEs), selected = input$object)
 
       x <- mergeFlists(x)
       return(x)
@@ -563,6 +571,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
         output$plate_view <- renderPlotly({
+
           req(input$assay_id)
           if(!is.null(SE())){
 
@@ -685,17 +694,19 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           print(paste0("plotly_", type))
           event <- plotly::event_data(paste0("plotly_", type), source = source_id)
           req(event)
-
+          print(event)
           df <- do.call(rbind, lapply(event$key, function(k) {
             parts <- strsplit(k, ",\\s*")[[1]]
             data.frame(well = parts[1], plate_id = parts[2], stringsAsFactors = FALSE)
           }))
 
           plate_ids <- unique(df$plate_id)
-          if (length(plate_ids) != 1) return(NULL)  # Only allow one plate per event
+          #if (length(plate_ids) != 1) return(NULL)  # Only allow one plate per event
 
-          plate_id <- plate_ids
-          current_wells <- get_wells(plate_id)
+          for(plate in plate_ids){
+            print(plate)
+
+          current_wells <- get_wells(plate)
 
           if (type == "click") {
             for (well in df$well) {
@@ -708,16 +719,17 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           }
 
           if (type == "selected") {
-            current_wells <- unique(df$well)
+            current_wells <- unique(subset(df, plate_id == plate)$well)
           }
 
-          set_wells(plate_id, current_wells)
+          set_wells(plate, current_wells)
 
           #if (source_id == "cluster_plot") {
           #  updateSelectizeInput(session, "plate_id3", selected = plate_id)
           #}
-
           update_all_select_inputs()
+          }
+
         }
 
         # --- Observe plot events ---
@@ -762,20 +774,26 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       ### BEGIN Plot Sweeps
 
       output$sweep_view <- renderPlotly({
-
+        req(input$facets)
         if(!is.null(SE())){
 
+          if(!input$all_plates){
           se <- SE()[,SE()$Plate_ID == input$plate_id1]
+          }else{se <- SE()}
 
-          if(input$assay_id1 %in% assayNames(se)){
+
+          #if(input$assay_id1 %in% assayNames(se)){
             assayNames <- input$assay_id1
-          }
-
-          if(is.null(input$color_group1)){
+          #}
+          print(input$color_group1)
+          print(input$group_by_meta1)
+          if(input$color_group1 == ""){
             color_group <- input$group_by_meta1
           }else{
             color_group <- input$color_group1
           }
+
+
 
 
         if(length(get_wells(input$plate_id1)) > 0){
@@ -783,9 +801,72 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
         }
 
-         p <-  plotAssayVSSweeps(se, assayList = assayNames,
-                            rowCol = input$group_by_meta1, colorGroup = color_group)
 
+
+         # p <-  plotAssayVSSweeps(se, assayList = assayNames,
+         #                    rowCol = input$group_by_meta1, colorGroup = color_group,
+         #                    wrapFormula = variable~.)
+
+            rowCol <-input$group_by_meta1
+
+            melted.se <- sechm::meltSE(se, features=row.names(se),
+                                       assayName=assayNames,
+                                       rowDat.columns = rowCol)
+
+            melted.se <-reshape2::melt(melted.se,
+                                       measure.vars = assayNames,
+                                       value.name = "assays", variable.name="vars")
+
+
+            # if(input$assay_option1 == "raw"){
+            #   melted.dat[[assayName]] <- melted.dat[[assayName]]
+            #   legend <- assayName
+            # }
+            # if(input$assay_option1 == "log10"){
+            #   melted.dat[[assayName]] <- log10(abs(melted.dat[[assayName]]))
+            #   legend <- paste("log10(", assayName, ")", sep="")
+            # }
+            # if(input$assay_option1 == "scale"){
+            #   melted.dat[[assayName]] <- scale(melted.dat[[assayName]], center = T)
+            #   legend <- paste("Z-scaled(", assayName, ")", sep="")
+            # }
+
+              p <- ggplot2::ggplot(melted.se, aes(x=.data[[rowCol]], y=assays, color=.data[[color_group]])) +
+                ggplot2::stat_summary(geom='errorbar',fun.data=mean_se, size=1, alpha=0.6) +
+                ggplot2::stat_summary(geom='line', fun = "mean", size=1, alpha=1) +
+                ggplot2::theme_minimal(base_size = 16) +
+                ggplot2::ylab(input$y.labels) +
+                ggplot2::xlab(input$x.labels) +
+                ggplot2::geom_hline(yintercept=0, linetype="dashed")
+
+              print(input$facet_group1)
+                if(input$facet_group1 == ""){
+
+                      facet_group1 <- "."
+                }else{
+                  facet_group1 <- as.character(input$facet_group1)
+    }
+                print(melted.se)
+              if(input$invertFacet){
+                facetForm <- paste(facet_group1, "vars", sep=" ~ ")
+              }else{
+                facetForm <- paste("vars", facet_group1, sep=" ~ ")
+              }
+
+              print(as.formula(facetForm))
+
+                if(input$facets == "grid"){
+                    p <- p + facet_grid(as.formula(facetForm, env = parent.frame()), scales="free")
+                }
+              if(input$facets == "wrap"){
+                if(input$invertFacet){
+                  p <- p + facet_wrap(as.formula(facetForm, env = parent.frame()),
+                                      scales="free", ncol = length(unique(melted.se[["vars"]])))
+                }else{
+                  p <- p + facet_wrap(as.formula(facetForm, env = parent.frame()),
+                                      scales="free", nrow = length(unique(melted.se[["vars"]])))
+                }
+              }
           ggplotly(p)
         }
       })
@@ -1088,6 +1169,99 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     #updateSelectInput(session, "selected_well", selected = matching_wells)
     #updateSelectInput(session, "selected_well1", selected = matching_wells)
   })
+
+  output$plate_view_col <- renderPlotly({
+    # Create grid
+    rows <- LETTERS[1:16]
+    cols <- sprintf("%02d", 1:24)
+    grid <- expand.grid(Row = rows, Col = cols)
+    grid$Well <- paste0(grid$Row, grid$Col)
+    grid$Selected <-  TRUE#grid$Well %in% selected_wells$data$well
+
+    # Plot it
+    # p <- ggplot(grid, aes(x = Col, y = Row)) +
+    #   geom_tile(aes(fill = Selected), color = "grey50") +
+    #   scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "white")) +
+    #   scale_y_discrete(limits = rev) +
+    #   theme_void() +
+    #   theme(legend.position = "none",
+    #         panel.border = element_rect(color = "black", fill = NA))
+
+    # if(length(get_wells(input$plate_id4)) > 0 & !input$all_plates2){
+    #   grid$Selected <- ifelse(grid$Well %in% get_wells(input$plate_id4), TRUE, FALSE)
+    #   grid$Plate_ID <-input$plate_id4
+    # }else{
+    #   grid$Selected <- TRUE
+    #   grid$Plate_ID <- "All_Plates"
+    # }
+    #melted.dat$is_selected <- ifelse(melted.dat$Well %in% input$selected_well, TRUE, FALSE)
+    grid$Selected <- TRUE
+    grid$key_combined <- paste(grid$Well, grid$Plate_ID, sep = ", ")
+
+    coldata <- as.data.frame(colData(SE()))
+    coldata <- coldata[coldata$Plate_ID %in% input$plate_id4,]
+
+    if(input$condition == "" | !is.null(input$condition)){
+      condition <- "Well"
+
+    }else{
+      condition <- input$condition
+    }
+    p <- ggplot(grid, aes(x = as.numeric(Col), y = Row, key = key_combined, fill=coldata[[condition]])) +
+      geom_tile() +
+      scale_x_continuous(breaks = 1:24) +
+      scale_y_discrete(limits = rev) +
+      geom_text(aes(label = paste(Row, Col, sep="")), color = "white") +
+      theme_minimal() + labs(fill=input$condition, xlab="Column")
+
+    ggplotly(p, source = "condition_plot")
+
+
+  })
+
+
+  observeEvent(input$createCondition, {
+    tryCatch({
+      se <- SE()
+    if(!is.null(input$newCondition) | input$newCondition == ""){
+
+      se[[input$newCondition]] <- "init"
+      SEs[[input$object]] <- se
+      SEinit(SEs[[input$object]])
+
+      coldat <- colnames(as.data.frame(colData(se))[ , !purrr::map_lgl(as.data.frame(colData(se)), is.numeric)])
+
+      updateSelectInput(session, "condition", choices=coldat, selected = input$newCondition)
+    }
+      }, error=function(e){
+        print(conditionMessage(e))
+        print(traceback())
+        showModal(modalDialog(easyClose=TRUE, title="Error with upload",
+                              "The file was not recognized. Are you sure that it is a R .rds file?",
+                              tags$pre(e)))
+      })
+
+
+  })
+
+
+  # Toggle visibility
+  observeEvent(input$toggle_plate, {
+    toggle("mini_plate_plot")
+  })
+
+
+  ## Download-Tab
+
+  output$downloadRDS <- downloadHandler(
+    filename = function() {
+      #paste(input$download_table, ' Edited Table.csv', sep='')
+      paste(input$rdsObject, ".rds", sep="")
+    },
+    content = function(file) {
+      saveRDS(SEs[[input$rdsObject]], file)
+    }
+  )
 
 
 

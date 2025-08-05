@@ -42,7 +42,7 @@ tinySEV <- function(objects=NULL, title="tinySEV", waiterContent=NULL,
 #'
 #' @return a shiny UI
 #' @export
-#' @import shiny shinydashboard shinyjqui waiter
+#' @import shiny shinydashboard shinyjqui waiter shinyjs
 #' @importFrom shinycssloaders withSpinner
 #' @importFrom plotly plotlyOutput
 #' @importFrom shinyjs useShinyjs
@@ -86,15 +86,22 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                                  menuSubItem("Sweeps", tabName="tab_features")
                                                                  )),
                                                       .modify_stop_propagation(
+                                                        menuItem("Customize Object Groups", startExpanded=TRUE,
+                                                                 menuSubItem("Define Conditions", tabName="tab_coldata"),
+                                                                 menuSubItem("Define Sweeps", tabName="tab_rowdata"),
+                                                                 menuSubItem("Change Assays", tabName="tab_assays"),
+                                                                 menuSubItem("Filtering", tabName="tab_assays")
+                                                        )),
+                                                      .modify_stop_propagation(
                                                         menuItem("Plotting", startExpanded=TRUE,
                                                                  menuSubItem("Plate Overview", tabName="tab_plate"),
                                                                  menuSubItem("Plot Sweeps", tabName="tab_sweeps"),
                                                                  menuSubItem("Show Images", tabName="tab_images")
                                                         )),
 
+
                                                       hr(),
                                                       menuItem("Clustering", tabName = "tab_cluster"),
-                                                      menuItem("Define Groupings", tabName="tab_groupings"),
                                                       menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
                                                               tags$span(paste0("ephacRTools v",
@@ -113,6 +120,21 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                           )
                          ),
                          dashboardBody(
+                           useShinyjs(),
+
+                           # absolutePanel(id = "plate_viewer", class = "panel panel-default",
+                           #               fixed = TRUE,
+                           #               draggable = TRUE,
+                           #               top = "auto", left = "auto", right = 20, bottom = 20,
+                           #               width = 150, height = 100,
+                           #               style = "z-index: 1000; overflow: hidden;",
+                           #
+                           #               div(style = "display: flex; justify-content: space-between; align-items: center;",
+                           #
+                           #                   actionButton("toggle_plate", label = NULL, icon = icon("window-minimize"), style = "padding: 2px 6px; font-size: 12px;")
+                           #               ),
+                           #               plotOutput("mini_plate_plot", height = "250px")
+                           # ),
                            tags$head(tags$style(HTML("
         .sidebar-menu li.treeview, .sidebar-menu li.treeview:hover a{
         	background-color: #2c3b41;
@@ -136,7 +158,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                              tabItem("tab_object", withSpinner(uiOutput("objOverview"))),
                              tabItem("tab_fileinput",
                                      fluidRow(
-                                     box(width=6,
+                                     box(width=6,title = "Load RDS",
                                          tags$p("You may upload your own SummarizedExperiment (SE) object
                      saved as a R .rds file. Once uploaded, it will be added to
                      the list of available objects (in the dropdown list on the
@@ -145,7 +167,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                          fileInput("file", "Choose SE .rds file", multiple=FALSE,
                                                    accept=c(".rds",".RDS", ".rda"))
                                          ),
-                                     box(width=6,
+                                     box(width=6,title = "Load Prebundlet Dataset",
                                          tags$p("Load one or more of the sample Datasets bundled with the ephacRTools package. For a description of the single datasets ", actionLink("help_SE", "click here"), "."),
                                          selectInput("datasets", label= "Choose a pre-bundled Dataset:",
                                                       choices = list("Human Adrenal Glands" = "se_hAG",
@@ -159,7 +181,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
                                       fluidRow(
                                      box(
-                                       width = 6,
+                                       width = 6,title = "Load Excel-File",
                                        tags$p("You may upload one or more Excel files generated directly by DataControl. Make sure to follow the guidelines."),
 
 
@@ -179,7 +201,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                        # actionButton("loadEphys", label = "Load Excel into SE")
                                      ),
                                      box(
-                                       width = 6,
+                                       width = 6,title = "Load Imaging Results",
                                        tags$p("You may upload imaging result `.db` files and link them to a selected SummarizedExperiment (SE) dataset. Make sure the data types match."),
 
                                        # Row with selectizeInput and fileInput side-by-side
@@ -352,6 +374,8 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                            column(width = 4,
                                                   selectInput("plate_id1", label = "Plate ID", choices = c()),
 
+                                                  checkboxInput("all_plates", label = "Show All Plates"),
+
                                                   # NEW: Well selector that updates on click
                                                   selectizeInput("selected_well1", "Selected Well",
                                                               choices = c(),
@@ -361,23 +385,80 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                   actionButton("reset_well", "Reset Well Selection")
                                            ),
                                            column(width = 4,
-                                                  selectInput("assay_id1", label = "Assay", choices = c()),
+                                                  selectInput("assay_id1", label = "Assay", choices = c(), multiple=T),
                                                   radioButtons("assay_option1", "Assay Display Mode:",
                                                                choices = c("Raw" = "raw", "Log10" = "log10", "Z-score" = "scale"),
-                                                               inline = TRUE)
+                                                               inline = TRUE),
+                                                  textInput("x.labels", label="X-Axis Labeling", value = "Sweep"),
+                                                  textInput("y.labels", label="Y-Axis Labeling", value = "Assay Value")
                                            ),
                                            column(width = 4,
                                                   # Primary sweep selection
-                                                  selectInput("group_by_meta1", "Group by metadata column:",
+                                                  selectInput("group_by_meta1", "Choose X-Axis Variable",
                                                               choices = c()),
                                                   selectInput("color_group1", "Color by:",
-                                                              choices = c(), multiple = TRUE)
+                                                              choices = c(), multiple = F),
+                                                  selectInput("facet_group1", "Facet Grouping:",
+                                                              choices = c(), multiple = F),
+
+                                                  radioButtons("facets", label="Facetting",
+                                                               choices=c("Grid" = "grid", "Wrap" = "wrap", "No Facet" = "nothing"),
+                                                               inline=T, selected = "grid"),
+                                                  checkboxInput("invertFacet", label = "Invert Facetting:", value = F)
+
 
                                            )
                                          )
 
                                      )
                              ),
+
+
+
+                             tabItem("tab_coldata",
+
+
+                                              box(width = 6,
+                                                  fluidRow(
+                                                  column(width=4,
+                                                  selectInput("plate_id4", label = "Plate ID", choices = c())
+                                                  ),
+                                                  column(width=4,
+                                                  selectInput("condition", label = "Highlight Condition:", choices = c(),
+                                                              selected=FALSE)
+                                                  ),
+                                                  column(width=4,
+                                                  checkboxInput("all_plates2", label = "Same for All Plates", value = T))
+                                                  ),
+                                                  withSpinner(plotlyOutput("plate_view_col", height = "400px")),
+                                                  fluidRow(
+                                                    column(width=6,
+                                                           textInput("newCondition", label = "Name the New Condition Group:", value= "Ex. Genotype"),
+                                                           actionButton("createCondition", label="Submit")
+                                                    ),
+                                                    column(width=6,
+                                                           selectInput("subGroup", label = "Choose the Wells:", choices = c()),
+                                                           textInput("newCondition", label = "Name the selected Group:", value = "Ex. Control"),
+                                                           actionButton("createGroup", label="Submit")
+
+                                                    )
+                                                  )
+
+
+
+
+                                              ),
+
+
+                                     box(width = 6,
+                                         withSpinner(DTOutput("features_col"))
+
+                                         )
+
+
+                             ),
+
+
                              tabItem("tab_cluster",
 
                                      box(width = 12, title = "Set up Clustering:", collapsible = T, collapsed = T,
@@ -397,11 +478,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                  sliderInput("k_cluster", label= "Number of Clusters", min=1, max=20, value=3, step = 1),
 
                                                  )
-
-
                                         )
-
-
                                          ),
 
                                      tabBox(
@@ -441,6 +518,24 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
 
                              ),
+
+                          tabItem("tab_export",
+
+
+                                  box("Export as RDS-Object", width=6,
+                                      column(width=12,
+                                      fluidRow(
+
+
+
+                                      selectInput("rdsObject", choices = c(), label = "Choose the Dataset"),
+                                      downloadButton("downloadRDS", "Download")
+                                        )
+                                      )
+                                      )
+
+                                  ),
+
 
 
 
