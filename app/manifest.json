@@ -310,7 +310,7 @@
         "URL": "https://bioconductor.org/packages/GenomeInfoDb",
         "Video": "http://youtu.be/wdEjCYSXa7w",
         "BugReports": "https://github.com/Bioconductor/GenomeInfoDb/issues",
-        "Version": "1.44.0",
+        "Version": "1.44.1",
         "License": "Artistic-2.0",
         "Encoding": "UTF-8",
         "Authors@R": "c(\n\tperson(\"Sonali\", \"Arora\", role=\"aut\"),\n\tperson(\"Martin\", \"Morgan\", role=\"aut\"),\n\tperson(\"Marc\", \"Carlson\", role=\"aut\"),\n\tperson(\"Hervé\", \"Pagès\", role=c(\"aut\", \"cre\"),\n\t\temail=\"hpages.on.github@gmail.com\"),\n\tperson(\"Prisca Chidimma\", \"Maduka\", role=\"ctb\"),\n\tperson(\"Atuhurira Kirabo\", \"Kakopo\", role=\"ctb\"),\n\tperson(\"Haleema\", \"Khan\", role=\"ctb\",\n\t\tcomment=\"vignette translation from Sweave to Rmarkdown / HTML\"),\n\tperson(\"Emmanuel Chigozie\", \"Elendu\", role=\"ctb\"))",
@@ -321,15 +321,15 @@
         "Collate": "utils.R fetch_table_dump_from_Ensembl_FTP.R list_ftp_dir.R\nrankSeqlevels.R NCBI-utils.R UCSC-utils.R Ensembl-utils.R\ngetChromInfoFromNCBI.R getChromInfoFromUCSC.R\ngetChromInfoFromEnsembl.R loadTaxonomyDb.R mapGenomeBuilds.R\nseqinfo.R Seqinfo-class.R seqlevelsStyle.R seqlevels-wrappers.R\nGenomeDescription-class.R zzz.R",
         "git_url": "https://git.bioconductor.org/packages/GenomeInfoDb",
         "git_branch": "RELEASE_3_21",
-        "git_last_commit": "280cf61",
-        "git_last_commit_date": "2025-04-15",
+        "git_last_commit": "527ee76",
+        "git_last_commit_date": "2025-07-17",
         "Repository": "Bioconductor 3.21",
-        "Date/Publication": "2025-04-15",
+        "Date/Publication": "2025-07-21",
         "NeedsCompilation": "no",
-        "Packaged": "2025-04-16 00:55:01 UTC; biocbuild",
+        "Packaged": "2025-07-21 23:28:38 UTC; biocbuild",
         "Author": "Sonali Arora [aut],\n  Martin Morgan [aut],\n  Marc Carlson [aut],\n  Hervé Pagès [aut, cre],\n  Prisca Chidimma Maduka [ctb],\n  Atuhurira Kirabo Kakopo [ctb],\n  Haleema Khan [ctb] (vignette translation from Sweave to Rmarkdown /\n    HTML),\n  Emmanuel Chigozie Elendu [ctb]",
         "Maintainer": "Hervé Pagès <hpages.on.github@gmail.com>",
-        "Built": "R 4.5.0; ; 2025-04-16 14:32:20 UTC; windows"
+        "Built": "R 4.5.1; ; 2025-07-22 13:18:10 UTC; windows"
       }
     },
     "GenomeInfoDbData": {
