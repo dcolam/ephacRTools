@@ -24,14 +24,20 @@ prepareSingleImgDF <- function(pathDB,
 
   ## ---------- helper that does your existing pipeline ------------------
   process_tbl <- function(tbl) {
-    print(names(tbl))
+    #print(names(tbl))
     tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
 
+    print(names(tbl))
+
+
+    id_cols <-intersect(names(tbl), id_cols)
+
     tbl <- ag(tbl, cols = id_cols, fun = mean)   # your ag()
-    tbl <- df_cleaned(tbl)                       # your ROI labelling
+    tbl <- df_cleaned(tbl)
+    print(scale_num) # your ROI labelling
     tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
     #tbl <- dplyr::filter(tbl, CorrSel == "Hole_ROI")
-
+    print(tbl)
     # optional scaling
     if (isTRUE(scale_num)) {
       if (is.null(scale_cols)){
@@ -42,11 +48,11 @@ prepareSingleImgDF <- function(pathDB,
         tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
                                .after = dplyr::all_of(col))
       }
+    }
       #rm(list = setdiff(ls(), "tbl"))
       #gc()
       print("DB processed")
       return(tbl)
-    }
   }
     cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
@@ -64,7 +70,8 @@ prepareSingleImgDF <- function(pathDB,
         FROM Coloc_Analysis_Table  AS ca
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
-    }
+  }
+    print(tbl)
     #cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
 }
@@ -85,6 +92,7 @@ prepareImgDF <- function(pathDB,
                                               "Selection","Selection_Area"),
                                num_cols   = c("Area","Mean","IntDen"),
                                coloc_cols = c("Second_Channel","Mask_Area"),
+                              new_channel_names = c("blue", "green", "red", "farred"),
                                scale_num  = FALSE,
                                scale_cols = NULL,
                                scale_fun  = function(x)
@@ -116,7 +124,6 @@ prepareImgDF <- function(pathDB,
       }
       return(out)
     })
-
       #safe_names <- lapply(pathDB, function(x){basename(x)})
       #print(safe_names)
       #names(dfs) <- safe_names
@@ -132,6 +139,9 @@ prepareImgDF <- function(pathDB,
         unlist(stringr::str_split(x, "\\r"))[1]
       })
     }
+  print(df)
+
+  df$Image_ID <- as.numeric(df$Image_ID)
   df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
 
   return(df)
@@ -171,15 +181,17 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
     df[df$Selection == sel & df$Selection_Area == selMin,"CorrSel"] <- "Hole_ROI"
     df[df$Selection == sel & df$Selection_Area == selMax,"CorrSel"] <- "background_ROI"
   }
+  print("DF cleaned")
 
-  df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
+  df$Image_ID <- as.numeric(df$Image_ID)
+  df$Image_Type <- ifelse(as.numeric(df$Image_ID) %% 2 != 0, "fluor", "bf")
 
-  df$Channel <- ifelse(df$Channel_Name == "C1", channels[1],
-                       ifelse(df$Channel_Name == "C2", channels[2],
-                              ifelse(df$Channel_Name == "C3", channels[3], NA)))
+  df$Channel <- ifelse(df$Channel_Name == "BFP", channels[1],
+                        ifelse(df$Channel_Name == "mCherry", channels[2],
+                               ifelse(df$Channel_Name == "GFP", channels[3], NA)))
   df$Well <- paste(df$Row, stringr::str_pad(df$Column, 2, pad = "0"), sep="")
 
-  df
+  return(df)
 }
 #' Merge together the imaging-results into the Column Data of the SE
 #' @param se SummarizedExperiment Object with the Ephys-Data
@@ -189,13 +201,15 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 #' @param suffix Indicate how the new columns should be identified at the end of the name
 #' @return A dataframe
 #' @export
-mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI", "background_ROI"), suffix = "hole"){
-  if (Selection == "Hole_ROI"){
-    df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "Hole_ROI")
-  }
-  if (Selection == "background_ROI"){
-    df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "background_ROI")
-  }
+mergeSEandImg <- function(se, df_img, tableType = "pa", selType = c("Hole_ROI", "background_ROI"), suffix = "hole"){
+  # if (Selection == "Hole_ROI"){
+  #   df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "Hole_ROI")
+  # }
+  # if (Selection == "background_ROI"){
+  #   df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "background_ROI")
+  # }
+
+  df_img <- subset(df_img, Image_Type == "fluor" & CorrSel %in% selType)
   cd <- as.data.frame(SummarizedExperiment::colData(se))
   # Loop through each channel
   if(tableType == "pa"){
@@ -214,6 +228,7 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", Selection = c("Hole_ROI"
       channel_data <- S4Vectors::DataFrame(joined[, new_cols])
       # Assign to colData(se), one column per channel, as a nested DataFrame
       #SummarizedExperiment::colData(se)[[channel]] <- channel_data
+      print(channel_data)
       SummarizedExperiment::colData(se)[[paste(channel, suffix, sep=".")]] <- channel_data
     }
 
