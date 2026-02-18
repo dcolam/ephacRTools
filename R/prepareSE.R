@@ -68,10 +68,12 @@ prepareDF <- function(pathToDF) {
   for (s in no.sweeps) {
     cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value = TRUE))
     tempdf <- df[, cols]
+    try({
     tempdf$Sweep <- s
     tempdf$V_Clamp <- volt[, grep(s, names(volt), value = TRUE)]
     colnames(tempdf) <- colnames(new.df)
     new.df <- rbind(new.df, tempdf)
+    })
   }
 
   # Optional numeric conversion for V_Clamp
