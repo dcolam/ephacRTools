@@ -1,7 +1,7 @@
 Package: ephacRTools
 Type: Package
 Title: Analyze HT-APC Data
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(
     person("David", "Colameo", role = c("aut", "cre"), email="david.colameo@uzh.ch"),
     person("Athena", "Schumacher", role = c("aut")),

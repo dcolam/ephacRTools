@@ -4,12 +4,24 @@
 \alias{mergeSEandImg}
 \title{Merge together the imaging-results into the Column Data of the SE}
 \usage{
-mergeSEandImg(se, df_img, tableType = "pa")
+mergeSEandImg(
+  se,
+  df_img,
+  tableType = "pa",
+  Selection = c("Hole_ROI", "background_ROI"),
+  suffix = "hole"
+)
 }
 \arguments{
 \item{se}{SummarizedExperiment Object with the Ephys-Data}
 
 \item{df_img}{DataFrame with imaging results returned by prepareImgDF()}
+
+\item{tableType}{Indicate whether the merge should be using particle analysis data or colocalization}
+
+\item{Selection}{Indicate whether the focus should be on the hole or the background}
+
+\item{suffix}{Indicate how the new columns should be identified at the end of the name}
 }
 \value{
 A dataframe

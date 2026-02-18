@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "locale": "en_CH",
+  "platform": "4.5.1",
+  "metadata": {
+    "appmode": "static",
+    "primary_rmd": null,
+    "primary_html": "doc/getting-started.html",
+    "content_category": null,
+    "has_parameters": false
+  },
+  "packages": null,
+  "files": {
+    ".Rbuildignore": {
+      "checksum": "e2c7df4a48adfe5de1f687e0d86809de"
+    },
+    ".RData": {
+      "checksum": "19c469e0369926f8e47fe629902733b5"
+    },
+    "app/app.R": {
+      "checksum": "e367c10de3676797083b9c1d68c5a6ca"
+    },
+    "data-raw/DATASET.R": {
+      "checksum": "da0e3d75266500431e34ce2b95e46d78"
+    },
+    "data-raw/hAG/Ephys/NCI_ramp_ATP1A1_080325_18T39421.xlsx": {
+      "checksum": "28548ca5e7575f0eaeed8fbe3657b940"
+    },
+    "data-raw/hAG/Ephys/NCI_ramp_ATP1A1_120315_18T39273.xlsx": {
+      "checksum": "a394ff4fcb7c16a82d501be5375c1c2b"
+    },
+    "data-raw/hAG/Ephys/NCI_ramp_ATP1A1_120315_18T39274.xlsx": {
+      "checksum": "4fb322c495cc124c4f72bfa5e9ac9191"
+    },
+    "data-raw/hAG/Ephys/NCI_ramp_ATP1A1_210225_18T39428.xlsx": {
+      "checksum": "e0cb8aac1507fd528635552213b6d8fc"
+    },
+    "data-raw/hAG/Imaging/Output_n1_08.03.db": {
+      "checksum": "bfa6dc2fc8bb80c9735c3422993fdd44"
+    },
+    "data-raw/hAG/Imaging/Output_n1_12.03.db": {
+      "checksum": "2f137f9c68d0a8f4a046d1088bad9662"
+    },
+    "data-raw/hAG/Imaging/Output_n1_21.02.db": {
+      "checksum": "f793e4ae32c3e6800fd17d20bca5db64"
+    },
+    "data-raw/hAG/metadata_syncropatch_experiments.xlsx": {
+      "checksum": "725fb499d68c71713649217ec14c1a89"
+    },
+    "data-raw/iNeurons/IV neurons_14.28.48_18T39265_LC_new_LC.xlsx": {
+      "checksum": "e4004b6af2c0a5ac4e400aa288ebd847"
+    },
+    "data-raw/iNeurons/Output_n1_ipsc_19.03_18T.db": {
+      "checksum": "a84b2358690b01315cacc5cee9c45765"
+    },
+    "data-raw/PrimaryNeurons/IV neurons_12.47.37_RAW.xlsx": {
+      "checksum": "f75b55c7b0387649c0084846a77712c7"
+    },
+    "data-raw/PrimaryNeurons/Output_291124_BME308_DIV_18T05487.db": {
+      "checksum": "eb45fbe6de5619c5c49fdb82e578ce90"
+    },
+    "data-raw/ROMK/NCI_ramp_ATP1A1_18.30.46.xlsx": {
+      "checksum": "984d17961a063b281ce0eb81216f2d45"
+    },
+    "data/se_hAG.rda": {
+      "checksum": "f4bc36fd7dfdd442d44988486c5a46e2"
+    },
+    "data/se_iN.rda": {
+      "checksum": "85e94f71a5beefb49d1ff51b60a5cc00"
+    },
+    "data/se_pn.rda": {
+      "checksum": "35fb03b89bb691e512dd62b6050feee0"
+    },
+    "data/se_romk.rda": {
+      "checksum": "640f635fa5fd6537f0a351784c373703"
+    },
+    "DESCRIPTION": {
+      "checksum": "0fc14ecd4f4715e0d658cc0b8e6c4de8"
+    },
+    "doc/getting-started.html": {
+      "checksum": "19fe9d67260952aea719e25217efeb53"
+    },
+    "doc/getting-started.R": {
+      "checksum": "328cc78848566064cd82f6455660302b"
+    },
+    "doc/getting-started.Rmd": {
+      "checksum": "d367dc3b51eecbbdaa6fe7f61ebc3467"
+    },
+    "ignore/Imaging_functions_neurons.R": {
+      "checksum": "e1b7a862f4cf4b46bcbb588608d0d6c1"
+    },
+    "ignore/Imagingscript_neurons_AS_Jiayi.Rmd": {
+      "checksum": "417b0e113a3daf9d7bf2a8c51b837a22"
+    },
+    "inst/ephacRTools_sticker.R": {
+      "checksum": "ef79c7b4a511edcb909c45289f9a3819"
+    },
+    "inst/figures/ggplot2.png": {
+      "checksum": "b609f42c8c4fd3522563b58a5c70c423"
+    },
+    "inst/figures/ggplot2.svg": {
+      "checksum": "1377fb867a70722ad5185ac703907eb1"
+    },
+    "man/add_imagingcols_toSE.Rd": {
+      "checksum": "91babc739ec21d2be53a0604bddd99d6"
+    },
+    "man/addImgPaths.Rd": {
+      "checksum": "67e006ac56f0f870c8751278cc8a16f0"
+    },
+    "man/assign_cell_FINAL.Rd": {
+      "checksum": "da0df354708c1343a3bc9a0b837f0203"
+    },
+    "man/assign_cell_FINAL_valcol.Rd": {
+      "checksum": "395eda3c1e2f667adbcbef2ee7d56470"
+    },
+    "man/brighten_image.Rd": {
+      "checksum": "1a14f5c8df438b6cc8a2a810e7536052"
+    },
+    "man/checkAssay.Rd": {
+      "checksum": "baa1a8c050055458a62a08be51ee3530"
+    },
+    "man/colAG.Rd": {
+      "checksum": "f41947b12a5002426565e9d8b90ca1f5"
+    },
+    "man/df_cleaned.Rd": {
+      "checksum": "6dfdb41990c612d88d7744145f72e32f"
+    },
+    "man/dround.Rd": {
+      "checksum": "326c814fdc501c228c013d5f25c3720a"
+    },
+    "man/filtered_df.Rd": {
+      "checksum": "3db85614e403c7c942988b0bef09a521"
+    },
+    "man/get_metric.Rd": {
+      "checksum": "4f51c52edc085b2be58cbf5f40ba10ea"
+    },
+    "man/grepGene.Rd": {
+      "checksum": "0976a36287a46b58c744fa58d4475329"
+    },
+    "man/group_assignment.Rd": {
+      "checksum": "dba3d83c532a89d183b53b4293ebd77f"
+    },
+    "man/hello.Rd": {
+      "checksum": "6efd8217f473a7d176807f4025bfee60"
+    },
+    "man/image_paths.Rd": {
+      "checksum": "853ec2d209482af28ba66e7db4e5377c"
+    },
+    "man/imageval.Rd": {
+      "checksum": "4827e20955617e1a0fa4c833c347d434"
+    },
+    "man/mergeSEandImg.Rd": {
+      "checksum": "70e86d3a28df056811acd40e83fed00f"
+    },
+    "man/plot_intensity_distribution.Rd": {
+      "checksum": "f4fd47ed7b5f6aa046d7e1bd98e18504"
+    },
+    "man/plot_well_assignment.Rd": {
+      "checksum": "a31dafbd9c2511d41fb36c2df9944d4a"
+    },
+    "man/plot_well_binary_assignment.Rd": {
+      "checksum": "5f09ab7291ec1756d4f35a3c3653bbc5"
+    },
+    "man/plotAssayVSSweeps.Rd": {
+      "checksum": "52595962a274e947639d8982f9fc4796"
+    },
+    "man/plotDimRed.Rd": {
+      "checksum": "719515e3a83d10bfcb1015496c516d52"
+    },
+    "man/prep_df.Rd": {
+      "checksum": "28abe13edb927ebdf1ba2ef9776e35ef"
+    },
+    "man/prep_excel.Rd": {
+      "checksum": "45a2ed045374ca2a9dc76e9b0c56d2df"
+    },
+    "man/prepareDF.Rd": {
+      "checksum": "2e24205ebbca9e3363e53af73b6caadc"
+    },
+    "man/prepareImgDF.Rd": {
+      "checksum": "314c435db606b6c2fe933353e4ecb7b1"
+    },
+    "man/prepareMultipleDFs.Rd": {
+      "checksum": "ff963d3c145814808ea69eafbd63fe3d"
+    },
+    "man/prepareSE.Rd": {
+      "checksum": "f83d68a916672b693b53aaa5f2945b9f"
+    },
+    "man/prepareSingleImgDF.Rd": {
+      "checksum": "7aada62abdd1e62b0f5d38701f5bd476"
+    },
+    "man/reducedDim.Cellwise.Rd": {
+      "checksum": "960b1f062e7fc73f66126f160799b414"
+    },
+    "man/row_aggregate_SE.Rd": {
+      "checksum": "c6e6861b3f9be863bfd1c5ddd4f6ed34"
+    },
+    "man/rowAG.Rd": {
+      "checksum": "e68daa4ba7ec933b72b956541d91e1e7"
+    },
+    "man/se_hAG.Rd": {
+      "checksum": "af269e1f2f36529932c30ae7452823e9"
+    },
+    "man/se_iN.Rd": {
+      "checksum": "e7488b0c0cced8c24f71679e5976695b"
+    },
+    "man/tinySEV.Rd": {
+      "checksum": "4614fe2c53ad9f1fa2ec4c744200fb36"
+    },
+    "man/tinySEV.server.Rd": {
+      "checksum": "8ffcc9d6d48b52ad0163579eeabe1150"
+    },
+    "man/tinySEV.ui.Rd": {
+      "checksum": "cc6b0e74ef93700e75ff4ce503ed3000"
+    },
+    "NAMESPACE": {
+      "checksum": "bb6b2c5f76d723904d70f47ccf8e1e59"
+    },
+    "R/Cellassignment_V2.R": {
+      "checksum": "8a2ba5dc7c1058404c65cf0b288a1367"
+    },
+    "R/data.R": {
+      "checksum": "133d89a71f9befd1faec0c2c44f7e88c"
+    },
+    "R/help.R": {
+      "checksum": "f3d6e01e017c2c4ee4e1d13be46ffb30"
+    },
+    "R/imagingTools.R": {
+      "checksum": "f1806e6ac8fef1fa08553662b7a20311"
+    },
+    "R/misc.R": {
+      "checksum": "d034901618d91fdf84c911136cb4cd31"
+    },
+    "R/prepareSE.R": {
+      "checksum": "c8f137f518bf76edc0fba196674f3a0d"
+    },
+    "R/RECOVERED_colDatTools.R": {
+      "checksum": "424cb189851cbdcf0eebbc8a14a86338"
+    },
+    "R/server.R": {
+      "checksum": "3634ad95a0516351992f8257114d7c94"
+    },
+    "R/ui.R": {
+      "checksum": "e43f5034d66b86385e141d9a1a9f5013"
+    },
+    "R/utilityTools.R": {
+      "checksum": "10a40ab51a71f67313b27392263a2ccc"
+    },
+    "renv.lock": {
+      "checksum": "d265d79d92b96c1c7704cc04a11bce6c"
+    },
+    "vignettes/getting-started.R": {
+      "checksum": "6a52428895027a6982d75b52de00b247"
+    },
+    "vignettes/getting-started.Rmd": {
+      "checksum": "e8cad15f87e5f3d8396ff6cba197b1a3"
+    }
+  },
+  "users": null
+}

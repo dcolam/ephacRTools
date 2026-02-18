@@ -47,7 +47,9 @@ colAG <- function(se, assayList, fun=mean, sweeps=row.names(se)){
 #' @param k_clusters number of clusters
 #' @return se with updated results
 #' @export
-reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "within", byRow=FALSE, method=c("pca", "tsne", "umap"), k_clusters=3){
+reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "within",
+                                byRow=FALSE, method=c("pca", "tsne", "umap"),
+                                k_clusters=3){
 
   if(length(assayList) != 0){
   assayList <- assayList[assayList %in% assayNames(se)]
@@ -217,7 +219,9 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
   vmax_col <- paste0("Vmax.", suffix)
 
   wells <- unique(se$Well)
+  plates <- unique(se$Plate_ID)
   results <- data.frame(Well = wells,
+                        Plate_ID = plates,
                         Imax = NA_real_,
                         Vhalf = NA_real_,
                         Vmax = NA_real_)
@@ -225,9 +229,14 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
   assay_data <- assay(se, assay)
   v_clamp <- rowData(se)$V_Clamp
   well_ids <- se$Well
+  plate_ids <- se$Plate_ID
 
   for (i in seq_along(wells)) {
+    for (p in seq_along(plate_ids)){
+    #i = 1
+    tryCatch({
     well <- wells[i]
+    plate <- plate_ids[p]
     indices <- which(well_ids == well)
 
     x_vals <- v_clamp
@@ -256,6 +265,19 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
     if (length(pred_sub) > 0) {
       idx <- which.min(abs(pred_sub - Imax / 2))
       Vhalf <- fit_sub[idx]
+      }
+    },
+    error = function(e) {
+      # Dieser Teil wird ausgeführt, wenn ein Fehler auftritt
+      print(paste0("This Well failed:", well))
+      print(paste0("On Plate: ", plate))
+      print(paste("Ein Fehler ist aufgetreten:", conditionMessage(e)))
+      results$Imax[i] <- NA
+      results$Vhalf[i] <- NA
+      results$Vmax[i] <- NA
+    }
+
+    )
     }
 
     results$Imax[i] <- Imax
@@ -272,4 +294,174 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
   return(se)
 }
 
+
+# get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
+#   suffix <- tolower(assay)
+#   imax_col <- paste0("Imax.", suffix)
+#   vhalf_col <- paste0("Vhalf.", suffix)
+#   vmax_col <- paste0("Vmax.", suffix)
+#
+#
+#   coldat <- sechm::meltSE(se, rownames(se),
+#                           assayName = assay, rowDat.columns = "V_Clamp")
+#
+#   wells <- unique(se$Well)
+#   plates <- unique(se$Plate_ID)
+#   results <- data.frame(Well = wells,
+#                         Plate_ID = plates,
+#                         Imax = NA_real_,
+#                         Vhalf = NA_real_,
+#                         Vmax = NA_real_)
+#
+#   assay_data <- assay(se, assay)
+#   v_clamp <- rowData(se)$V_Clamp
+#   well_ids <- se$Well
+#   plate_ids <- se$Plate_ID
+#
+#   for (i in seq_along(wells)) {
+#     for (p in seq_along(plate_ids)){
+#
+#       tryCatch({
+#
+#         #subdat <- subset(coldat, Well == wells[i] & Plate_ID == plate_ids[p])
+#         subdat[subdat$Well == wells[i] & subdat$Plate_ID == plate_ids[p],]
+#         x_vals <- subdat[, "V_Clamp"]
+#         y_vals <- subdat[, assay]
+#
+#         # Skip if all NA
+#         if (all(is.na(y_vals))) next
+#
+#         if (inward) {
+#           Imax <- min(y_vals, na.rm = TRUE)
+#           Vmax1 <- min(x_vals[y_vals == Imax])
+#         } else {
+#           Imax <- max(y_vals, na.rm = TRUE)
+#           Vmax1 <- max(x_vals[y_vals == Imax])
+#         }
+#
+#         y_vals[!complete.cases(y_vals)] <- 1  # Avoid smooth.spline errors
+#
+#         spl <- smooth.spline(x_vals, y = y_vals)
+#         fit <- predict(spl, seq(min(x_vals), max(x_vals), length.out = 100))
+#
+#         Vhalf <- NA
+#         fit_sub <- fit$x[fit$x < Vmax1]
+#         pred_sub <- fit$y[fit$x < Vmax1]
+#
+#         if (length(pred_sub) > 0) {
+#           idx <- which.min(abs(pred_sub - Imax / 2))
+#           Vhalf <- fit_sub[idx]
+#         }
+#
+#         },
+#       error = function(e) {
+#         # Dieser Teil wird ausgeführt, wenn ein Fehler auftritt
+#         #print(paste0("This Well failed:", well))
+#         #print(paste0("On Plate: ", plate))
+#         print(paste("Ein Fehler ist aufgetreten:", conditionMessage(e)))
+#         results$Imax[i] <- NA
+#         results$Vhalf[i] <- NA
+#         results$Vmax[i] <- NA
+#       }
+#
+#       )
+#     }
+#
+#     results$Imax[i] <- Imax
+#     results$Vhalf[i] <- Vhalf
+#     results$Vmax[i] <- Vmax1
+#   }
+#
+#   coldata <- colData(se)
+#   coldata[[imax_col]] <- results$Imax[match(interaction(se$Well, se$Plate_ID),
+#                                             interaction(results$Well, results$Plate_ID))]
+#   coldata[[vhalf_col]] <- results$Vhalf[match(interaction(se$Well, se$Plate_ID),
+#                                               interaction(results$Well, results$Plate_ID))]
+#   coldata[[vmax_col]] <- results$Vmax[match(interaction(se$Well, se$Plate_ID),
+#                                             interaction(results$Well, results$Plate_ID))]
+#
+#   colData(se) <- coldata
+#   return(se)
+# }
+get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
+
+  suffix <- tolower(assay)
+  imax_col <- paste0("Imax.", suffix)
+  vhalf_col <- paste0("Vhalf.", suffix)
+  vmax_col <- paste0("Vmax.", suffix)
+
+  # Melt once
+  dat <- sechm::meltSE(
+    se,
+    rownames(se),
+    assayName = assay,
+    rowDat.columns = "V_Clamp"
+  )
+
+  # Split once by Well + Plate
+  groups <- split(dat, interaction(dat$Well, dat$Plate_ID, drop = TRUE))
+
+  res <- lapply(groups, function(subdat) {
+
+    x_vals <- subdat$V_Clamp
+    y_vals <- subdat[[assay]]
+
+    if (all(is.na(y_vals))) {
+      return(c(Imax = NA_real_, Vhalf = NA_real_, Vmax = NA_real_))
+    }
+
+    if (inward) {
+      Imax <- min(y_vals, na.rm = TRUE)
+      Vmax1 <- min(x_vals[y_vals == Imax])
+    } else {
+      Imax <- max(y_vals, na.rm = TRUE)
+      Vmax1 <- max(x_vals[y_vals == Imax])
+    }
+
+    # Avoid spline failure
+    y_vals[!is.finite(y_vals)] <- 1
+
+    spl <- tryCatch(
+      smooth.spline(x_vals, y_vals),
+      error = function(e) NULL
+    )
+
+    if (is.null(spl)) {
+      return(c(Imax = Imax, Vhalf = NA_real_, Vmax = Vmax1))
+    }
+
+    fit <- predict(spl, seq(min(x_vals), max(x_vals), length.out = 100))
+
+    idx <- which(fit$x < Vmax1)
+    Vhalf <- NA_real_
+
+    if (length(idx)) {
+      i2 <- which.min(abs(fit$y[idx] - Imax / 2))
+      Vhalf <- fit$x[idx][i2]
+    }
+
+    c(Imax = Imax, Vhalf = Vhalf, Vmax = Vmax1)
+  })
+
+  res <- do.call(rbind, res)
+  res <- as.data.frame(res)
+
+  keys <- do.call(rbind, strsplit(names(groups), "\\."))
+  colnames(keys) <- c("Well", "Plate_ID")
+
+  res$Well <- keys[, 1]
+  res$Plate_ID <- keys[, 2]
+
+  # Map back to colData
+  idx <- match(
+    interaction(se$Well, se$Plate_ID),
+    interaction(res$Well, res$Plate_ID)
+  )
+
+  colData(se)[[imax_col]] <- res$Imax[idx]
+  colData(se)[[vhalf_col]] <- res$Vhalf[idx]
+  colData(se)[[vmax_col]] <- res$Vmax[idx]
+
+  se
+}
 
