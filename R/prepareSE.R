@@ -20,7 +20,9 @@ prepareDF <- function(pathToDF) {
   cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
 
   # Read file
-  df <- readxl::read_excel(pathToDF, sheet = "OA Export", col_types = "text")
+  sheets <- readxl::excel_sheets(pathToDF)
+  sheets <- sheets[grepl("Export", sheets)]
+  df <- readxl::read_excel(pathToDF, sheet = sheets, col_types = "text")
   df <- as.data.frame(df)
   cat("✅ Full Excel loaded\n")
   cat("🧠 Memory (after read):", format(object.size(df), units = "auto"), "\n")
@@ -39,7 +41,7 @@ prepareDF <- function(pathToDF) {
 
   # Handle voltage sweep info
   volt_steps <- FALSE
-  if ("Sweep Voltage" %in% df$Well) {
+  if ("Sweep Voltage" %in% df$Well | "Abs" %in% df$Well) {
     volt <- df[grepl("Sweep Voltage", df$Well), ]
     df <- df[!grepl("Sweep Voltage", df$Well), ]
     volt <- volt[, grep("Compound", names(volt))]

@@ -96,7 +96,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                         menuItem("Plotting", startExpanded=TRUE,
                                                                  menuSubItem("Plate Overview", tabName="tab_plate"),
                                                                  menuSubItem("Plot Sweeps", tabName="tab_sweeps"),
-                                                                 menuSubItem("Show Images", tabName="tab_images")
+                                                                 menuSubItem("Image Plate Viewer", tabName="tab_imgplate")
                                                         )),
 
 
@@ -336,30 +336,51 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
                                      )
                              ),
-                             tabItem("tab_images",
-                                     box(width = 12,
-
-                                         # Row for plot
-                                         fluidRow(
-                                           column(width = 12,
-                                                  withSpinner(plotlyOutput("sweep_view1"))
-                                           )
-                                         ),
-                                         fluidRow(
-                                           column(width = 4,
-                                                  selectInput("plate_id2", label = "Plate ID", choices = c()),
-
-                                                  # NEW: Well selector that updates on click
-                                                  selectizeInput("selected_well3", "Selected Well",
-                                                                 choices = c()),
-
-                                                  # NEW: Reset button
-                                                  actionButton("reset_well", "Reset Well Selection")
-                                            )
-                                          )
-
-                                        )
-                                     ),
+                             tabItem("tab_imgplate",
+                                     fluidRow(
+                                       column(width = 3,
+                                         box(width = 12, title = "Image Folder",
+                                           shinyFiles::shinyDirButton(
+                                             "img_dir_btn",
+                                             label       = "Browse for image folder…",
+                                             title       = "Select the folder containing plate images",
+                                             class       = "btn-primary btn-block"
+                                           ),
+                                           helpText("Subfolders whose names contain a Plate ID are matched automatically."),
+                                           div(style = "font-size: 11px; font-family: monospace; color: #666; margin-top: 4px; word-break: break-all;",
+                                               textOutput("img_folder_display")),
+                                           hr(),
+                                           selectInput("plate_img_id", "Matched Plate ID", choices = c()),
+                                           hr(),
+                                           selectInput("img_coldata_var", "Overlay colData column:",
+                                                       choices = "None", selected = "None"),
+                                           sliderInput("img_overlay_alpha", "Overlay opacity:",
+                                                       min = 0, max = 1, value = 0.4, step = 0.05),
+                                           uiOutput("img_filter_ui"),
+                                           uiOutput("img_legend_ui"),
+                                           hr(),
+                                           div(
+                                             strong("Hover: "),
+                                             span(style = "font-family: monospace; font-size: 13px;",
+                                                  textOutput("img_hover_info", inline = TRUE))
+                                           ),
+                                           hr(),
+                                           verbatimTextOutput("img_plate_stats")
+                                         )
+                                       ),
+                                       column(width = 9,
+                                         box(width = 12, style = "padding: 0; overflow: hidden;",
+                                           plotOutput("img_plate_plot",
+                                                      click = "img_plate_click",
+                                                      hover = hoverOpts("img_plate_hover",
+                                                                        delay = 60,
+                                                                        nullOutside = TRUE),
+                                                      width  = "100%",
+                                                      height = "600px")
+                                         )
+                                       )
+                                     )
+                             ),
                              tabItem("tab_sweeps",
                                      box(width = 12,
 

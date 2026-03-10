@@ -48,7 +48,7 @@ colAG <- function(se, assayList, fun=mean, sweeps=row.names(se)){
 #' @return se with updated results
 #' @export
 reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "within",
-                                byRow=FALSE, method=c("pca", "tsne", "umap"),
+                                byRow=FALSE,center = FALSE, method=c("pca", "tsne", "umap"),
                                 k_clusters=3){
 
   if(length(assayList) != 0){
@@ -56,7 +56,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   pca_data <- lapply(assayList, function(x){
     if(scaling == "within"){
       #scale(t(assay(se, x)))
-      temp <- sechm::safescale(t(assay(se, x)), byRow = byRow)
+      temp <- sechm::safescale(t(assay(se, x)),center = center, byRow = byRow)
     }else{
       temp <-t(assay(se, x))
     }
@@ -77,7 +77,7 @@ reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "with
   col_Data <- lapply(colNames, function(x){
                      if(scaling == "within"){
 
-                       temp <- sechm::safescale(flattened.df[[x]])
+                       temp <- sechm::safescale(flattened.df[[x]], center = F, byRow = byRow)
                      }else{
                        temp <-flattened.df[[x]]
                      }
@@ -464,4 +464,198 @@ get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
 
   se
 }
+
+fit_boltzmann_se <- function(
+    se,
+    assay = "Gmin",
+    id_cols = c("Well", "Plate_ID"),
+    vclamp_col = "V_Clamp",
+    vmax_col = "Vmax.minima",              # if NULL, uses paste0("Vmax.", tolower(assay))
+    use_activation_limb = TRUE,
+    min_points = 8,
+    r2_min = 0.85,
+    k_abs_max = 50,
+    require_span = 0.4,           # require max(y)-min(y) on limb
+    strict_norm = TRUE            # for Gmin, enforce y in [0,1] with tolerance
+) {
+
+  suffix <- tolower(assay)
+  if (is.null(vmax_col)) vmax_col <- paste0("Vmax.", suffix)
+
+  out_vhalf <- paste0("Vhalf_boltz.", suffix)
+  out_k     <- paste0("k_boltz.", suffix)
+  out_y0    <- paste0("y0_boltz.", suffix)
+  out_ymax  <- paste0("ymax_boltz.", suffix)
+  out_conv  <- paste0("boltz_converged.", suffix)
+  out_r2    <- paste0("boltz_r2.", suffix)
+  out_ok    <- paste0("boltz_ok.", suffix)
+  out_msg   <- paste0("boltz_msg.", suffix)
+
+  # Melt once
+  dat <- sechm::meltSE(
+    se,
+    features = rownames(se),
+    assayName = assay,
+    rowDat.columns = vclamp_col
+  )
+
+  # Create the group key in the melted data (Well.Plate_ID)
+  key <- interaction(dat[[id_cols[1]]], dat[[id_cols[2]]], drop = TRUE)
+  dat$.key <- key
+
+  # Lookup Vmax per cell from colData(se) (computed in pass 1)
+  cd_key <- interaction(colData(se)[[id_cols[1]]], colData(se)[[id_cols[2]]], drop = TRUE)
+  if (vmax_col %in% colnames(colData(se))) {
+
+    vmax_lookup <- setNames(colData(se)[[vmax_col]], cd_key)
+
+  } else {
+
+    message("Vmax column not found — computing Vmax from ", assay)
+
+    # Melt only once for this assay
+    dat_vmax <- sechm::meltSE(
+      se,
+      features = rownames(se),
+      assayName = assay,
+      rowDat.columns = vclamp_col
+    )
+
+    # Create key
+    dat_vmax$.key <- interaction(
+      dat_vmax[[id_cols[1]]],
+      dat_vmax[[id_cols[2]]],
+      drop = TRUE
+    )
+
+    # Split per cell
+    groups_vmax <- split(dat_vmax, dat_vmax$.key)
+
+    vmax_lookup <- sapply(groups_vmax, function(subdat) {
+
+      x <- subdat[[vclamp_col]]
+      y <- subdat[[assay]]
+
+      ok <- is.finite(x) & is.finite(y)
+      x <- x[ok]; y <- y[ok]
+
+      if (length(y) == 0) return(NA_real_)
+
+      ymax <- max(y, na.rm = TRUE)
+
+      if (!is.finite(ymax)) return(NA_real_)
+
+      # If multiple identical maxima, choose the first occurrence
+      # (more stable for activation curves)
+      idx <- which(y == ymax)[1]
+
+      x[idx]
+    })
+
+  }
+
+  groups <- split(dat, dat$.key)
+
+  res <- lapply(names(groups), function(k) {
+    subdat <- groups[[k]]
+
+    x <- subdat[[vclamp_col]]
+    y <- subdat[[assay]]
+
+    ok <- is.finite(x) & is.finite(y)
+    x <- x[ok]; y <- y[ok]
+
+    if (length(y) < min_points) {
+      return(c(Vhalf=NA, k=NA, y0=NA, ymax=NA, conv=0, r2=NA, ok=0, msg="too_few_points"))
+    }
+
+    # Optionally fit only activation limb (<= Vmax from pass 1)
+    if (use_activation_limb && !is.na(vmax_lookup[[k]])) {
+      keep <- x <= vmax_lookup[[k]]
+      x <- x[keep]; y <- y[keep]
+    }
+
+    if (length(y) < min_points) {
+      return(c(Vhalf=NA, k=NA, y0=NA, ymax=NA, conv=0, r2=NA, ok=0, msg="too_few_points_limb"))
+    }
+
+    # Sanity for Gmin-like normalization
+    if (strict_norm) {
+      # tolerate small numerical overshoot
+      if (min(y, na.rm=TRUE) < -0.1 || max(y, na.rm=TRUE) > 1.1) {
+        return(c(Vhalf=NA, k=NA, y0=NA, ymax=NA, conv=0, r2=NA, ok=0, msg="not_normalized"))
+      }
+    }
+
+    span <- max(y) - min(y)
+    if (!is.finite(span) || span < require_span) {
+      return(c(Vhalf=NA, k=NA, y0=NA, ymax=NA, conv=0, r2=NA, ok=0, msg="insufficient_span"))
+    }
+
+    # For stability, fit y scaled 0..1 (even if already normalized)
+    y01 <- (y - min(y)) / (max(y) - min(y))
+
+    # Starting guesses: Vhalf at ~0.5, k ~ 8-12
+    v0 <- x[which.min(abs(y01 - 0.5))]
+    start <- list(V_half = v0, k = 10, y0 = 0, ymax = 1)
+
+    fit <- tryCatch(
+      nls(
+        y01 ~ y0 + (ymax - y0) / (1 + exp((V_half - x) / k)),
+        start = start,
+        control = nls.control(maxiter = 200, warnOnly = TRUE)
+      ),
+      error = function(e) e
+    )
+
+    if (inherits(fit, "error")) {
+      return(c(Vhalf=NA, k=NA, y0=NA, ymax=NA, conv=0, r2=NA, ok=0, msg="nls_error"))
+    }
+
+    conv <- isTRUE(fit$convInfo$isConv)
+
+    co <- coef(fit)
+    Vhalf <- unname(co["V_half"])
+    kk    <- unname(co["k"])
+    y0    <- unname(co["y0"])
+    ymax  <- unname(co["ymax"])
+
+    yhat <- predict(fit)
+    rss <- sum((y01 - yhat)^2)
+    tss <- sum((y01 - mean(y01))^2)
+    r2 <- if (tss > 0) 1 - rss/tss else NA_real_
+
+    # QC: convergence + sane slope + good fit + monotonic-ish amplitude
+    ok_fit <- conv &&
+      is.finite(Vhalf) && is.finite(kk) &&
+      abs(kk) <= k_abs_max &&
+      is.finite(r2) && r2 >= r2_min &&
+      (ymax - y0) >= 0.3
+
+    if (!ok_fit) Vhalf <- NA_real_
+
+    c(Vhalf=Vhalf, k=kk, y0=y0, ymax=ymax,
+      conv=as.numeric(conv), r2=r2, ok=as.numeric(ok_fit),
+      msg=ifelse(ok_fit, "ok", "qc_fail"))
+  })
+
+  res <- do.call(rbind, res)
+  res <- as.data.frame(res)
+  res$.key <- names(groups)
+
+  # Map back to colData
+  idx <- match(cd_key, res$.key)
+
+  colData(se)[[out_vhalf]] <- as.numeric(res$Vhalf[idx])
+  colData(se)[[out_k]]     <- as.numeric(res$k[idx])
+  colData(se)[[out_y0]]    <- as.numeric(res$y0[idx])
+  colData(se)[[out_ymax]]  <- as.numeric(res$ymax[idx])
+  colData(se)[[out_conv]]  <- as.numeric(res$conv[idx])
+  colData(se)[[out_r2]]    <- as.numeric(res$r2[idx])
+  colData(se)[[out_ok]]    <- as.numeric(res$ok[idx])
+  colData(se)[[out_msg]]   <- as.character(res$msg[idx])
+  colData(se)
+  se
+}
+
 

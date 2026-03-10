@@ -24,6 +24,8 @@
 #' @importFrom shinyauthr loginServer
 #' @importFrom ggbeeswarm geom_beeswarm
 #' @importFrom HDF5Array loadHDF5SummarizedExperiment
+#' @importFrom jpeg readJPEG
+#' @importFrom shinyFiles shinyDirButton shinyDirChoose parseDirPath
 tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                            feature.lists=list(), filelist=list(), logins=NULL,
                            feature.listsTab=TRUE){
@@ -233,6 +235,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         }
         updateSelectizeInput(session, "seDataset", choices = names(SEs), selected = input$object)
         updateSelectInput(session, "rdsObject", choices = names(SEs), selected = input$object)
+        updateSelectInput(session, "img_coldata_var",
+                          choices  = c("None", colnames(as.data.frame(colData(x)))),
+                          selected = "None")
 
       x <- mergeFlists(x)
       return(x)
@@ -1275,6 +1280,333 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     observeEvent(input$help_hmscale, showModal(.getHelp("scale")))
     observeEvent(input$help_hmtrim, showModal(.getHelp("scaletrim")))
     observeEvent(input$help_feature.lists, showModal(.getHelp("feature.lists")))
+
+    # ---------------------------------------------------------------
+    # Image Plate Viewer tab
+    # ---------------------------------------------------------------
+
+    .rows384 <- LETTERS[1:16]
+
+    .extract_well <- function(bn) {
+      m <- regexpr("(?<=_)([A-P])([0-9]{1,2})(?:-[0-9]+)?(?=_)", bn, perl = TRUE)
+      if (m[1] == -1) return(NA_character_)
+      tok <- regmatches(bn, m)
+      row <- sub("^([A-P]).*$", "\\1", tok)
+      col <- as.integer(sub("^[A-P]([0-9]{1,2}).*$", "\\1", tok))
+      if (is.na(col) || col < 1 || col > 24) return(NA_character_)
+      paste0(row, sprintf("%02d", col))
+    }
+
+    .coords_to_well <- function(x, y) {
+      col_num <- floor(x) + 1L
+      row_idx <- 16L - floor(y)
+      if (col_num < 1 || col_num > 24 || row_idx < 1 || row_idx > 16)
+        return(NA_character_)
+      paste0(.rows384[row_idx], sprintf("%02d", col_num))
+    }
+
+    .img_roots <- c(
+      Home = normalizePath("~", winslash = "/", mustWork = TRUE),
+      C = "C:/", D = "D:/", Y = "Y:/", Z = "Z:/"
+    )
+    .img_roots <- .img_roots[c(TRUE, dir.exists(.img_roots[-1]))]
+
+    shinyFiles::shinyDirChoose(input, "img_dir_btn", roots = .img_roots,
+                               allowDirCreate = FALSE)
+
+    img_parent <- reactive({
+      req(input$img_dir_btn)
+      p <- shinyFiles::parseDirPath(.img_roots, input$img_dir_btn)
+      if (length(p) != 1 || !nzchar(p) || !dir.exists(p)) return(NULL)
+      p <- normalizePath(p, winslash = "/")
+      addResourcePath("imgplate", p)
+      p
+    })
+
+    output$img_folder_display <- renderText({
+      p <- img_parent()
+      if (is.null(p)) "(no folder selected)" else p
+    })
+
+    # Match SE Plate_IDs to subdirectories (plate_id substring in dir name)
+    img_plate_dirs <- reactive({
+      parent <- img_parent()
+      se     <- SE()
+      req(!is.null(parent), !is.null(se))
+
+      plate_ids  <- unique(colData(se)$Plate_ID)
+      subdirs    <- list.dirs(parent, full.names = TRUE, recursive = FALSE)
+      subnames   <- basename(subdirs)
+
+      matched <- list()
+      for (pid in plate_ids) {
+        idx <- which(grepl(pid, subnames, fixed = TRUE))
+        if (length(idx) > 0)
+          matched[[pid]] <- subdirs[idx[1]]
+        else
+          # fallback: use parent folder itself if only one plate
+          if (length(plate_ids) == 1) matched[[pid]] <- parent
+      }
+      matched
+    })
+
+    observeEvent(img_plate_dirs(), {
+      dirs <- img_plate_dirs()
+      req(length(dirs) > 0)
+      updateSelectInput(session, "plate_img_id",
+                        choices  = names(dirs),
+                        selected = names(dirs)[1])
+    })
+
+    # JPGs for selected plate folder
+    img_files <- reactive({
+      dirs <- img_plate_dirs()
+      pid  <- input$plate_img_id
+      req(length(dirs) > 0, nzchar(pid %||% ""), pid %in% names(dirs))
+      list.files(dirs[[pid]],
+                 pattern     = "\\.(jpg|jpeg)$",
+                 full.names  = TRUE,
+                 recursive   = TRUE,
+                 ignore.case = TRUE)
+    })
+
+    # well -> file map for selected plate
+    img_well_map <- reactive({
+      files <- img_files()
+      ids   <- as.vector(t(outer(.rows384, sprintf("%02d", 1:24), paste0)))
+      m     <- setNames(rep(NA_character_, length(ids)), ids)
+      if (length(files) == 0) return(list(map = m, n = 0L))
+
+      wells <- vapply(basename(files), .extract_well, character(1))
+      ok    <- !is.na(wells)
+      if (any(ok)) {
+        fw <- files[ok]; ww <- wells[ok]; keep <- !duplicated(ww)
+        m[ww[keep]] <- fw[keep]
+      }
+      list(map = m, n = sum(ok))
+    })
+
+    # Raw (unfiltered) colData values — used for palette + filter UI
+    img_coldata_raw <- reactive({
+      se  <- SE()
+      var <- input$img_coldata_var
+      pid <- input$plate_img_id
+      if (is.null(se) || is.null(var) || var == "None" || is.null(pid)) return(NULL)
+      cd <- as.data.frame(colData(se))
+      cd <- cd[cd$Plate_ID == pid, , drop = FALSE]
+      if (nrow(cd) == 0 || !var %in% colnames(cd)) return(NULL)
+      setNames(cd[[var]], cd$Well)
+    })
+
+    # Filtered values — NAs mark excluded wells
+    img_coldata_vals <- reactive({
+      vals <- img_coldata_raw()
+      if (is.null(vals)) return(NULL)
+      if (is.numeric(vals)) {
+        rng <- input$img_filter_range
+        if (!is.null(rng))
+          vals[vals < rng[1] | vals > rng[2]] <- NA_real_
+      } else {
+        groups <- input$img_filter_groups
+        if (!is.null(groups))
+          vals[!as.character(vals) %in% groups] <- NA
+      }
+      vals
+    })
+
+    # Filter UI: range slider (numeric) or checkbox group (categorical)
+    output$img_filter_ui <- renderUI({
+      vals <- img_coldata_raw()
+      if (is.null(vals)) return(NULL)
+      if (is.numeric(vals)) {
+        rng <- range(vals, na.rm = TRUE)
+        tagList(
+          hr(),
+          strong("Filter range"),
+          sliderInput("img_filter_range", label = NULL,
+                      min = rng[1], max = rng[2],
+                      value = c(rng[1], rng[2]),
+                      step  = signif(diff(rng) / 100, 2))
+        )
+      } else {
+        lvls <- sort(unique(na.omit(as.character(vals))))
+        tagList(
+          hr(),
+          strong("Filter groups"),
+          checkboxGroupInput("img_filter_groups", label = NULL,
+                             choices  = lvls,
+                             selected = lvls)
+        )
+      }
+    })
+
+    # Legend UI: gradient bar (numeric) or colored squares (categorical)
+    output$img_legend_ui <- renderUI({
+      vals <- img_coldata_raw()
+      if (is.null(vals)) return(NULL)
+      if (is.numeric(vals)) {
+        rng  <- range(vals, na.rm = TRUE)
+        pal  <- viridis::viridis(12)
+        grad <- paste0("linear-gradient(to right, ",
+                       paste(pal, collapse = ", "), ")")
+        tagList(
+          hr(),
+          strong("Legend"),
+          div(style = paste0("background:", grad,
+                             "; height:16px; border-radius:4px; margin:6px 0 2px;")),
+          div(style = "display:flex; justify-content:space-between; font-size:11px;",
+              span(signif(rng[1], 3)), span(signif(rng[2], 3)))
+        )
+      } else {
+        lvls <- sort(unique(na.omit(as.character(vals))))
+        pal  <- setNames(rainbow(length(lvls), s = 0.8, v = 0.9), lvls)
+        tagList(
+          hr(),
+          strong("Legend"),
+          div(style = "margin-top:6px;",
+              lapply(lvls, function(lv) {
+                div(style = "display:flex; align-items:center; margin:3px 0;",
+                    div(style = paste0("width:14px; height:14px; border-radius:3px;",
+                                       " background:", pal[lv],
+                                       "; margin-right:7px; flex-shrink:0;")),
+                    span(style = "font-size:12px;", lv))
+              })
+          )
+        )
+      }
+    })
+
+    # Map values → semi-transparent hex colors (names preserved)
+    .vals_to_colors <- function(vals, alpha) {
+      nms <- names(vals)
+      if (is.numeric(vals)) {
+        rng <- range(vals, na.rm = TRUE)
+        pal <- viridis::viridis(256)
+        idx <- if (diff(rng) == 0) rep(128L, length(vals)) else
+          round((vals - rng[1]) / diff(rng) * 255) + 1L
+        idx[is.na(vals)] <- NA_integer_
+        cols <- pal[idx]
+        cols[is.na(idx)] <- NA_character_
+      } else {
+        chars <- as.character(vals)
+        lvls  <- unique(na.omit(chars))
+        pal   <- setNames(rainbow(length(lvls), s = 0.8, v = 0.9), lvls)
+        cols  <- pal[chars]
+        cols[is.na(chars) | chars == "NA"] <- NA_character_
+      }
+      setNames(adjustcolor(cols, alpha.f = alpha), nms)
+    }
+
+    # Load jpegs for current plate only
+    img_loaded <- reactive({
+      wm  <- img_well_map()
+      fps <- na.omit(unname(wm$map))
+      imgs <- list()
+      for (fp in fps)
+        imgs[[fp]] <- tryCatch(jpeg::readJPEG(fp), error = function(e) NULL)
+      imgs
+    })
+
+    output$img_plate_stats <- renderText({
+      dirs <- img_plate_dirs()
+      pid  <- input$plate_img_id
+      wm   <- img_well_map()
+      folder <- if (!is.null(pid) && pid %in% names(dirs))
+        basename(dirs[[pid]]) else "—"
+      paste0(
+        "Folder:      ", folder,        "\n",
+        "JPGs found:  ", length(img_files()), "\n",
+        "Wells mapped:", wm$n, " / 384"
+      )
+    })
+
+    output$img_plate_plot <- renderPlot({
+      wm   <- img_well_map()
+      imgs <- img_loaded()
+      m    <- wm$map
+
+      par(mar = c(0, 0, 0, 0), bg = "#111111")
+      plot(NULL, xlim = c(0, 24), ylim = c(0, 16),
+           xlab = "", ylab = "", axes = FALSE,
+           xaxs = "i", yaxs = "i")
+
+      all_wells <- as.vector(t(outer(.rows384, sprintf("%02d", 1:24), paste0)))
+
+      # Pass 1: images / empty cells
+      for (well in all_wells) {
+        row_idx <- which(.rows384 == substr(well, 1, 1))
+        col_num <- as.integer(substr(well, 2, 3))
+        x0 <- col_num - 1; x1 <- col_num
+        y0 <- 16 - row_idx; y1 <- y0 + 1
+
+        fp  <- m[[well]]
+        img <- if (!is.na(fp)) imgs[[fp]] else NULL
+        if (!is.null(img))
+          rasterImage(img, x0, y0, x1, y1, interpolate = TRUE)
+        else
+          rect(x0, y0, x1, y1, col = "#2a2a2a", border = NA)
+      }
+
+      # Pass 2: colData overlay
+      vals <- img_coldata_vals()
+      if (!is.null(vals) && length(vals) > 0) {
+        cols <- .vals_to_colors(vals, alpha = input$img_overlay_alpha)
+        for (well in names(vals)) {
+          col <- cols[well]
+          if (is.na(col)) next
+          row_idx <- which(.rows384 == substr(well, 1, 1))
+          col_num <- as.integer(substr(well, 2, 3))
+          rect(col_num - 1, 16 - row_idx, col_num, 17 - row_idx,
+               col = col, border = NA)
+        }
+      }
+    },
+    width  = function() session$clientData$output_img_plate_plot_width,
+    height = function() session$clientData$output_img_plate_plot_height,
+    bg     = "#111111")
+
+    # Hover: show well + selected colData variable (falls back to QC)
+    output$img_hover_info <- renderText({
+      h <- input$img_plate_hover
+      if (is.null(h)) return("")
+      well <- .coords_to_well(h$x, h$y)
+      if (is.na(well)) return("")
+      se  <- SE()
+      pid <- input$plate_img_id
+      var <- input$img_coldata_var
+      if (!is.null(se) && !is.null(pid)) {
+        cd  <- as.data.frame(colData(se))
+        row <- cd[cd$Well == well & cd$Plate_ID == pid, , drop = FALSE]
+        if (nrow(row) > 0) {
+          col <- if (!is.null(var) && var != "None" && var %in% colnames(row)) var else "QC"
+          return(paste0(well, "  ", col, ": ", row[[col]][1]))
+        }
+      }
+      well
+    })
+
+    # Click: enlarge in modal
+    observeEvent(input$img_plate_click, {
+      cl   <- input$img_plate_click
+      well <- .coords_to_well(cl$x, cl$y)
+      if (is.na(well)) return()
+      fp <- img_well_map()$map[[well]]
+      if (is.na(fp)) return()
+
+      parent <- img_parent()
+      if (is.null(parent)) return()
+      if (!endsWith(parent, "/")) parent <- paste0(parent, "/")
+      rel <- substring(normalizePath(fp, winslash = "/"), nchar(parent) + 1)
+      url <- file.path("imgplate", rel)
+
+      showModal(modalDialog(
+        title = paste("Well", well, "\u2014", input$plate_img_id),
+        tags$div(style = "text-align: center;",
+          tags$img(src = url,
+                   style = "width: 600px; max-width: 90vw; height: auto; border-radius: 8px;")),
+        easyClose = TRUE, size = "l", footer = modalButton("Close")
+      ))
+    })
 
     if(is.null(logins)) waiter_hide()
   }
