@@ -11,6 +11,7 @@ reducedDim.Cellwise(
   colNames = c(),
   scaling = "within",
   byRow = FALSE,
+  center = FALSE,
   method = c("pca", "tsne", "umap"),
   k_clusters = 3
 )

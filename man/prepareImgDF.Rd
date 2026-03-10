@@ -11,6 +11,7 @@ prepareImgDF(
     "Selection_Area"),
   num_cols = c("Area", "Mean", "IntDen"),
   coloc_cols = c("Second_Channel", "Mask_Area"),
+  new_channel_names = c("blue", "green", "red", "farred"),
   scale_num = FALSE,
   scale_cols = NULL,
   scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE))

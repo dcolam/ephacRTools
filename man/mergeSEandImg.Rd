@@ -8,7 +8,7 @@ mergeSEandImg(
   se,
   df_img,
   tableType = "pa",
-  Selection = c("Hole_ROI", "background_ROI"),
+  selType = c("Hole_ROI", "background_ROI"),
   suffix = "hole"
 )
 }
@@ -19,9 +19,9 @@ mergeSEandImg(
 
 \item{tableType}{Indicate whether the merge should be using particle analysis data or colocalization}
 
-\item{Selection}{Indicate whether the focus should be on the hole or the background}
-
 \item{suffix}{Indicate how the new columns should be identified at the end of the name}
+
+\item{Selection}{Indicate whether the focus should be on the hole or the background}
 }
 \value{
 A dataframe
