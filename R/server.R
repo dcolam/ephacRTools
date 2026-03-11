@@ -24,7 +24,6 @@
 #' @importFrom shinyauthr loginServer
 #' @importFrom ggbeeswarm geom_beeswarm
 #' @importFrom HDF5Array loadHDF5SummarizedExperiment
-#' @importFrom jpeg readJPEG
 #' @importFrom shinyFiles shinyDirButton shinyDirChoose parseDirPath
 tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                            feature.lists=list(), filelist=list(), logins=NULL,
@@ -1329,14 +1328,16 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                  stringsAsFactors = FALSE)
     }
 
-    .coords_to_well <- function(x, y) {
-      col_num <- floor(x) + 1L
-      row_idx <- 16L - floor(y)
-      if (col_num < 1 || col_num > 24 || row_idx < 1 || row_idx > 16)
-        return(NA_character_)
-      paste0(.rows384[row_idx], sprintf("%02d", col_num))
-    }
+    # ---- client-side folder module (works locally + deployed) ----
+    imgbrowser_data <- localImgBrowserServer("imgbrowser")
 
+    # TRUE when the client-side module has supplied images
+    img_client_mode <- reactive({
+      d <- tryCatch(imgbrowser_data(), error = function(e) NULL)
+      !is.null(d) && isTRUE(d$n > 0)
+    })
+
+    # ---- server-side folder picker (local / annotation tab) --------
     .img_roots <- c(
       Home = normalizePath("~", winslash = "/", mustWork = TRUE),
       C = "C:/", D = "D:/", Y = "Y:/", Z = "Z:/"
@@ -1389,11 +1390,29 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
 
     observeEvent(img_plate_dirs(), {
+      if (img_client_mode()) return()   # client mode drives this instead
       dirs <- img_plate_dirs()
       req(length(dirs) > 0)
       updateSelectInput(session, "plate_img_id",
                         choices  = names(dirs),
                         selected = names(dirs)[1])
+    })
+
+    # Client mode: populate plate / channel / class from module metadata
+    observeEvent(imgbrowser_data(), {
+      d <- imgbrowser_data()
+      req(!is.null(d), d$n > 0)
+
+      plates <- if (length(d$subdirs) > 0 && nzchar(d$subdirs[1]))
+        d$subdirs else "(all)"
+      updateSelectInput(session, "plate_img_id",
+                        choices = plates, selected = plates[1])
+      updateSelectInput(session, "img_channel",
+                        choices = d$channels,
+                        selected = if (length(d$channels)) d$channels[1])
+      updateSelectInput(session, "img_class_sel",
+                        choices = d$classes,
+                        selected = if (length(d$classes)) d$classes[1])
     })
 
     # JPGs for selected plate folder
@@ -1423,8 +1442,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       meta[!is.na(meta$well), , drop = FALSE]
     })
 
-    # Update channel / class dropdowns when map changes
+    # Update channel / class dropdowns when server-mode map changes
     observeEvent(img_well_map(), {
+      if (img_client_mode()) return()   # handled by imgbrowser_data observer
       df <- img_well_map()
       channels <- if (nrow(df) > 0) sort(unique(df$channel)) else character(0)
       classes  <- if (nrow(df) > 0) sort(unique(df$img_class)) else character(0)
@@ -1435,6 +1455,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     }, ignoreNULL = TRUE)
 
     # Filtered map: named vector well -> file for current channel + class
+    # (server mode only; client mode uses filterImgMap via img_well_urls)
     img_well_map_filtered <- reactive({
       df      <- img_well_map()
       channel <- input$img_channel
@@ -1454,6 +1475,31 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       sub_df <- sub_df[!duplicated(sub_df$well), , drop = FALSE]
       m[sub_df$well] <- sub_df$file
       m
+    })
+
+    # Unified well -> URL map (blob: URLs in client mode, served paths in server mode)
+    img_well_urls <- reactive({
+      if (img_client_mode()) {
+        d      <- imgbrowser_data()
+        pid    <- input$plate_img_id %||% ""
+        subdir <- if (nzchar(pid) && pid != "(all)") pid else ""
+        filterImgMap(d$map,
+                     subdir    = subdir,
+                     channel   = input$img_channel   %||% NULL,
+                     img_class = input$img_class_sel %||% NULL)
+      } else {
+        m      <- img_well_map_filtered()
+        parent <- img_parent()
+        if (is.null(parent)) return(setNames(rep(NA_character_, 384L),
+                                             as.vector(t(outer(.rows384, sprintf("%02d", 1:24), paste0)))))
+        if (!endsWith(parent, "/")) parent <- paste0(parent, "/")
+        vapply(names(m), function(w) {
+          fp <- m[[w]]
+          if (is.null(fp) || is.na(fp)) return(NA_character_)
+          rel <- substring(normalizePath(fp, winslash = "/"), nchar(parent) + 1)
+          file.path("imgplate", rel)
+        }, character(1))
+      }
     })
 
     # Raw (unfiltered) colData values — used for palette + filter UI
@@ -1567,84 +1613,54 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       setNames(adjustcolor(cols, alpha.f = alpha), nms)
     }
 
-    # Load jpegs for current plate/channel/class only
-    img_loaded <- reactive({
-      m    <- img_well_map_filtered()
-      fps  <- na.omit(unname(m))
-      imgs <- list()
-      for (fp in fps)
-        imgs[[fp]] <- tryCatch(jpeg::readJPEG(fp), error = function(e) NULL)
-      imgs
+    output$img_plate_stats <- renderText({
+      pid  <- input$plate_img_id
+      urls <- img_well_urls()
+      n_shown <- sum(!is.na(urls) & nzchar(urls))
+      if (img_client_mode()) {
+        d     <- imgbrowser_data()
+        chans <- if (length(d$channels) > 0) paste(d$channels, collapse = ", ") else "-"
+        clses <- if (length(d$classes)  > 0) paste(d$classes,  collapse = ", ") else "-"
+        paste0(
+          "Plate:       ", pid %||% "-", "\n",
+          "JPGs found:  ", d$n,          "\n",
+          "Channels:    ", chans,         "\n",
+          "Classes:     ", clses,         "\n",
+          "Wells shown: ", n_shown, " / 384"
+        )
+      } else {
+        dirs <- img_plate_dirs()
+        df   <- img_well_map()
+        folder   <- if (!is.null(pid) && pid %in% names(dirs)) basename(dirs[[pid]]) else "-"
+        channels <- if (nrow(df) > 0) paste(sort(unique(df$channel)),   collapse = ", ") else "-"
+        classes  <- if (nrow(df) > 0) paste(sort(unique(df$img_class)), collapse = ", ") else "-"
+        paste0(
+          "Folder:      ", folder,              "\n",
+          "JPGs found:  ", length(img_files()), "\n",
+          "Channels:    ", channels,            "\n",
+          "Classes:     ", classes,             "\n",
+          "Wells shown: ", n_shown, " / 384"
+        )
+      }
     })
 
-    output$img_plate_stats <- renderText({
-      dirs <- img_plate_dirs()
-      pid  <- input$plate_img_id
-      df   <- img_well_map()
-      m    <- img_well_map_filtered()
-      folder <- if (!is.null(pid) && pid %in% names(dirs))
-        basename(dirs[[pid]]) else "—"
-      channels <- if (nrow(df) > 0) paste(sort(unique(df$channel)), collapse = ", ") else "—"
-      classes  <- if (nrow(df) > 0) paste(sort(unique(df$img_class)), collapse = ", ") else "—"
-      paste0(
-        "Folder:      ", folder,              "\n",
-        "JPGs found:  ", length(img_files()), "\n",
-        "Channels:    ", channels,            "\n",
-        "Classes:     ", classes,             "\n",
-        "Wells shown: ", sum(!is.na(m)), " / 384"
+    output$img_plate_ui <- renderUI({
+      urls   <- img_well_urls()
+      vals   <- img_coldata_vals()
+      colors <- if (!is.null(vals))
+        .vals_to_colors(vals, alpha = input$img_overlay_alpha %||% 0.4) else NULL
+      plateGridUI(
+        url_map        = urls,
+        coldata_colors = colors,
+        click_input_id = session$ns("img_well_click"),
+        hover_input_id = session$ns("img_well_hover")
       )
     })
 
-    output$img_plate_plot <- renderPlot({
-      m    <- img_well_map_filtered()
-      imgs <- img_loaded()
-
-      par(mar = c(0, 0, 0, 0), bg = "#111111")
-      plot(NULL, xlim = c(0, 24), ylim = c(0, 16),
-           xlab = "", ylab = "", axes = FALSE,
-           xaxs = "i", yaxs = "i")
-
-      all_wells <- as.vector(t(outer(.rows384, sprintf("%02d", 1:24), paste0)))
-
-      # Pass 1: images / empty cells
-      for (well in all_wells) {
-        row_idx <- which(.rows384 == substr(well, 1, 1))
-        col_num <- as.integer(substr(well, 2, 3))
-        x0 <- col_num - 1; x1 <- col_num
-        y0 <- 16 - row_idx; y1 <- y0 + 1
-
-        fp  <- m[[well]]
-        img <- if (!is.null(fp) && !is.na(fp)) imgs[[fp]] else NULL
-        if (!is.null(img))
-          rasterImage(img, x0, y0, x1, y1, interpolate = TRUE)
-        else
-          rect(x0, y0, x1, y1, col = "#2a2a2a", border = NA)
-      }
-
-      # Pass 2: colData overlay
-      vals <- img_coldata_vals()
-      if (!is.null(vals) && length(vals) > 0) {
-        cols <- .vals_to_colors(vals, alpha = input$img_overlay_alpha)
-        for (well in names(vals)) {
-          col <- cols[well]
-          if (is.na(col)) next
-          row_idx <- which(.rows384 == substr(well, 1, 1))
-          col_num <- as.integer(substr(well, 2, 3))
-          rect(col_num - 1, 16 - row_idx, col_num, 17 - row_idx,
-               col = col, border = NA)
-        }
-      }
-    },
-    width  = function() session$clientData$output_img_plate_plot_width,
-    height = function() session$clientData$output_img_plate_plot_height,
-    bg     = "#111111")
-
     # Hover: show well + color variable + any extra selected colData columns
     output$img_hover_info <- renderText({
-      h <- input$img_plate_hover
-      if (is.null(h)) return("")
-      well <- .coords_to_well(h$x, h$y)
-      if (is.na(well)) return("")
+      well <- input$img_well_hover
+      if (is.null(well) || !nzchar(well)) return("")
       se         <- SE()
       pid        <- input$plate_img_id
       var        <- input$img_coldata_var
@@ -1670,31 +1686,44 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
 
     # Click: enlarge both BF + Fluoro in modal with colData info
-    observeEvent(input$img_plate_click, {
-      cl   <- input$img_plate_click
-      well <- .coords_to_well(cl$x, cl$y)
-      if (is.na(well)) return()
+    observeEvent(input$img_well_click, {
+      well <- input$img_well_click
+      if (is.null(well) || !nzchar(well)) return()
 
-      parent <- img_parent()
-      if (is.null(parent)) return()
-      if (!endsWith(parent, "/")) parent <- paste0(parent, "/")
+      cls <- input$img_class_sel
 
-      fp_to_url <- function(fp) {
-        if (is.null(fp) || is.na(fp)) return(NA_character_)
-        rel <- substring(normalizePath(fp, winslash = "/"), nchar(parent) + 1)
-        file.path("imgplate", rel)
+      if (img_client_mode()) {
+        d      <- imgbrowser_data()
+        pid    <- input$plate_img_id %||% ""
+        subdir <- if (nzchar(pid) && pid != "(all)") pid else ""
+        bf_url  <- filterImgMap(d$map, subdir = subdir,
+                                channel = "BF", img_class = cls)[well]
+        other_ch <- setdiff(d$channels, "BF")
+        flu_url  <- if (length(other_ch) > 0)
+          filterImgMap(d$map, subdir = subdir,
+                       channel = other_ch[1], img_class = cls)[well]
+        else NA_character_
+        bf_url  <- if (is.null(bf_url)  || is.na(bf_url))  NA_character_ else bf_url
+        flu_url <- if (is.null(flu_url) || is.na(flu_url)) NA_character_ else flu_url
+      } else {
+        parent <- img_parent()
+        if (is.null(parent)) return()
+        if (!endsWith(parent, "/")) parent <- paste0(parent, "/")
+        fp_to_url <- function(fp) {
+          if (is.null(fp) || is.na(fp)) return(NA_character_)
+          rel <- substring(normalizePath(fp, winslash = "/"), nchar(parent) + 1)
+          file.path("imgplate", rel)
+        }
+        df  <- img_well_map()
+        sub <- df[df$well == well &
+                    (if (!is.null(cls) && nzchar(cls %||% "")) df$img_class == cls else TRUE),
+                  , drop = FALSE]
+        bf_row  <- sub[tolower(sub$channel) == "bf", , drop = FALSE]
+        flu_row <- sub[tolower(sub$channel) != "bf", , drop = FALSE]
+        bf_url  <- if (nrow(bf_row)  > 0) fp_to_url(bf_row$file[1])  else NA_character_
+        flu_url <- if (nrow(flu_row) > 0) fp_to_url(flu_row$file[1]) else NA_character_
       }
 
-      # Find BF + fluoro for this well + current class selection
-      df  <- img_well_map()
-      cls <- input$img_class_sel
-      sub <- df[df$well == well &
-                  (if (!is.null(cls) && nzchar(cls %||% "")) df$img_class == cls else TRUE),
-                , drop = FALSE]
-      bf_row  <- sub[tolower(sub$channel) == "bf", , drop = FALSE]
-      flu_row <- sub[tolower(sub$channel) != "bf", , drop = FALSE]
-      bf_url  <- if (nrow(bf_row)  > 0) fp_to_url(bf_row$file[1])  else NA_character_
-      flu_url <- if (nrow(flu_row) > 0) fp_to_url(flu_row$file[1]) else NA_character_
       if (is.na(bf_url) && is.na(flu_url)) return()
 
       # Hover info string
@@ -1778,7 +1807,13 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       )
     )
 
-    # Load existing CSV when folder changes
+    # Reset results when client-side folder changes (no CSV to load)
+    observeEvent(imgbrowser_data(), {
+      if (!img_client_mode()) return()
+      ann_rv$results <- ann_rv$results[0, ]
+    }, ignoreInit = TRUE)
+
+    # Load existing CSV when server-side folder changes
     observeEvent(img_parent(), {
       cp <- ann_csv_path()
       if (!is.null(cp) && file.exists(cp)) {
@@ -1796,13 +1831,21 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
     # Plate dirs available for annotation (mirrors img_plate_dirs but with fallback)
     ann_plate_dirs <- reactive({
-      tryCatch(img_plate_dirs(), error = function(e) {
-        parent <- img_parent()
-        if (is.null(parent)) return(list())
-        subdirs <- list.dirs(parent, full.names = TRUE, recursive = FALSE)
-        if (length(subdirs) == 0) return(setNames(list(parent), basename(parent)))
-        setNames(as.list(subdirs), basename(subdirs))
-      })
+      if (img_client_mode()) {
+        d <- imgbrowser_data()
+        subs <- d$subdirs
+        if (length(subs) == 0 || !nzchar(subs[1]))
+          return(setNames(list(""), "(all)"))
+        setNames(as.list(subs), subs)
+      } else {
+        tryCatch(img_plate_dirs(), error = function(e) {
+          parent <- img_parent()
+          if (is.null(parent)) return(list())
+          subdirs <- list.dirs(parent, full.names = TRUE, recursive = FALSE)
+          if (length(subdirs) == 0) return(setNames(list(parent), basename(parent)))
+          setNames(as.list(subdirs), basename(subdirs))
+        })
+      }
     })
 
     # Helper: which plate_id does a file belong to?
@@ -1823,19 +1866,41 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                            choices = pids, selected = pids)
     }, ignoreNULL = TRUE)
 
-    # Parse all files into a meta data.frame: well / channel / img_class / file
+    # Parse all images into a meta data.frame: well / channel / img_class / file / plate_id
+    # "file" column holds file paths (server mode) or blob: URLs (client mode)
     ann_img_meta_df <- reactive({
-      files <- all_img_files()
-      if (length(files) == 0)
-        return(data.frame(well = character(0), channel = character(0),
-                          img_class = character(0), file = character(0),
-                          stringsAsFactors = FALSE))
-      meta <- do.call(rbind, lapply(seq_along(files), function(i) {
-        r <- .parse_img_meta(basename(files[i]))
-        r$file <- files[i]
-        r
-      }))
-      meta[!is.na(meta$well), , drop = FALSE]
+      if (img_client_mode()) {
+        d    <- imgbrowser_data()
+        keys <- names(d$map)
+        if (length(keys) == 0)
+          return(data.frame(well = character(0), channel = character(0),
+                            img_class = character(0), file = character(0),
+                            plate_id  = character(0), stringsAsFactors = FALSE))
+        split1  <- strsplit(keys, "|", fixed = TRUE)
+        subdirs <- vapply(split1, function(x) if (length(x) >= 1) x[1] else "", character(1))
+        wcc     <- vapply(split1, function(x) if (length(x) >= 2) x[2] else NA_character_, character(1))
+        split2  <- strsplit(wcc, ".", fixed = TRUE)
+        wells   <- vapply(split2, function(x) if (length(x) >= 1) x[1] else NA_character_, character(1))
+        chans   <- vapply(split2, function(x) if (length(x) >= 2) x[2] else NA_character_, character(1))
+        clses   <- vapply(split2, function(x) if (length(x) >= 3) x[3] else NA_character_, character(1))
+        df <- data.frame(well = wells, channel = chans, img_class = clses,
+                         file = unname(d$map), plate_id = subdirs,
+                         stringsAsFactors = FALSE)
+        df[!is.na(df$well), , drop = FALSE]
+      } else {
+        files <- all_img_files()
+        if (length(files) == 0)
+          return(data.frame(well = character(0), channel = character(0),
+                            img_class = character(0), file = character(0),
+                            plate_id  = character(0), stringsAsFactors = FALSE))
+        meta <- do.call(rbind, lapply(seq_along(files), function(i) {
+          r <- .parse_img_meta(basename(files[i]))
+          r$file     <- files[i]
+          r$plate_id <- NA_character_
+          r
+        }))
+        meta[!is.na(meta$well), , drop = FALSE]
+      }
     })
 
     # Populate ann_img_class dropdown from available img_class values
@@ -1857,10 +1922,15 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       sub <- df[df$img_class == cls, , drop = FALSE]
       # Filter by selected plates when a selection exists
       if (!is.null(pids) && length(pids) > 0) {
-        dirs         <- ann_plate_dirs()
-        plate_of_file <- vapply(sub$file, .ann_file_plate, character(1),
-                                plate_dirs = dirs)
-        sub <- sub[!is.na(plate_of_file) & plate_of_file %in% pids, , drop = FALSE]
+        if (img_client_mode()) {
+          # client mode: plate_id is the subdir stored directly in the data.frame
+          sub <- sub[!is.na(sub$plate_id) & sub$plate_id %in% pids, , drop = FALSE]
+        } else {
+          dirs          <- ann_plate_dirs()
+          plate_of_file <- vapply(sub$file, .ann_file_plate, character(1),
+                                  plate_dirs = dirs)
+          sub <- sub[!is.na(plate_of_file) & plate_of_file %in% pids, , drop = FALSE]
+        }
       }
       available <- unique(sub$well[!is.na(sub$well)])
       if (length(available) == 0) { ann_rv$shuffled <- character(0); ann_rv$idx <- 0L; return() }
@@ -1923,15 +1993,17 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     output$ann_image_ui <- renderUI({
       if (length(ann_rv$shuffled) == 0)
         return(tags$p(style = "color: #aaa; padding: 20px;",
-                      "Select a folder in the Image Plate Viewer tab first."))
+                      "Select an image folder in the Image Plate Viewer tab first."))
       well <- ann_current()
       if (is.na(well)) return(tags$p("No well available."))
 
       pair <- ann_pair()
 
       make_panel <- function(fp, label) {
-        ok  <- !is.null(fp) && !is.na(fp)
-        url <- if (ok) .ann_file_to_url(fp) else NA_character_
+        ok  <- !is.null(fp) && !is.na(fp) && nzchar(fp)
+        url <- if (!ok) NA_character_
+                else if (img_client_mode()) fp          # already a blob: URL
+                else .ann_file_to_url(fp)
         if (ok && !is.na(url)) {
           div(style = "text-align: center;",
               tags$img(src = url,
@@ -1969,12 +2041,15 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       se_name <- input$object
       se      <- if (!is.null(se_name) && nzchar(se_name)) SEs[[se_name]] else NULL
 
-      # Get any file for this well+class to infer plate ID from directory structure
-      df     <- ann_img_meta_df()
-      sub    <- df[df$well == well & !is.na(df$img_class) & df$img_class == cls, , drop = FALSE]
-      fp_pid <- if (nrow(sub) > 0) sub$file[1] else NA_character_
-      pid    <- if (!is.na(fp_pid))
-        .ann_file_plate(fp_pid, ann_plate_dirs()) else NULL
+      # Get plate ID for this well+class
+      df  <- ann_img_meta_df()
+      sub <- df[df$well == well & !is.na(df$img_class) & df$img_class == cls, , drop = FALSE]
+      pid <- if (nrow(sub) > 0) {
+        if (img_client_mode())
+          sub$plate_id[1]
+        else
+          .ann_file_plate(sub$file[1], ann_plate_dirs())
+      } else NULL
 
       row <- data.frame(
         timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
@@ -1986,10 +2061,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         stringsAsFactors = FALSE
       )
       ann_rv$results <- rbind(ann_rv$results, row)
-      cp <- ann_csv_path()
-      if (!is.null(cp))
-        write.table(row, cp, sep = ",", row.names = FALSE,
-                    col.names = !file.exists(cp), append = file.exists(cp))
+      if (!img_client_mode()) {
+        cp <- ann_csv_path()
+        if (!is.null(cp))
+          write.table(row, cp, sep = ",", row.names = FALSE,
+                      col.names = !file.exists(cp), append = file.exists(cp))
+      }
       ann_advance()
     }, ignoreInit = TRUE)
 
@@ -2010,17 +2087,21 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       ann_rv$results   <- ann_rv$results[-nrow(ann_rv$results), , drop = FALSE]
       ann_rv$shuffled  <- c(last_well, ann_rv$shuffled)
       ann_rv$idx       <- 1L
-      cp <- ann_csv_path()
-      if (!is.null(cp) && file.exists(cp)) {
-        lines <- readLines(cp)
-        if (length(lines) > 1) writeLines(lines[-length(lines)], cp)
+      if (!img_client_mode()) {
+        cp <- ann_csv_path()
+        if (!is.null(cp) && file.exists(cp)) {
+          lines <- readLines(cp)
+          if (length(lines) > 1) writeLines(lines[-length(lines)], cp)
+        }
       }
     })
 
     observeEvent(input$ann_clear_results, {
       ann_rv$results <- ann_rv$results[0, ]
-      cp <- ann_csv_path()
-      if (!is.null(cp) && file.exists(cp)) file.remove(cp)
+      if (!img_client_mode()) {
+        cp <- ann_csv_path()
+        if (!is.null(cp) && file.exists(cp)) file.remove(cp)
+      }
     })
 
     output$ann_progress <- renderText({

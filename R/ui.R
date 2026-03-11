@@ -342,13 +342,20 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                      fluidRow(
                                        column(width = 3,
                                          box(width = 12, title = "Image Folder",
+                                           localImgBrowserUI("imgbrowser"),
+                                           helpText(style = "font-size:11px;",
+                                             "Works locally and when deployed. ",
+                                             "Filenames must follow: ",
+                                             tags$code("..._Well-site_Channel_Class_crop.jpg")),
+                                           hr(),
+                                           tags$small(style = "color:#aaa;",
+                                             "Local / server only:"),
                                            shinyFiles::shinyDirButton(
                                              "img_dir_btn",
-                                             label       = "Browse for image folder…",
+                                             label       = "Browse server folder…",
                                              title       = "Select the folder containing plate images",
-                                             class       = "btn-primary btn-block"
+                                             class       = "btn-default btn-block btn-sm"
                                            ),
-                                           helpText("Subfolders whose names contain a Plate ID are matched automatically."),
                                            div(style = "font-size: 11px; font-family: monospace; color: #666; margin-top: 4px; word-break: break-all;",
                                                textOutput("img_folder_display")),
                                            hr(),
@@ -379,13 +386,8 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                              " min-height: 28px; color: #333;"),
                                              textOutput("img_hover_info", inline = TRUE)
                                            ),
-                                           plotOutput("img_plate_plot",
-                                                      click = "img_plate_click",
-                                                      hover = hoverOpts("img_plate_hover",
-                                                                        delay = 60,
-                                                                        nullOutside = TRUE),
-                                                      width  = "100%",
-                                                      height = "600px")
+                                           div(style = "overflow:auto;",
+                                             uiOutput("img_plate_ui"))
                                          )
                                        )
                                      )
@@ -503,7 +505,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                        ),
                                        column(width = 3,
                                          box(width = 12, title = "Annotation",
-                                           helpText("Images served from the folder in Image Plate Viewer."),
+                                           helpText("Select a folder in the Image Plate Viewer tab. Note: auto-save CSV requires the server folder picker; client-side folders use Download CSV."),
                                            selectInput("ann_img_class", "Class to annotate:",
                                                        choices = c(), width = "100%"),
                                            selectizeInput("ann_plate_ids", "Plates to include:",
