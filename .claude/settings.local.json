@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"/mnt/c/Users/DColameo/Documents/dev/r-projects/ephacRTools/R/imagingTools.R\" \"/mnt/c/Users/DColameo/Documents/dev/r-projects/ephacRTools/R/imagingTools.R.bak\" && cp /tmp/imagingTools_head.R \"/mnt/c/Users/DColameo/Documents/dev/r-projects/ephacRTools/R/imagingTools.R\" && wc -l \"/mnt/c/Users/DColameo/Documents/dev/r-projects/ephacRTools/R/imagingTools.R\")"
+    ]
+  }
+}

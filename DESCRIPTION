@@ -21,6 +21,7 @@ Imports:
     DT,
     ggbeeswarm,
     ggplot2,
+    gridExtra,
     ggpubr,
     hablar,
     jpeg,
