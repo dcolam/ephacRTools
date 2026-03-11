@@ -36,7 +36,6 @@ Imports:
     RSQLite,
     Rtsne,
     S4Vectors,
-    scales,
     sechm,
     shiny,
     shinyFiles,
@@ -50,14 +49,12 @@ Imports:
     SummarizedExperiment,
     tidyselect,
     umap,
-    uwot,
     viridis,
     waiter
 Depends:
     R (>= 3.5)
 Suggests:
     knitr,
-    RColorBrewer,
     rmarkdown
 URL: https://github.com/dcolam/ephacRTools
 BugReports: https://github.com/dcolam/ephacRTools/issues

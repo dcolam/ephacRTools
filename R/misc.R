@@ -1,3 +1,5 @@
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+
 .modify_stop_propagation <- function(x){
   if(!is.null(x$children[[1]]))
     x$children[[1]]$attribs$onclick = "event.stopPropagation()"
@@ -6,7 +8,6 @@
 
 ag <- function(df, cols, fun=mean) {
   c <- colnames(df[,unlist(lapply(df, is.numeric))])
-  print(c)
   df <- aggregate(df[,c], by=as.list(df[,cols]), FUN=fun, na.rm=TRUE)
   return(df[, colSums(is.na(df)) != nrow(df)])
 }

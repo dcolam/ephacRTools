@@ -2,24 +2,54 @@
 % Please edit documentation in R/utilityTools.R
 \name{get_metric}
 \alias{get_metric}
-\title{Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
-Make sure that Vhalf is present in rowData}
+\title{Extract IV-curve metrics from a step-wise voltage clamp assay}
 \usage{
 get_metric(se, assay = "Minima", inward = TRUE)
 }
 \arguments{
-\item{se}{SummarizedExperiment Object with reducedDim data}
+\item{se}{A \code{SingleCellExperiment} (or \code{SummarizedExperiment}) with
+step-wise voltage clamp data. Must contain \code{V_Clamp} in
+\code{rowData} and \code{Well} / \code{Plate_ID} in \code{colData}.}
 
-\item{assay}{assay to be analyzed}
+\item{assay}{Name of the assay to analyze. Default \code{"Minima"} -- the
+per-sweep minimum current output by DataControl Online Analysis, which
+captures peak inward current for step protocols.}
 
-\item{inward}{boolean stating whether the IV-curve shows in- or outward current}
-
-\item{getErev}{boolean to try to get Erev or value where y = 0}
+\item{inward}{Logical. \code{TRUE} (default) for inward currents: peak is
+the minimum value. \code{FALSE} for outward currents: peak is the maximum.}
 }
 \value{
-se with updated colData
+The input \code{se} with three new \code{colData} columns:
+  \code{Imax.<assay>}, \code{Vmax.<assay>}, and \code{Vhalf.<assay>}
+  (all lowercase assay suffix, e.g. \code{Imax.minima}).
 }
 \description{
-Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
-Make sure that Vhalf is present in rowData
+Analyzes current-voltage (IV) curves from a step-wise voltage clamp recording
+stored in a \code{SingleCellExperiment} object. For each well (identified by
+\code{Well} + \code{Plate_ID}), the function extracts three metrics and stores
+them as new columns in \code{colData}:
+}
+\details{
+\describe{
+  \item{\code{Imax.<assay>}}{Peak current amplitude -- minimum for inward
+    currents (e.g. sodium, \code{inward = TRUE}) or maximum for outward
+    currents (e.g. potassium, \code{inward = FALSE}).}
+  \item{\code{Vmax.<assay>}}{Holding potential (mV) at which \code{Imax}
+    occurs.}
+  \item{\code{Vhalf.<assay>}}{Half-activation voltage (mV), estimated by
+    fitting a smoothing spline to the activation limb of the IV curve
+    (voltages \eqn{\leq} \code{Vmax}) and locating the voltage where current
+    equals \code{Imax / 2}. Returns \code{NA} when spline fitting fails.}
+}
+
+The assay matrix must have sweeps as rows and wells as columns. \code{V_Clamp}
+must be present in \code{rowData(se)} and contain the holding potential for
+each sweep, as produced by \code{prepareSE()}.
+}
+\examples{
+\dontrun{
+data(se_iN)
+se_iN <- get_metric(se_iN, assay = "Minima", inward = TRUE)
+head(colData(se_iN)[, c("Imax.minima", "Vmax.minima", "Vhalf.minima")])
+}
 }

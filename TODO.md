@@ -6,45 +6,9 @@ Generated from code review. Grouped by priority.
 
 ## 🔴 Fix Now — Correctness Bugs
 
-### #1 · `group_assignment()` — 3 bugs
-**File:** `R/RECOVERED_colDatTools.R`
+### ~~#4 · `get_metric()` — plate loop only saves last plate's result~~ ✅ Fixed
 
-- `pattern == "Conditions"` uses bare `df$Conditions` instead of `prepared_df$Conditions` → throws *"object 'df' not found"*
-- `pattern == "Manual"` overwrites the whole data frame: `prepared_df <- manual_map[...]` → should be `prepared_df$Group <- manual_map[as.character(prepared_df$Well)]`
-- Duplicate `else if (pattern == "Cycle")` block (~line 176) — dead code, remove it
-
----
-
-### #2 · Duplicate `ag()` definition
-**Files:** `R/misc.R` and `R/RECOVERED_colDatTools.R`
-
-Identical function defined twice → R CMD CHECK error. Remove the copy in `RECOVERED_colDatTools.R`, keep the one in `misc.R`.
-
----
-
-### #4 · `get_metric()` — plate loop only saves last plate's result
-**File:** `R/utilityTools.R`
-
-```r
-for (i in seq_along(wells)) {
-  for (p in seq_along(plate_ids)) {  # iterates all plates...
-    ...
-    results$Imax[i] <- Imax          # ...but saves only the last plate
-  }
-}
-```
-
-**Fix:** Export `get_metric_v2` as the canonical function (rename it `get_metric`), delete the broken original. `get_metric_v2` uses `split()` + `lapply()` correctly.
-
----
-
-### #5 · `assign_cell_FINAL()` — misplaced parenthesis
-**File:** `R/Cellassignment_V2.R`
-
-```r
-if (length(chan2analyze > 2))   # BUG: always TRUE
-if (length(chan2analyze) > 2)   # correct
-```
+`get_metric_v2` promoted to `get_metric`. Uses `sechm::meltSE` + `split()` + `lapply()` per Well+Plate_ID. Old broken implementation and commented draft removed.
 
 ---
 
@@ -127,18 +91,6 @@ Calling `rm()` on `ls()` inside a function deletes all local variables mid-execu
 
 ---
 
-### #13 · Remove `require()` calls from `plot_intensity_distribution()`
-**File:** `R/Cellassignment_V2.R`
-
-```r
-require(ggplot2)   # wrong in package code — silently returns FALSE if missing
-require(dplyr)
-```
-
-Both are already in `DESCRIPTION Imports`. Just remove these two lines.
-
----
-
 ### #14 · `df_cleaned()` — hardcoded input channel names
 **File:** `R/imagingTools.R`
 
@@ -154,17 +106,8 @@ The `channels` parameter only controls output labels; input names are hardcoded.
 
 ---
 
-### #15 · `filtered_df()` — double `Compound` assignment
-**File:** `R/RECOVERED_colDatTools.R`
-
-`Compound` is set unconditionally at line ~111, then immediately overwritten inside `if (ion == "Na")`. The first assignment is always a no-op. Remove the unconditional one.
-
----
-
 ### #16 · Delete empty placeholder files
-**Files:** `R/cropTest.R`, `R/test.R`
-
-Both files are empty. Remove from `R/`. If test scripts were intended, they belong in `tests/testthat/`.
+**Files:** ~~`R/cropTest.R`, `R/test.R`~~ → moved to `deprecated/`
 
 ---
 
@@ -184,13 +127,8 @@ No longer called anywhere — replaced by `.ann_file_plate()`. Remove it.
 - [ ] Set a real `License:` (currently *"What license is it under?"*) — e.g. `MIT + file LICENSE`
 - [ ] Remove `Remotes: dcolam/ephacRTools` (circular self-reference)
 - [ ] Add missing `Imports`:
-  - `tidyr` — `pivot_longer` / `pivot_wider` in `RECOVERED_colDatTools.R`
   - `jsonlite` — class buttons in `server.R`
   - `EBImage` — `imageval()`
-  - `gridExtra` — `imageval()`
-  - `scales` — `plot_well_assignment()`
-  - `RColorBrewer` — `plot_well_assignment()`
-  - `uwot` — `assign_cell_FINAL()` clustering mode
   - `rlang` — `%||%` used throughout `server.R`
 
 ---
@@ -222,11 +160,8 @@ Or check `isTruthy(SE())` before calling `img_plate_dirs()`.
 
 | # | File | Severity | Topic |
 |---|---|---|---|
-| 1 | `RECOVERED_colDatTools.R` | 🔴 Bug | `group_assignment()` — 3 bugs |
-| 2 | `misc.R` / `RECOVERED_colDatTools.R` | 🔴 Bug | Duplicate `ag()` |
 | 3 | `misc.R` | 🟡 Cleanup | `print(c)` debug statement |
-| 4 | `utilityTools.R` | 🔴 Bug | `get_metric()` plate loop |
-| 5 | `Cellassignment_V2.R` | 🔴 Bug | `length(x > 2)` parenthesis |
+| 4 | `utilityTools.R` | ✅ Fixed | `get_metric()` — promoted from `get_metric_v2` |
 | 6 | `imagingTools.R` | 🔴 Bug | `addImgPaths()` hardcoded path |
 | 7 | `imagingTools.R` | 🟡 Cleanup | `addImgPaths()` → `imageval()` broken pipeline |
 | 8 | `imagingTools.R` | 🟡 Cleanup | Missing `EBImage::`/`grid::` prefixes |
@@ -234,10 +169,8 @@ Or check `isTruthy(SE())` before calling `img_plate_dirs()`.
 | 10 | multiple | 🟡 Cleanup | Remove debug `print()`/`cat()` calls |
 | 11 | `prepareSE.R` | 🟡 Cleanup | `rm(ls())` inside function |
 | 12 | `DESCRIPTION` | 🔵 Infra | License, Imports, circular Remotes |
-| 13 | `Cellassignment_V2.R` | 🟡 Cleanup | `require()` in package code |
 | 14 | `imagingTools.R` | 🟡 Cleanup | `df_cleaned()` hardcoded channel names |
-| 15 | `RECOVERED_colDatTools.R` | 🟡 Cleanup | `filtered_df()` double assignment |
-| 16 | `R/cropTest.R`, `R/test.R` | 🟡 Cleanup | Empty placeholder files |
+| 16 | `deprecated/` | ✅ Done | Empty placeholder files moved |
 | 17 | `vignettes/` | 🔵 Infra | Vignette not installable |
 | 18 | `server.R` | 🟡 Cleanup | `tryCatch` won't catch `req()` |
 | 19 | `server.R` | 🟡 Cleanup | Dead `.extract_plate_from_path()` |

@@ -51,15 +51,10 @@ prepareSingleImgDF <- function(pathDB,
                                .after = dplyr::all_of(col))
       }
     }
-      #rm(list = setdiff(ls(), "tbl"))
-      #gc()
-      print("DB processed")
       return(tbl)
   }
-    cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
     on.exit(DBI::dbDisconnect(con), add = TRUE)
-    print("SQlite Loaded...")
     if (analysis == "pa") {
       tbl <- DBI::dbGetQuery(con, "
         SELECT *
@@ -73,8 +68,6 @@ prepareSingleImgDF <- function(pathDB,
         JOIN  Coloc_Measurement_Tables  AS meas
              ON meas.COLOC_ID = ca.COLOC_ID")
   }
-    print(tbl)
-    #cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
     process_tbl(tbl)
 }
 #' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
@@ -150,8 +143,6 @@ prepareImgDF <- function(pathDB,
         unlist(stringr::str_split(x, "\\r"))[1]
       })
     }
-  print(df)
-
   df$Image_ID <- as.numeric(df$Image_ID)
   df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
 
@@ -192,8 +183,6 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
     df[df$Selection == sel & df$Selection_Area == selMin,"CorrSel"] <- "Hole_ROI"
     df[df$Selection == sel & df$Selection_Area == selMax,"CorrSel"] <- "background_ROI"
   }
-  print("DF cleaned")
-
   df$Image_ID <- as.numeric(df$Image_ID)
   df$Image_Type <- ifelse(as.numeric(df$Image_ID) %% 2 != 0, "fluor", "bf")
 
@@ -237,9 +226,6 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", selType = c("Hole_ROI", 
       new_cols <- dplyr::setdiff(names(joined), names(cd))
       # Create a DataFrame object from just the new data
       channel_data <- S4Vectors::DataFrame(joined[, new_cols])
-      # Assign to colData(se), one column per channel, as a nested DataFrame
-      #SummarizedExperiment::colData(se)[[channel]] <- channel_data
-      print(channel_data)
       SummarizedExperiment::colData(se)[[paste(channel, suffix, sep=".")]] <- channel_data
     }
 
@@ -454,130 +440,6 @@ addThumbnailPaths <- function(se,
     col_name, n_matched, nrow(cd), paste(chan_cls, collapse = ", ")
   ))
   return(se)
-}
-
-
-#' Function that generates all the files paths for the images
-#' @param parent_folder Path to where your various experimental data is stored
-#' @param idx The well(s) you want to look at
-#' @param plate_ID The plate ID(s) in question
-#' @param location The location of the plate_ID in the folder names (we assume here that it is always in the same spot)
-#' @return A brightened image
-#' @export
-image_paths <- function(parent_folder, idx, plate_ID, location) {
-  all_dirs <- list.dirs(parent_folder, full.names = TRUE, recursive = FALSE)
-  matched_dir <- NULL
-  short_idx <- gsub("^([A-Z])0*", "\\1", idx)
-
-  for (d in all_dirs) {
-    dir_name <- basename(d)
-    parts <- strsplit(dir_name, "_")[[1]]
-    if(length(parts) >= location && parts[location] == plate_ID) {
-      particle_path <- file.path(d, "Particle_Analysis")
-      if (!dir.exists(particle_path)) next
-
-      subdirs <- list.dirs(particle_path, full.names = TRUE, recursive = FALSE)
-
-      for (sub in subdirs) {
-        sub_dir_name <- basename(sub)
-        sub_parts <- strsplit(sub_dir_name, "_")[[1]]
-        if (length(sub_parts) >= location && sub_parts[location] == plate_ID) {
-          matched_dir <- sub
-          break
-        }
-      }
-      if (is.null(matched_dir)) break
-    }
-  }
-  if (is.null(matched_dir)) {
-    stop(paste("No folder with the plate_ID", plate_ID, "in the", location,"th position found"))
-    return(NA)
-  }
-  img.list <- list.files(matched_dir, pattern = "\\.tif$", recursive = TRUE,
-                         full.names = TRUE)
-  pattern <- paste0(short_idx, "-\\d+")
-  imgs <- img.list[grepl(pattern, img.list)]
-  if (length(imgs) == 0) {
-    warning(paste("No matching images found for well", idx, "in", matched_dir))
-    return(NA)
-  }
-  return(imgs)
-}
-#' Helper function for imageval to brighten the images
-#' @param img.path Path to where your particle analysis images are located
-#' @param factor Factor by which the image should be brightened
-#' @return A brightened image
-#' @export
-brighten_image <- function(img, factor = 1.5) {
-  img_normalized <- (img - min(img)) / (max(img) - min(img))
-  img_brightened <- img_normalized * factor
-  img_brightened <- pmin(img_brightened, 1)
-  return(img_brightened)
-}
-#' Plot the images with the different channels for a given well and plate
-#' @param se_imagepath Path to your summarized experiment
-#' @param idx Well number you want to look at, in the form of "H14" or "H09"
-#' @param plate_ID Plate number you are interested in exploring
-#' @param green_slice Identicate which slice is the green image (if working with GFP and ROMK for instance)
-#' @param red_slice Identicate which slice is the red image
-#' @return A plot of four images (brightfield, green and red channels and overlay of the two channels on top of the BF)
-#' @export
-imageval <- function(se, idx, plate_ID, green_slice = 2, red_slice = 3) {
-  load_bright <- function(file, factor)
-    brighten_image(readImage(file), factor = factor)
-
-  short_idx <- gsub("^([A-Z])0*", "\\1", idx)
-
-  # helper function: take one channel and put it in the desired colour slot
-  make_grob <- function(img, src_slice = NULL, colour = c("red", "green", "blue")) {
-    if (is.null(src_slice)) {
-      # Check if img is an EBImage Image object; extract array before normalize
-      if (inherits(img, "Image")) {
-        x <- normalize(as.array(img))
-      } else {
-        x <- normalize(img)
-      }
-    } else {
-      colour <- match.arg(colour)
-      chan <- normalize(img[,,src_slice])
-      rgb_arr <- array(0, dim = c(dim(chan), 3))
-      rgb_arr[,, match(colour, c("red", "green", "blue"))] <- chan
-      x <- rgb_arr
-    }
-    rasterGrob(x, interpolate = TRUE)
-  }
-
-  ## --- Load images from the matched directory ---
-  imgs <- se$Image_paths[idx]
-
-  ## ---- bright‑field / BF image (first file) ---------------------------
-  all_imgs <- imgs[[1]]
-  bf_img <- all_imgs[grepl("BF\\.tif$", all_imgs)]
-  img1 <- load_bright(bf_img, factor = 2)
-  bf_channel <- normalize(img1)
-  img1_grob <- make_grob(EBImage::rotate(img1, 180))
-  #img1_grob <- make_grob(img1)
-
-  ## ---- fluorescence image (second file) -------------------------------
-  fluorescent_img <- all_imgs[grepl("nm\\.tif$", all_imgs)]
-
-  if (length(fluorescent_img) != 1) {
-    stop(paste("Expected exactly 1 fluorescent image ending in 'nm.tif', but found", length(fluorescent_img)))
-  }
-
-  img2 <- load_bright(fluorescent_img, factor = 40)
-  img2_grob_green <- make_grob(img2, src_slice = green_slice, colour = "green")  # plane 2 → green
-  img2_grob_red   <- make_grob(img2, src_slice = red_slice, colour = "red")    # plane 3 → red
-
-  ## composite: R=red, G=green, B=bright‑field
-  comp_rgb <- array(0, dim = c(dim(img2[,,3]), 3))
-  comp_rgb[,,1] <- normalize(img2[,,red_slice]) #3
-  comp_rgb[,,2] <- normalize(img2[,,green_slice]) #2
-  comp_rgb[,,3] <- bf_channel
-  img2_grob_color <- rasterGrob(comp_rgb, interpolate = TRUE)
-
-  ## ---- arrange --------------------------------------------------------
-  grid.arrange(img1_grob, img2_grob_color, img2_grob_green, img2_grob_red, ncol = 2)
 }
 
 

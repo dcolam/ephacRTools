@@ -14,19 +14,11 @@ NULL
 #' @export
 prepareDF <- function(pathToDF) {
 
-  cat("📦 Starting prepareDF\n")
-  cat("📁 Path:", pathToDF, "\n")
-  cat("📄 File exists:", file.exists(pathToDF), "\n")
-  cat("🧠 Memory (start):", format(utils::object.size(ls(envir = environment())), units = "auto"), "\n")
-
   # Read file
   sheets <- readxl::excel_sheets(pathToDF)
   sheets <- sheets[grepl("Export", sheets)]
   df <- readxl::read_excel(pathToDF, sheet = sheets, col_types = "text")
   df <- as.data.frame(df)
-  cat("✅ Full Excel loaded\n")
-  cat("🧠 Memory (after read):", format(object.size(df), units = "auto"), "\n")
-
   # Clean up unwanted column
   if ("\r" %in% colnames(df)) df$`\r` <- NULL
 
@@ -89,16 +81,6 @@ prepareDF <- function(pathToDF) {
   # Re-type using hablar
   new.df <- new.df %>% hablar::retype()
 
-  cat("📈 Preview of final dataframe:\n")
-  print(head(new.df, 3))
-  cat("🧠 Memory (before cleanup):", format(object.size(new.df), units = "auto"), "\n")
-
-  # Cleanup: Remove all but new.df
-  rm(list = setdiff(ls(), "new.df"))
-  gc()
-  cat("✅ prepareDF complete\n")
-  cat("🧠 Memory (after cleanup):", format(object.size(new.df), units = "auto"), "\n")
-
   return(new.df)
 }
 
@@ -115,7 +97,6 @@ prepareDF <- function(pathToDF) {
 prepareMultipleDFs <- function(pathList){
 
   dfs <- lapply(pathList, function(x) {
-    print(paste("File:", x, "exists:", file.exists(x)))
     df <- prepareDF(as.character(x))
     if (is.null(df)) {
       warning(paste("Skipping file due to read error:", x))
@@ -126,9 +107,7 @@ prepareMultipleDFs <- function(pathList){
   if (length(dfs) == 0) {
     stop("All uploaded files failed to read. Please check file format.")
   }
-  print("Excels Loaded")
   safe_names <- lapply(pathList, function(x){basename(x)})
-  print(safe_names)
   names(dfs) <- safe_names
 
   df <- dplyr::bind_rows(dfs, .id = "column_label")
@@ -158,10 +137,8 @@ prepareSE <- function(pathDF, conditionColumns= c("Compound")){
 
 if(length(pathDF) > 1){
     df <- prepareMultipleDFs(pathDF)
-    print("multi")
 }else{
       df <- prepareDF(as.character(pathDF))
-      print("single")
 }
 
   df <- df %>% hablar::retype()
@@ -207,7 +184,7 @@ if(length(pathDF) > 1){
                                                    rowData = rd,
                                                    colData = cd)
 
-  colnames(se) <- cd$Well
+  colnames(se) <- as.character(interaction(cd$Well, cd$Plate_ID))
 
 
   description_cols <- description_cols[!(description_cols %in% names(cd))]

@@ -203,194 +203,57 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
   p
   }
 }
-#' Wrapper function to analyze IV-curves and extract Imax, Vmax and Vhalf.
-#' Make sure that Vhalf is present in rowData
-#' @param se SummarizedExperiment Object with reducedDim data
-#' @param assay assay to be analyzed
-#' @param inward boolean stating whether the IV-curve shows in- or outward current
-#' @param getErev boolean to try to get Erev or value where y = 0
-#' @return se with updated colData
+#' Extract IV-curve metrics from a step-wise voltage clamp assay
+#'
+#' Analyzes current-voltage (IV) curves from a step-wise voltage clamp recording
+#' stored in a \code{SingleCellExperiment} object. For each well (identified by
+#' \code{Well} + \code{Plate_ID}), the function extracts three metrics and stores
+#' them as new columns in \code{colData}:
+#'
+#' \describe{
+#'   \item{\code{Imax.<assay>}}{Peak current amplitude -- minimum for inward
+#'     currents (e.g. sodium, \code{inward = TRUE}) or maximum for outward
+#'     currents (e.g. potassium, \code{inward = FALSE}).}
+#'   \item{\code{Vmax.<assay>}}{Holding potential (mV) at which \code{Imax}
+#'     occurs.}
+#'   \item{\code{Vhalf.<assay>}}{Half-activation voltage (mV), estimated by
+#'     fitting a smoothing spline to the activation limb of the IV curve
+#'     (voltages \eqn{\leq} \code{Vmax}) and locating the voltage where current
+#'     equals \code{Imax / 2}. Returns \code{NA} when spline fitting fails.}
+#' }
+#'
+#' The assay matrix must have sweeps as rows and wells as columns. \code{V_Clamp}
+#' must be present in \code{rowData(se)} and contain the holding potential for
+#' each sweep, as produced by \code{prepareSE()}.
+#'
+#' @param se A \code{SingleCellExperiment} (or \code{SummarizedExperiment}) with
+#'   step-wise voltage clamp data. Must contain \code{V_Clamp} in
+#'   \code{rowData} and \code{Well} / \code{Plate_ID} in \code{colData}.
+#' @param assay Name of the assay to analyze. Default \code{"Minima"} -- the
+#'   per-sweep minimum current output by DataControl Online Analysis, which
+#'   captures peak inward current for step protocols.
+#' @param inward Logical. \code{TRUE} (default) for inward currents: peak is
+#'   the minimum value. \code{FALSE} for outward currents: peak is the maximum.
+#'
+#' @return The input \code{se} with three new \code{colData} columns:
+#'   \code{Imax.<assay>}, \code{Vmax.<assay>}, and \code{Vhalf.<assay>}
+#'   (all lowercase assay suffix, e.g. \code{Imax.minima}).
+#'
+#' @examples
+#' \dontrun{
+#' data(se_iN)
+#' se_iN <- get_metric(se_iN, assay = "Minima", inward = TRUE)
+#' head(colData(se_iN)[, c("Imax.minima", "Vmax.minima", "Vhalf.minima")])
+#' }
 #' @export
 get_metric <- function(se, assay = "Minima", inward = TRUE) {
-  suffix <- tolower(assay)
-
-  imax_col <- paste0("Imax.", suffix)
-  vhalf_col <- paste0("Vhalf.", suffix)
-  vmax_col <- paste0("Vmax.", suffix)
-
-  wells <- unique(se$Well)
-  plates <- unique(se$Plate_ID)
-  results <- data.frame(Well = wells,
-                        Plate_ID = plates,
-                        Imax = NA_real_,
-                        Vhalf = NA_real_,
-                        Vmax = NA_real_)
-
-  assay_data <- assay(se, assay)
-  v_clamp <- rowData(se)$V_Clamp
-  well_ids <- se$Well
-  plate_ids <- se$Plate_ID
-
-  for (i in seq_along(wells)) {
-    for (p in seq_along(plate_ids)){
-    #i = 1
-    tryCatch({
-    well <- wells[i]
-    plate <- plate_ids[p]
-    indices <- which(well_ids == well)
-
-    x_vals <- v_clamp
-    y_vals <- assay_data[, indices]
-
-    # Skip if all NA
-    if (all(is.na(y_vals))) next
-
-    if (inward) {
-      Imax <- min(y_vals, na.rm = TRUE)
-      Vmax1 <- min(x_vals[y_vals == Imax])
-    } else {
-      Imax <- max(y_vals, na.rm = TRUE)
-      Vmax1 <- max(x_vals[y_vals == Imax])
-    }
-
-    y_vals[!complete.cases(y_vals)] <- 1  # Avoid smooth.spline errors
-
-    spl <- smooth.spline(x_vals, y = y_vals)
-    fit <- predict(spl, seq(min(x_vals), max(x_vals), length.out = 100))
-
-    Vhalf <- NA
-    fit_sub <- fit$x[fit$x < Vmax1]
-    pred_sub <- fit$y[fit$x < Vmax1]
-
-    if (length(pred_sub) > 0) {
-      idx <- which.min(abs(pred_sub - Imax / 2))
-      Vhalf <- fit_sub[idx]
-      }
-    },
-    error = function(e) {
-      # Dieser Teil wird ausgeführt, wenn ein Fehler auftritt
-      print(paste0("This Well failed:", well))
-      print(paste0("On Plate: ", plate))
-      print(paste("Ein Fehler ist aufgetreten:", conditionMessage(e)))
-      results$Imax[i] <- NA
-      results$Vhalf[i] <- NA
-      results$Vmax[i] <- NA
-    }
-
-    )
-    }
-
-    results$Imax[i] <- Imax
-    results$Vhalf[i] <- Vhalf
-    results$Vmax[i] <- Vmax1
-  }
-
-  coldata <- colData(se)
-  coldata[[imax_col]] <- results$Imax[match(se$Well, results$Well)]
-  coldata[[vhalf_col]] <- results$Vhalf[match(se$Well, results$Well)]
-  coldata[[vmax_col]] <- results$Vmax[match(se$Well, results$Well)]
-
-  colData(se) <- coldata
-  return(se)
-}
-
-
-# get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
-#   suffix <- tolower(assay)
-#   imax_col <- paste0("Imax.", suffix)
-#   vhalf_col <- paste0("Vhalf.", suffix)
-#   vmax_col <- paste0("Vmax.", suffix)
-#
-#
-#   coldat <- sechm::meltSE(se, rownames(se),
-#                           assayName = assay, rowDat.columns = "V_Clamp")
-#
-#   wells <- unique(se$Well)
-#   plates <- unique(se$Plate_ID)
-#   results <- data.frame(Well = wells,
-#                         Plate_ID = plates,
-#                         Imax = NA_real_,
-#                         Vhalf = NA_real_,
-#                         Vmax = NA_real_)
-#
-#   assay_data <- assay(se, assay)
-#   v_clamp <- rowData(se)$V_Clamp
-#   well_ids <- se$Well
-#   plate_ids <- se$Plate_ID
-#
-#   for (i in seq_along(wells)) {
-#     for (p in seq_along(plate_ids)){
-#
-#       tryCatch({
-#
-#         #subdat <- subset(coldat, Well == wells[i] & Plate_ID == plate_ids[p])
-#         subdat[subdat$Well == wells[i] & subdat$Plate_ID == plate_ids[p],]
-#         x_vals <- subdat[, "V_Clamp"]
-#         y_vals <- subdat[, assay]
-#
-#         # Skip if all NA
-#         if (all(is.na(y_vals))) next
-#
-#         if (inward) {
-#           Imax <- min(y_vals, na.rm = TRUE)
-#           Vmax1 <- min(x_vals[y_vals == Imax])
-#         } else {
-#           Imax <- max(y_vals, na.rm = TRUE)
-#           Vmax1 <- max(x_vals[y_vals == Imax])
-#         }
-#
-#         y_vals[!complete.cases(y_vals)] <- 1  # Avoid smooth.spline errors
-#
-#         spl <- smooth.spline(x_vals, y = y_vals)
-#         fit <- predict(spl, seq(min(x_vals), max(x_vals), length.out = 100))
-#
-#         Vhalf <- NA
-#         fit_sub <- fit$x[fit$x < Vmax1]
-#         pred_sub <- fit$y[fit$x < Vmax1]
-#
-#         if (length(pred_sub) > 0) {
-#           idx <- which.min(abs(pred_sub - Imax / 2))
-#           Vhalf <- fit_sub[idx]
-#         }
-#
-#         },
-#       error = function(e) {
-#         # Dieser Teil wird ausgeführt, wenn ein Fehler auftritt
-#         #print(paste0("This Well failed:", well))
-#         #print(paste0("On Plate: ", plate))
-#         print(paste("Ein Fehler ist aufgetreten:", conditionMessage(e)))
-#         results$Imax[i] <- NA
-#         results$Vhalf[i] <- NA
-#         results$Vmax[i] <- NA
-#       }
-#
-#       )
-#     }
-#
-#     results$Imax[i] <- Imax
-#     results$Vhalf[i] <- Vhalf
-#     results$Vmax[i] <- Vmax1
-#   }
-#
-#   coldata <- colData(se)
-#   coldata[[imax_col]] <- results$Imax[match(interaction(se$Well, se$Plate_ID),
-#                                             interaction(results$Well, results$Plate_ID))]
-#   coldata[[vhalf_col]] <- results$Vhalf[match(interaction(se$Well, se$Plate_ID),
-#                                               interaction(results$Well, results$Plate_ID))]
-#   coldata[[vmax_col]] <- results$Vmax[match(interaction(se$Well, se$Plate_ID),
-#                                             interaction(results$Well, results$Plate_ID))]
-#
-#   colData(se) <- coldata
-#   return(se)
-# }
-get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
 
   suffix <- tolower(assay)
   imax_col <- paste0("Imax.", suffix)
   vhalf_col <- paste0("Vhalf.", suffix)
   vmax_col <- paste0("Vmax.", suffix)
 
-  # Melt once
+  # Melt once into long format, pulling V_Clamp from rowData
   dat <- sechm::meltSE(
     se,
     rownames(se),
@@ -398,7 +261,7 @@ get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
     rowDat.columns = "V_Clamp"
   )
 
-  # Split once by Well + Plate
+  # Split once by Well + Plate_ID
   groups <- split(dat, interaction(dat$Well, dat$Plate_ID, drop = TRUE))
 
   res <- lapply(groups, function(subdat) {
@@ -418,7 +281,6 @@ get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
       Vmax1 <- max(x_vals[y_vals == Imax])
     }
 
-    # Avoid spline failure
     y_vals[!is.finite(y_vals)] <- 1
 
     spl <- tryCatch(
@@ -452,7 +314,6 @@ get_metric_v2 <- function(se, assay = "Minima", inward = TRUE) {
   res$Well <- keys[, 1]
   res$Plate_ID <- keys[, 2]
 
-  # Map back to colData
   idx <- match(
     interaction(se$Well, se$Plate_ID),
     interaction(res$Well, res$Plate_ID)
