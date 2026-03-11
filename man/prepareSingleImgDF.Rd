@@ -12,7 +12,9 @@ prepareSingleImgDF(
   num_cols = c("Area", "Mean", "IntDen"),
   scale_num = FALSE,
   scale_cols = NULL,
-  scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE))
+  scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE)),
+  aggregate = TRUE,
+  cleanNames = TRUE
 )
 }
 \arguments{
@@ -27,6 +29,10 @@ prepareSingleImgDF(
 \item{scale_num}{Boolean parameter to include scaled numeric metrices (Default FALSE)}
 
 \item{scale_fun}{Scale function passed through the numeric columns}
+
+\item{aggregate}{Boolean; if TRUE (default) rows are averaged across sites before cleaning}
+
+\item{cleanNames}{Boolean; if TRUE (default) runs df_cleaned() and drops duplicated column suffixes}
 }
 \value{
 A dataframe

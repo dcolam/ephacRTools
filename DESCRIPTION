@@ -13,7 +13,7 @@ License: What license is it under?
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.2
-Imports: 
+Imports:
     ComplexHeatmap,
     data.table,
     DBI,
@@ -21,20 +21,22 @@ Imports:
     DT,
     ggbeeswarm,
     ggplot2,
+    grid,
     gridExtra,
     ggpubr,
     hablar,
     jpeg,
+    jsonlite,
     HDF5Array,
     magrittr,
-    openxlsx2,
     plotly,
-    R.utils,
+    purrr,
     readxl,
     reshape2,
     RSQLite,
     Rtsne,
     S4Vectors,
+    scales,
     sechm,
     shiny,
     shinyFiles,
@@ -48,12 +50,14 @@ Imports:
     SummarizedExperiment,
     tidyselect,
     umap,
+    uwot,
     viridis,
     waiter
-Depends: 
+Depends:
     R (>= 3.5)
-Suggests: 
+Suggests:
     knitr,
+    RColorBrewer,
     rmarkdown
 URL: https://github.com/dcolam/ephacRTools
 BugReports: https://github.com/dcolam/ephacRTools/issues

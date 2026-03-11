@@ -4,7 +4,6 @@
 #' @param join_keys The columns you want to join by (match the wells by Well and Plate_ID)
 #' @param columns_to_add Columns from your imaging dataset you're interested in adding to your SE
 #' @return An SE with your added imaging columns
-#' @export
 add_imagingcols_toSE <- function(SE, imaging_df, join_keys = c("Well", "Plate_ID"), columns_to_add = NULL) {
   coldata <- as.data.frame(colData(SE))
 
@@ -43,7 +42,6 @@ add_imagingcols_toSE <- function(SE, imaging_df, join_keys = c("Well", "Plate_ID
 #' @param k_centers The number of centers you want for your k-means clustering
 #' @param plot_umap Whether you want the function to return the umap plot from the clustering if you ran clustering classification
 #' @return A SE with your scaled channel columns and cell assignments
-#' @export
 assign_cell_FINAL<- function(SE,
                                channels = c("C1", "C2", "C3"),
                                chan2analyze = c("C2", "C3"),
@@ -234,7 +232,6 @@ assign_cell_FINAL<- function(SE,
 #' @param k_centers The number of centers you want for your k-means clustering
 #' @param plot_umap Whether you want the function to return the umap plot from the clustering if you ran clustering classification
 #' @return A SE with your scaled channel columns and cell assignments
-#' @export
 assign_cell_FINAL_valcol <- function(SE,
                               channels = c("C1", "C2", "C3"),
                               chan2analyze = c("C2", "C3"),
@@ -410,7 +407,6 @@ assign_cell_FINAL_valcol <- function(SE,
 #' @param value_col The feature in your data that you're using to base the cell assignment on (could be Mean, Area, IntDen..)
 #' @param channel_colors The colors you want your channels to be in the plots
 #' @return A density or ECDF plot
-#' @export
 plot_intensity_distribution <- function(SE,
                                         channels = c("C2", "C3"),
                                         value_col = "Mean",
@@ -418,8 +414,6 @@ plot_intensity_distribution <- function(SE,
                                         plot_type = c("density", "ecdf"),
                                         channel_colors = c(C1 = "forestgreen", C2 = "lightcoral", C3 = "plum")
                                         ) {
-  require(ggplot2)
-  require(dplyr)
 
   plot_type <- match.arg(plot_type)
 
@@ -482,7 +476,6 @@ plot_intensity_distribution <- function(SE,
 #' @param title The title you want to give your plot
 #' @param colors How you want the colors to be plotted
 #' @return A well plate plot showing the color assignment
-#' @export
 plot_well_assignment <- function(SE,
                                  color_col = "Color_manual",
                                  title = NULL,
@@ -529,7 +522,6 @@ plot_well_assignment <- function(SE,
 #' @param values The colors you want your categories to be assigned
 #' @param title The title you want to give your plot
 #' @return A well plate plot showing the induction distribution
-#' @export
 plot_well_binary_assignment <- function(SE, color_col = "Color_binary", values= c(
                                           "red" = "red",
                                           "green" = "green",

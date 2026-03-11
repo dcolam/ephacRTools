@@ -9,12 +9,14 @@ prepareImgDF(
   analysis = "pa",
   id_cols = c("Date", "Plate_ID", "Well", "Image_ID", "Channel_Name", "Selection",
     "Selection_Area"),
-  num_cols = c("Area", "Mean", "IntDen"),
+  num_cols = c("Area", "Mean", "IntDen", "Number_of_Particles"),
   coloc_cols = c("Second_Channel", "Mask_Area"),
   new_channel_names = c("blue", "green", "red", "farred"),
   scale_num = FALSE,
   scale_cols = NULL,
-  scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE))
+  scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE)),
+  aggregate = TRUE,
+  cleanNames = TRUE
 )
 }
 \arguments{
@@ -31,6 +33,10 @@ prepareImgDF(
 \item{scale_num}{Boolean parameter to include scaled numeric metrices (Default FALSE)}
 
 \item{scale_fun}{Scale function passed through the numeric columns}
+
+\item{aggregate}{Boolean; if TRUE (default) rows are averaged across sites before cleaning}
+
+\item{cleanNames}{Boolean; if TRUE (default) runs df_cleaned() and drops duplicated column suffixes}
 }
 \value{
 A dataframe

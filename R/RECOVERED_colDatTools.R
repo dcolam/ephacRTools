@@ -1,9 +1,8 @@
-#' @importFrom magrittr %>%More actions
+#' @importFrom magrittr %>%
 NULL
 #' Prepare the excel files from the Syncropatch Online Analysis
 #' @param pathToExcel Path to the excel file in question
 #' @return A data frame
-#' @export
 prep_excel <- function(pathToExcel){
 
   df <- as.data.frame(read_excel(pathToExcel, sheet="OA Export", col_types = "text"))
@@ -48,7 +47,6 @@ prep_excel <- function(pathToExcel){
 #' @param wd_path Path to the excel files location (including the meta data file)
 #' @param df The data frame that you just created from the excel file you are looking at
 #' @return An adjusted data frame
-#' @export
 prep_df <- function(wd_path, df) {
   l_files <- list.files(path = wd_path ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 
@@ -94,7 +92,6 @@ ag <- function(df, cols, fun=mean) {
 #' @param ion The compound that was added or removed during the measurements
 #' @param columns The columns you want to pass onto your aggregation function
 #' @return A filtered data frame
-#' @export
 filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("Well", "QC", "Compound", "Conditions", "Plate_ID")) {
 
   # Filter condition: rows B–O and cols 2–23
@@ -139,7 +136,6 @@ filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("
   #' @param block_size Parameter that determines after how many rows the condition alternates from HP to WT
   #' @param cycle_pattern A vector containing a custom, repeating sequence like the triplet c("HP", "WT", "HP")
   #' @return A data frame with group assignment
-  #' @export
   group_assignment <- function(data, se = c("Yes", "No"), pattern = c("Conditions", "Alternating", "Block", "Manual", "Cycle"),
                                    manual_map = NULL, block_size = NULL, cycle_pattern = NULL) {
     se <- match.arg(se)
@@ -195,7 +191,6 @@ filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("
   #' @param mode Aggregation mode by period or by last n sweeps
   #' @param last.n The value of n if aggregating by the last n sweeps
   #' @return A data frame with the added feature in colData
-  #' @export
   rowAG <- function(
     se,
     assay_name = "Erev",  # which assay to aggregate
@@ -265,7 +260,6 @@ filtered_df <- function(prepared_df, plate_ID, ion = c("Na", "K"), columns = c("
   #' @param mode Aggregation mode by period or by last n sweeps
   #' @param last.n The value of n if aggregating by the last n sweeps
   #' @return A summarized experiment with the assays you set
-  #' @export
   row_aggregate_SE <- function(
     se,
     metrics   = c("Erev"),
