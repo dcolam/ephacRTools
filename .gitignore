@@ -7,3 +7,5 @@ inst/doc
 /Meta/
 renv.lock
 ignore
+CLAUDE.md
+deploy.R

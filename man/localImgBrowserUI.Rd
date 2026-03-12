@@ -5,7 +5,7 @@
 \alias{localImgBrowserServer}
 \title{Client-side local image folder browser}
 \usage{
-localImgBrowserUI(id, label = "Select image folder<U+2026>")
+localImgBrowserUI(id, label = "Select image folder…")
 
 localImgBrowserServer(id)
 }
