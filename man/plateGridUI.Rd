@@ -2,35 +2,37 @@
 % Please edit documentation in R/localImgBrowserModule.R
 \name{plateGridUI}
 \alias{plateGridUI}
-\title{Render a 384-well plate grid using blob: URLs from localImgBrowserServer}
+\title{Render a 384-well plate grid from a well -> URL map}
 \usage{
 plateGridUI(
-  img_data,
-  img_class = "class1",
-  channel = "BF",
+  url_map,
+  coldata_colors = NULL,
   click_input_id = NULL,
-  plate_id = "plate1"
+  hover_input_id = NULL,
+  well_size_px = 36
 )
 }
 \arguments{
-\item{img_data}{Named character vector \code{map} from
-\code{localImgBrowserServer()$map}.}
+\item{url_map}{Named character vector \code{well -> URL} as returned by
+\code{filterImgMap()} or built from server-side \code{addResourcePath}
+paths.}
 
-\item{img_class}{Class string to display, e.g. \code{"class1"}.}
+\item{coldata_colors}{Optional named vector \code{well -> hex_color} for a
+semi-transparent colData overlay on each tile.}
 
-\item{channel}{Channel key, e.g. \code{"BF"} or \code{"GFP"}.}
+\item{click_input_id}{Full (namespaced) Shiny input id that receives the
+well id on click.  \code{NULL} to disable.}
 
-\item{click_input_id}{Full (namespaced) Shiny input id that receives
-\code{"Well.Plate_ID"} on click.  Pass \code{NULL} to disable.}
+\item{hover_input_id}{Full (namespaced) Shiny input id that receives the
+well id on mouse-over.  \code{NULL} to disable.}
 
-\item{plate_id}{Plate identifier appended to the click value.
-Default \code{"plate1"}.}
+\item{well_size_px}{Tile size in pixels (default 36).}
 }
 \value{
-A \code{shiny::tagList} containing the plate grid.
+A \code{shiny::tagList} ready for use in \code{renderUI}.
 }
 \description{
-Designed to be called inside \code{renderUI}. Produces a CSS grid of 384
-well tiles; wells with a matching image show the thumbnail, others show a
-placeholder.  Clicking a well fires a Shiny input.
+Designed for use inside \code{renderUI}.  URLs may be blob: (client-side)
+or relative served paths via \code{addResourcePath} (server-side) --
+the rendering code is identical for both.
 }
