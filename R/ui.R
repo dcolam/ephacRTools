@@ -95,14 +95,17 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                       .modify_stop_propagation(
                                                         menuItem("Plotting", startExpanded=TRUE,
                                                                  menuSubItem("Plate Overview", tabName="tab_plate"),
-                                                                 menuSubItem("Plot Sweeps", tabName="tab_sweeps"),
-                                                                 menuSubItem("Image Plate Viewer", tabName="tab_imgplate")
+                                                                 menuSubItem("Plot Sweeps", tabName="tab_sweeps")
+                                                        )),
+                                                      .modify_stop_propagation(
+                                                        menuItem("Image Analysis", startExpanded=TRUE,
+                                                                 menuSubItem("Import Data",         tabName="tab_img_import"),
+                                                                 menuSubItem("Auto Classification", tabName="tab_img_classify"),
+                                                                 menuSubItem("Manual Scoring",      tabName="tab_annotation"),
+                                                                 menuSubItem("Plate Viewer",        tabName="tab_imgplate")
                                                         )),
 
-
                                                       hr(),
-                                                      menuItem("Manual Annotation", tabName = "tab_annotation",
-                                                               icon = icon("tags")),
                                                       menuItem("Clustering", tabName = "tab_cluster"),
                                                       menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
@@ -185,83 +188,13 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                      box(
                                        width = 6,title = "Load Excel-File",
                                        tags$p("You may upload one or more Excel files generated directly by DataControl. Make sure to follow the guidelines."),
-
-
                                        fluidRow(
-                                         column(
-                                           width = 6,
-                                           textInput("se_id", "Name your Dataset:", value = "Custom Dataset")
-                                         ),
-                                         column(
-                                           width = 6,
-                                           fileInput("fileEphys", "Ephys Excel File (.xlsx)", multiple = TRUE, accept = ".xlsx")
-                                         )
+                                         column(width = 6,
+                                                textInput("se_id", "Name your Dataset:", value = "Custom Dataset")),
+                                         column(width = 6,
+                                                fileInput("fileEphys", "Ephys Excel File (.xlsx)", multiple = TRUE, accept = ".xlsx"))
                                        ),
-
-
                                        tableOutput("importXl")
-                                       # actionButton("loadEphys", label = "Load Excel into SE")
-                                     ),
-                                     box(
-                                       width = 6,title = "Load Imaging Results",
-                                       tags$p("You may upload imaging result `.db` files and link them to a selected SummarizedExperiment (SE) dataset. Make sure the data types match."),
-
-                                       # Row with selectizeInput and fileInput side-by-side
-                                       fluidRow(
-                                         column(
-                                           width = 6,
-                                           selectizeInput(
-                                             "seDataset",
-                                             label = "Select SE",
-                                             choices = c(),
-                                             multiple = FALSE
-                                           )
-                                         ),
-                                         column(
-                                           width = 6,
-                                           fileInput(
-                                             "fileDB",
-                                             label = "Imaging Results (.db)",
-                                             multiple = TRUE,
-                                             accept = ".db"
-                                           )
-                                         )
-                                       ),
-
-                                       # Table type selector
-                                       fluidRow(
-                                         column(
-                                           width = 12,
-                                           selectInput(
-                                             "tabletype",
-                                             label = "Choose Imaging Table type:",
-                                             choices = list(
-                                               "Particle Analysis Table" = "pa",
-                                               "Colocalization Table" = "coloc"
-                                             ),
-                                             multiple = TRUE,
-                                             selected = "pa"
-                                           ),
-                                           tableOutput("importDB")
-
-                                         )
-                                       ),
-
-                                       # Optional UI controls
-                                       fluidRow(
-                                         column(
-                                           width = 12,
-                                           uiOutput("optionalControls")
-                                         )
-                                       ),
-
-                                       # Action button
-                                       fluidRow(
-                                         column(
-                                           width = 12,
-                                           actionButton("mergeSE", label = "Connect Ephys and Imaging Results")
-                                         )
-                                       )
                                      )
                                       )
 
@@ -341,23 +274,9 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                              tabItem("tab_imgplate",
                                      fluidRow(
                                        column(width = 3,
-                                         box(width = 12, title = "Image Folder",
-                                           localImgBrowserUI("imgbrowser"),
-                                           helpText(style = "font-size:11px;",
-                                             "Works locally and when deployed. ",
-                                             "Filenames must follow: ",
-                                             tags$code("..._Well-site_Channel_Class_crop.jpg")),
-                                           hr(),
-                                           tags$small(style = "color:#aaa;",
-                                             "Local / server only:"),
-                                           shinyFiles::shinyDirButton(
-                                             "img_dir_btn",
-                                             label       = "Browse server folder…",
-                                             title       = "Select the folder containing plate images",
-                                             class       = "btn-default btn-block btn-sm"
-                                           ),
-                                           div(style = "font-size: 11px; font-family: monospace; color: #666; margin-top: 4px; word-break: break-all;",
-                                               textOutput("img_folder_display")),
+                                         box(width = 12, title = "View Controls",
+                                           helpText(style="font-size:11px; color:#888;",
+                                             "Select image folder in ", tags$b("Image Analysis \u2192 Import Data"), "."),
                                            hr(),
                                            selectInput("plate_img_id", "Matched Plate ID", choices = c()),
                                            selectInput("img_channel",   "Channel:",         choices = c()),
@@ -386,11 +305,147 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                              " min-height: 28px; color: #333;"),
                                              textOutput("img_hover_info", inline = TRUE)
                                            ),
+                                           uiOutput("img_plate_css"),
                                            div(style = "overflow:auto;",
-                                             uiOutput("img_plate_ui"))
+                                             uiOutput("img_plate_ui")),
+                                           div(style = "padding: 8px 16px 4px;",
+                                             fluidRow(
+                                               column(6, sliderInput("img_brightness", "Brightness:",
+                                                         min = 0.2, max = 4, value = 1, step = 0.1,
+                                                         width = "100%")),
+                                               column(6, sliderInput("img_contrast", "Contrast:",
+                                                         min = 0.2, max = 4, value = 1, step = 0.1,
+                                                         width = "100%"))
+                                             ),
+                                             actionButton("img_reset_filter", icon("rotate-left"),
+                                                          class = "btn-xs btn-default",
+                                                          style = "margin-top:2px;")
+                                           )
                                          )
                                        )
                                      )
+                             ),
+                             tabItem("tab_img_import",
+                               fluidRow(
+                                 box(width = 6, title = "Load Imaging Database (.db)",
+                                   tags$p("Upload Cluster Analysis SQLite databases and link them to the current SE dataset."),
+                                   fluidRow(
+                                     column(6,
+                                       selectizeInput("img_seDataset", "Select SE:", choices=c(), multiple=FALSE)
+                                     ),
+                                     column(6,
+                                       fileInput("img_fileDB", "Imaging Results (.db)", multiple=TRUE, accept=".db")
+                                     )
+                                   ),
+                                   fluidRow(
+                                     column(12,
+                                       selectInput("img_tabletype", "Table type:",
+                                         choices = list("Particle Analysis"="pa","Colocalization"="coloc"),
+                                         multiple=TRUE, selected="pa"),
+                                       tableOutput("img_importDB_preview")
+                                     )
+                                   ),
+                                   fluidRow(
+                                     column(12,
+                                       checkboxInput("img_aggregate_db", "Aggregate rows (mean per well)", value=TRUE),
+                                       actionButton("img_mergeSE", "Connect to SE", class="btn-primary")
+                                     )
+                                   )
+                                 ),
+                                 box(width = 6, title = "Image Folder (JPG Thumbnails)",
+                                   tags$p("Select the folder containing cropped JPG thumbnails exported by Cluster Analysis.",
+                                          "Filenames must follow: ", tags$code("..._Well-site_Channel_Class_crop.jpg")),
+                                   localImgBrowserUI("imgbrowser"),
+                                   helpText(style="font-size:11px; color:#aaa;",
+                                     "Works locally and when deployed (client-side). ",
+                                     "For server/local use, also browse by folder:"),
+                                   shinyFiles::shinyDirButton(
+                                     "img_dir_btn", label="Browse server folder\u2026",
+                                     title="Select the folder containing plate images",
+                                     class="btn-default btn-block btn-sm"),
+                                   div(style="font-size:11px;font-family:monospace;color:#666;margin-top:4px;word-break:break-all;",
+                                       textOutput("img_folder_display"))
+                                 )
+                               )
+                             ),
+                             tabItem("tab_img_classify",
+                               fluidRow(
+                                 box(width=12, title="Automatic Cell Classification from Particle Data",
+                                     tags$p(style="color:#666;",
+                                            "Run the classification pipeline step by step. Each step uses the output of the previous. ",
+                                            "At the end, add the result to the current SE colData."))),
+                               fluidRow(
+                                 # Step 1
+                                 box(width=2, title="1 \u2014 Load",
+                                   collapsible=TRUE,
+                                   selectizeInput("cls_seDataset", "SE:", choices=c(), multiple=FALSE),
+                                   selectInput("cls_tabletype", "Table:",
+                                     choices=list("Particle Analysis"="pa","Colocalization"="coloc"), selected="pa"),
+                                   checkboxInput("cls_aggregate", "Pre-aggregate by site", value=FALSE),
+                                   actionButton("cls_load", "Load", class="btn-primary btn-block"),
+                                   hr(),
+                                   verbatimTextOutput("cls_load_status")
+                                 ),
+                                 # Step 2
+                                 box(width=2, title="2 \u2014 Filter",
+                                   collapsible=TRUE,
+                                   selectInput("cls_filter_method", "Method:",
+                                     choices=c("Z-score"="zscore", "Median ratio"="median_ratio")),
+                                   numericInput("cls_filter_threshold", "Threshold:", value=NA, step=0.1),
+                                   helpText(style="font-size:10px;",
+                                            "Leave blank for method default (z-score: 0, median ratio: 0.33)."),
+                                   actionButton("cls_filter", "Filter", class="btn-primary btn-block"),
+                                   hr(),
+                                   verbatimTextOutput("cls_filter_status")
+                                 ),
+                                 # Step 3
+                                 box(width=2, title="3 \u2014 Aggregate",
+                                   collapsible=TRUE,
+                                   tags$p(style="color:#666; font-size:11px;",
+                                          "One row per Channel \u00d7 Plate \u00d7 Well.",
+                                          "Fully-filtered wells are set to 0 (Negative)."),
+                                   actionButton("cls_aggregate_btn", "Aggregate", class="btn-primary btn-block"),
+                                   hr(),
+                                   verbatimTextOutput("cls_agg_status")
+                                 ),
+                                 # Step 4
+                                 box(width=2, title="4 \u2014 Score",
+                                   collapsible=TRUE,
+                                   tags$p(style="color:#666; font-size:11px;",
+                                          "Scales each metric within Channel \u00d7 Plate, then combines."),
+                                   numericInput("cls_w_mean",    "Weight: Mean",     value=1, min=0, step=0.5),
+                                   numericInput("cls_w_area",    "Weight: Area",     value=1, min=0, step=0.5),
+                                   numericInput("cls_w_normarea","Weight: normArea", value=1, min=0, step=0.5),
+                                   actionButton("cls_score", "Score", class="btn-primary btn-block"),
+                                   hr(),
+                                   verbatimTextOutput("cls_score_status")
+                                 ),
+                                 # Step 5
+                                 box(width=2, title="5 \u2014 Classify",
+                                   collapsible=TRUE,
+                                   sliderInput("cls_delta",    "Delta:", min=0.1, max=2,   value=0.5, step=0.1),
+                                   sliderInput("cls_min_area", "Min area:", min=0, max=1, value=0.1, step=0.05),
+                                   uiOutput("cls_channel_labels_ui"),
+                                   actionButton("cls_classify", "Classify", class="btn-primary btn-block"),
+                                   hr(),
+                                   tableOutput("cls_classify_preview")
+                                 ),
+                                 # Step 6
+                                 box(width=2, title="6 \u2014 Add to SE",
+                                   collapsible=TRUE,
+                                   tags$p(style="color:#666; font-size:11px;",
+                                          "Joins result to colData by Well + Plate_ID."),
+                                   radioButtons("cls_merge_mode", "Storage:",
+                                     choices=c("Flat"="flat", "Nested DataFrame"="nested"),
+                                     selected="flat"),
+                                   conditionalPanel("input.cls_merge_mode == 'nested'",
+                                     textInput("cls_col_name", "Column name:", value="img_classification")
+                                   ),
+                                   actionButton("cls_merge_se", "Add to SE", class="btn-success btn-block"),
+                                   hr(),
+                                   verbatimTextOutput("cls_merge_status")
+                                 )
+                               )
                              ),
                              tabItem("tab_sweeps",
                                      box(width = 12,
@@ -503,11 +558,68 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                actionButton("ann_skip", "Skip / Next", class = "btn-default"),
                                                actionButton("ann_undo", "Undo last",   class = "btn-warning"),
                                                span(style = "margin-left: 4px; color: #888; font-size: 12px;",
-                                                    textOutput("ann_progress", inline = TRUE)))
+                                                    textOutput("ann_progress", inline = TRUE))),
+                                           hr(),
+                                           fluidRow(
+                                             column(6,
+                                               div(style = "display:flex; align-items:center; gap:8px;",
+                                                 tags$strong("BF", style = "font-size:12px;"),
+                                                 actionButton("ann_bf_reset", icon("rotate-left"),
+                                                              class = "btn-xs btn-default")),
+                                               fluidRow(
+                                                 column(6, sliderInput("ann_bf_b", "Brightness",
+                                                           0.2, 4, 1, 0.1, width = "100%")),
+                                                 column(6, sliderInput("ann_bf_c", "Contrast",
+                                                           0.2, 4, 1, 0.1, width = "100%"))
+                                               )
+                                             ),
+                                             column(6,
+                                               div(style = "display:flex; align-items:center; gap:8px;",
+                                                 tags$strong("Fluoro", style = "font-size:12px;"),
+                                                 actionButton("ann_flu_reset", icon("rotate-left"),
+                                                              class = "btn-xs btn-default")),
+                                               fluidRow(
+                                                 column(6, sliderInput("ann_flu_b", "Brightness",
+                                                           0.2, 4, 1, 0.1, width = "100%")),
+                                                 column(6, sliderInput("ann_flu_c", "Contrast",
+                                                           0.2, 4, 1, 0.1, width = "100%"))
+                                               )
+                                             )
+                                           ),
+                                           hr(),
+                                           fluidRow(
+                                             column(12,
+                                               tags$h5("Resume from CSV"),
+                                               fileInput("ann_upload_csv", NULL,
+                                                         accept = ".csv",
+                                                         placeholder = "Upload previous CSV…",
+                                                         buttonLabel = "Browse…",
+                                                         width = "100%"),
+                                               helpText(style = "font-size:11px; margin-top:-10px;",
+                                                 "Loads results and skips already-labeled wells."),
+                                               hr(),
+                                               tags$h5("Results"),
+                                               div(style = "display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;",
+                                                 downloadButton("ann_download_csv", "Download CSV"),
+                                                 actionButton("ann_merge_results", "Merge & deduplicate",
+                                                              class = "btn-info btn-sm"),
+                                                 actionButton("ann_clear_results", "Clear results",
+                                                              class = "btn-danger btn-sm")
+                                               ),
+                                               div(style="margin-bottom:10px;",
+                                                 actionButton("ann_update_se", icon("save"), "Save to SE colData",
+                                                              class="btn-success btn-sm"),
+                                                 helpText(style="font-size:11px; margin-top:4px;",
+                                                   "Writes merged annotations to colData(SE)[[\"manual_ann_<YourName>\"]]. ",
+                                                   "Only triggered on click.")
+                                               ),
+                                               tableOutput("ann_results_preview")
+                                             )
+                                           )
                                          )
                                        ),
                                        column(width = 3,
-                                         box(width = 12, title = "Annotation",
+                                         box(width = 12, title = "Setup",
                                            helpText("Select a folder in the Image Plate Viewer tab. Note: auto-save CSV requires the server folder picker; client-side folders use Download CSV."),
                                            selectInput("ann_img_class", "Class to annotate:",
                                                        choices = c(), width = "100%"),
@@ -521,23 +633,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                            textInput("ann_new_class", NULL,
                                                      placeholder = "New label…"),
                                            actionButton("ann_add_class",     "Add label",    class = "btn-primary btn-sm"),
-                                           actionButton("ann_clear_classes", "Clear labels", class = "btn-danger btn-sm"),
-                                           hr(),
-                                           tags$h5("Resume from CSV"),
-                                           fileInput("ann_upload_csv", NULL,
-                                                     accept = ".csv",
-                                                     placeholder = "Upload previous CSV…",
-                                                     buttonLabel = "Browse…",
-                                                     width = "100%"),
-                                           helpText(style = "font-size:11px; margin-top:-10px;",
-                                             "Loads results and skips already-labeled wells."),
-                                           hr(),
-                                           tags$h5("Results"),
-                                           downloadButton("ann_download_csv", "Download CSV"),
-                                           actionButton("ann_merge_results",  "Merge & deduplicate", class = "btn-info btn-sm"),
-                                           actionButton("ann_clear_results",  "Clear results", class = "btn-danger btn-sm"),
-                                           div(style = "margin-top: 10px;",
-                                               tableOutput("ann_results_preview"))
+                                           actionButton("ann_clear_classes", "Clear labels", class = "btn-danger btn-sm")
                                          )
                                        )
                                      )

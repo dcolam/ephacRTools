@@ -55,6 +55,7 @@ Depends:
     R (>= 3.5)
 Suggests:
     knitr,
-    rmarkdown
+    rmarkdown,
+    testthat (>= 3.0.0)
 URL: https://github.com/dcolam/ephacRTools
 BugReports: https://github.com/dcolam/ephacRTools/issues

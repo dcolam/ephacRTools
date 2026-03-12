@@ -240,6 +240,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         updateSelectizeInput(session, "img_hover_vars",
                              choices  = colnames(as.data.frame(colData(x))),
                              selected = character(0))
+        updateSelectizeInput(session, "img_seDataset",  choices=names(SEs), selected=input$object)
+        updateSelectizeInput(session, "cls_seDataset",  choices=names(SEs), selected=input$object)
 
         # Auto-load image folder stored in SE metadata
         folder <- tryCatch(S4Vectors::metadata(x)$image_path_jpgs, error = function(e) NULL)
@@ -454,6 +456,37 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         ))
       })
     })
+
+    observeEvent(input$img_mergeSE, {
+      tryCatch({
+        req(input$img_seDataset, input$img_fileDB, input$img_tabletype)
+        l_files <- input$img_fileDB$datapath
+        withProgress(message="Loading Imaging Results", value=0, {
+          incProgress(0.5, detail="This may take a while...")
+          for (tabletype in input$img_tabletype) {
+            df_img <- prepareImgDF(l_files, analysis=tabletype,
+                                   aggregate=isTRUE(input$img_aggregate_db))
+            SEname <- input$img_seDataset
+            SEs[[SEname]] <- mergeSEandImg(SEs[[SEname]], df_img, tableType=tabletype)
+            SEinit(SEs[[SEname]])
+            incProgress(0.75, detail="Updating UI")
+            updateSelectInput(session, "object", selected=SEname,
+                              choices=union(names(objects), names(SEs)))
+            incProgress(1, detail="Done")
+          }
+        })
+      }, error=function(e) {
+        showModal(modalDialog(title="Error", easyClose=TRUE,
+          tags$pre(conditionMessage(e))))
+      })
+    })
+
+    output$img_importDB_preview <- renderTable({
+      req(input$img_fileDB)
+      df <- input$img_fileDB
+      df$size_MB <- round(df$size/(1024^2), 2)
+      df[, c("name","size_MB")]
+    }, striped=TRUE, spacing="s", bordered=TRUE)
 
     observeEvent(input$dataset_button, {
       tryCatch({
@@ -1644,6 +1677,14 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       }
     })
 
+    output$img_plate_css <- renderUI({
+      b <- input$img_brightness %||% 1
+      c <- input$img_contrast   %||% 1
+      tags$style(HTML(sprintf(
+        ".imgplate-well img { filter: brightness(%s) contrast(%s); }", b, c
+      )))
+    })
+
     output$img_plate_ui <- renderUI({
       urls   <- img_well_urls()
       vals   <- img_coldata_vals()
@@ -1749,11 +1790,15 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         }
       }
 
-      make_panel <- function(url, label) {
+      init_b <- input$img_brightness %||% 1
+      init_c <- input$img_contrast   %||% 1
+      init_filter <- sprintf("max-width:100%%; max-height:55vh; border-radius:6px; filter:brightness(%s) contrast(%s);",
+                             init_b, init_c)
+
+      make_panel <- function(url, label, img_id) {
         if (!is.na(url))
           div(style = "text-align: center;",
-              tags$img(src = url,
-                       style = "max-width: 100%; max-height: 55vh; border-radius: 6px;"),
+              tags$img(src = url, id = img_id, style = init_filter),
               tags$p(style = "font-size: 12px; color: #666; margin-top: 4px;", label))
         else
           div(style = paste0("display:flex; align-items:center; justify-content:center;",
@@ -1767,10 +1812,69 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         tags$div(style = paste0("font-family: monospace; font-size: 13px;",
                                 " margin-bottom: 12px; color: #333;"), hover_txt),
         div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px;",
-            make_panel(bf_url,  "BF"),
-            make_panel(flu_url, "Fluoro")),
+            make_panel(bf_url,  "BF",     "modal_bf_img"),
+            make_panel(flu_url, "Fluoro", "modal_flu_img")),
+        fluidRow(
+          style = "margin-top: 14px; padding: 0 4px;",
+          column(6,
+            div(style = "display:flex; align-items:center; gap:8px;",
+              tags$strong("BF", style = "font-size:12px;"),
+              actionButton("modal_bf_reset", icon("rotate-left"), class = "btn-xs btn-default")),
+            fluidRow(
+              column(6, sliderInput("modal_bf_b", "Brightness", 0.2, 4, init_b, 0.1, width = "100%")),
+              column(6, sliderInput("modal_bf_c", "Contrast",   0.2, 4, init_c, 0.1, width = "100%"))
+            )
+          ),
+          column(6,
+            div(style = "display:flex; align-items:center; gap:8px;",
+              tags$strong("Fluoro", style = "font-size:12px;"),
+              actionButton("modal_flu_reset", icon("rotate-left"), class = "btn-xs btn-default")),
+            fluidRow(
+              column(6, sliderInput("modal_flu_b", "Brightness", 0.2, 4, init_b, 0.1, width = "100%")),
+              column(6, sliderInput("modal_flu_c", "Contrast",   0.2, 4, init_c, 0.1, width = "100%"))
+            )
+          )
+        ),
         easyClose = TRUE, size = "l", footer = modalButton("Close")
       ))
+    })
+
+    # Modal image brightness / contrast — update CSS filter live via JS
+    observe({
+      b <- input$modal_bf_b %||% 1
+      c <- input$modal_bf_c %||% 1
+      shinyjs::runjs(sprintf(
+        "var el=document.getElementById('modal_bf_img'); if(el) el.style.filter='brightness(%s) contrast(%s)';",
+        b, c))
+    })
+    observe({
+      b <- input$modal_flu_b %||% 1
+      c <- input$modal_flu_c %||% 1
+      shinyjs::runjs(sprintf(
+        "var el=document.getElementById('modal_flu_img'); if(el) el.style.filter='brightness(%s) contrast(%s)';",
+        b, c))
+    })
+
+    # Reset buttons
+    observeEvent(input$img_reset_filter, {
+      updateSliderInput(session, "img_brightness", value = 1)
+      updateSliderInput(session, "img_contrast",   value = 1)
+    })
+    observeEvent(input$ann_bf_reset, {
+      updateSliderInput(session, "ann_bf_b", value = 1)
+      updateSliderInput(session, "ann_bf_c", value = 1)
+    })
+    observeEvent(input$ann_flu_reset, {
+      updateSliderInput(session, "ann_flu_b", value = 1)
+      updateSliderInput(session, "ann_flu_c", value = 1)
+    })
+    observeEvent(input$modal_bf_reset, {
+      updateSliderInput(session, "modal_bf_b", value = 1)
+      updateSliderInput(session, "modal_bf_c", value = 1)
+    })
+    observeEvent(input$modal_flu_reset, {
+      updateSliderInput(session, "modal_flu_b", value = 1)
+      updateSliderInput(session, "modal_flu_c", value = 1)
     })
 
     # ---------------------------------------------------------------
@@ -2006,6 +2110,21 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       file.path("imgplate", substring(fp, nchar(parent) + 1))
     }
 
+    observe({
+      b <- input$ann_bf_b %||% 1
+      c <- input$ann_bf_c %||% 1
+      shinyjs::runjs(sprintf(
+        "var el=document.getElementById('ann_bf_img'); if(el) el.style.filter='brightness(%s) contrast(%s)';",
+        b, c))
+    })
+    observe({
+      b <- input$ann_flu_b %||% 1
+      c <- input$ann_flu_c %||% 1
+      shinyjs::runjs(sprintf(
+        "var el=document.getElementById('ann_flu_img'); if(el) el.style.filter='brightness(%s) contrast(%s)';",
+        b, c))
+    })
+
     output$ann_image_ui <- renderUI({
       if (length(ann_rv$shuffled) == 0)
         return(tags$p(style = "color: #aaa; padding: 20px;",
@@ -2017,14 +2136,14 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
       pair <- ann_pair()
 
-      make_panel <- function(fp, label) {
+      make_panel <- function(fp, label, img_id) {
         ok  <- !is.null(fp) && !is.na(fp) && nzchar(fp)
         url <- if (!ok) NA_character_
-                else if (img_client_mode()) fp          # already a blob: URL
+                else if (img_client_mode()) fp
                 else .ann_file_to_url(fp)
         if (ok && !is.na(url)) {
           div(style = "text-align: center;",
-              tags$img(src = url,
+              tags$img(src = url, id = img_id,
                        style = "max-width: 100%; max-height: 52vh; border-radius: 6px;"),
               tags$p(style = "font-size: 12px; color: #666; margin: 4px 0 0;", label))
         } else {
@@ -2039,8 +2158,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         tags$p(style = "font-size:13px; font-family:monospace; color:#555; margin:4px 8px;",
                paste0(well, pid_lbl)),
         div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px;",
-            make_panel(pair$bf,     "BF"),
-            make_panel(pair$fluoro, "Fluoro"))
+            make_panel(pair$bf,     "BF",     "ann_bf_img"),
+            make_panel(pair$fluoro, "Fluoro", "ann_flu_img"))
       )
     })
 
@@ -2170,6 +2289,175 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       filename = function() paste0("annotations_", format(Sys.Date(), "%Y%m%d"), ".csv"),
       content  = function(file) write.csv(ann_rv$results, file, row.names = FALSE)
     )
+
+    # ---------------------------------------------------------------
+    # Auto Classification pipeline  (tab_img_classify)
+    # ---------------------------------------------------------------
+
+    cls_rv <- reactiveValues(
+      particles  = NULL,
+      filtered   = NULL,
+      aggregated = NULL,
+      scored     = NULL,
+      classified = NULL
+    )
+
+    output$cls_load_status  <- renderText({ req(cls_rv$particles);  paste0("Loaded: ", nrow(cls_rv$particles), " rows, ", length(unique(cls_rv$particles$Channel_Name)), " channel(s), ", length(unique(cls_rv$particles$Plate_ID)), " plate(s).") })
+    output$cls_filter_status <- renderText({ req(cls_rv$filtered);  n_na <- sum(is.na(cls_rv$filtered$Mean)); paste0("After filter: ", nrow(cls_rv$filtered)," rows, ", n_na, " particles blanked (", round(100*n_na/nrow(cls_rv$filtered)),"%).") })
+    output$cls_agg_status    <- renderText({ req(cls_rv$aggregated); paste0("Aggregated: ", nrow(cls_rv$aggregated), " well-channel rows.") })
+    output$cls_score_status  <- renderText({ req(cls_rv$scored);     paste0("Scored: ", nrow(cls_rv$scored), " rows. Score range: [", round(min(cls_rv$scored$channel_score, na.rm=TRUE),3), ", ", round(max(cls_rv$scored$channel_score, na.rm=TRUE),3), "].") })
+    output$cls_merge_status  <- renderText({ req(input$cls_merge_se); "" })
+
+    observeEvent(input$cls_load, {
+      req(input$cls_seDataset, input$img_fileDB)
+      tryCatch({
+        withProgress(message="Loading particles", value=0.3, {
+          l_files <- input$img_fileDB$datapath
+          ttype   <- input$cls_tabletype %||% "pa"
+          df <- prepareImgDF(l_files, analysis=ttype,
+                             aggregate=isTRUE(input$cls_aggregate),
+                             cleanNames=FALSE)
+          df <- subset(df, Image_Type == "fluor")
+          cls_rv$particles  <- df
+          cls_rv$filtered   <- NULL
+          cls_rv$aggregated <- NULL
+          cls_rv$scored     <- NULL
+          cls_rv$classified <- NULL
+          incProgress(1)
+        })
+      }, error=function(e) showModal(modalDialog(title="Load error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+    })
+
+    observeEvent(input$cls_filter, {
+      req(cls_rv$particles)
+      tryCatch({
+        thr <- if (is.na(input$cls_filter_threshold)) NULL else input$cls_filter_threshold
+        cls_rv$filtered   <- filterParticles(cls_rv$particles,
+                                              method    = input$cls_filter_method,
+                                              threshold = thr)
+        cls_rv$aggregated <- NULL
+        cls_rv$scored     <- NULL
+        cls_rv$classified <- NULL
+      }, error=function(e) showModal(modalDialog(title="Filter error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+    })
+
+    observeEvent(input$cls_aggregate_btn, {
+      src <- cls_rv$filtered %||% cls_rv$particles
+      req(src)
+      tryCatch({
+        cls_rv$aggregated <- aggregateParticles(src)
+        cls_rv$scored     <- NULL
+        cls_rv$classified <- NULL
+      }, error=function(e) showModal(modalDialog(title="Aggregate error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+    })
+
+    observeEvent(input$cls_score, {
+      req(cls_rv$aggregated)
+      tryCatch({
+        wts <- c(Mean    = input$cls_w_mean     %||% 1,
+                 Area    = input$cls_w_area     %||% 1,
+                 normArea= input$cls_w_normarea %||% 1)
+        cls_rv$scored     <- scoreParticles(cls_rv$aggregated, weights=wts)
+        cls_rv$classified <- NULL
+      }, error=function(e) showModal(modalDialog(title="Score error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+    })
+
+    # Dynamic channel labels UI — one text input per Channel_Name found in scored data
+    output$cls_channel_labels_ui <- renderUI({
+      src <- cls_rv$scored %||% cls_rv$aggregated
+      if (is.null(src) || !"Channel_Name" %in% names(src)) return(NULL)
+      channels <- sort(unique(src$Channel_Name))
+      tagList(
+        tags$strong("Channel display labels (optional):"),
+        helpText(style="font-size:11px;", "Map raw Channel_Name to display label (e.g. C1 \u2192 GFP). Leave blank to keep raw name."),
+        lapply(channels, function(ch) {
+          fluidRow(
+            column(4, tags$p(style="margin-top:7px; font-family:monospace;", ch)),
+            column(8, textInput(paste0("cls_ch_label_", gsub("[^A-Za-z0-9]","_",ch)), NULL,
+                                placeholder=paste0("label for ", ch), width="100%"))
+          )
+        })
+      )
+    })
+
+    observeEvent(input$cls_classify, {
+      req(cls_rv$scored)
+      tryCatch({
+        src  <- cls_rv$scored
+        channels <- sort(unique(src$Channel_Name))
+        ch_labels <- NULL
+        for (ch in channels) {
+          lbl <- input[[paste0("cls_ch_label_", gsub("[^A-Za-z0-9]","_",ch))]]
+          if (!is.null(lbl) && nzchar(trimws(lbl)))
+            ch_labels <- c(ch_labels, setNames(trimws(lbl), ch))
+        }
+        cls_rv$classified <- classifyWells(src,
+                                            delta          = input$cls_delta    %||% 0.5,
+                                            min_area       = input$cls_min_area %||% 0.1,
+                                            channel_labels = if (length(ch_labels)>0) ch_labels else NULL)
+      }, error=function(e) showModal(modalDialog(title="Classify error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+    })
+
+    output$cls_classify_preview <- renderTable({
+      req(cls_rv$classified)
+      df <- as.data.frame(table(Classification = cls_rv$classified$Classification))
+      df[order(df$Freq, decreasing=TRUE), ]
+    }, striped=TRUE, bordered=TRUE, spacing="s")
+
+    observeEvent(input$cls_merge_se, {
+      req(cls_rv$classified, input$cls_seDataset)
+      tryCatch({
+        SEname <- input$cls_seDataset
+        req(!is.null(SEs[[SEname]]))
+        col_nm <- if (input$cls_merge_mode == "nested") {
+          nm <- trimws(input$cls_col_name)
+          if (!nzchar(nm)) "img_classification" else nm
+        } else NULL
+        SEs[[SEname]] <- mergeClassificationToSE(SEs[[SEname]], cls_rv$classified, col_name=col_nm)
+        SEinit(SEs[[SEname]])
+        updateSelectInput(session, "object", selected=SEname, choices=union(names(objects), names(SEs)))
+        showNotification(
+          paste0("Classification merged into SE '", SEname, "'",
+                 if (!is.null(col_nm)) paste0(" as nested column '", col_nm, "'") else " (flat columns)"),
+          type="message", duration=5)
+      }, error=function(e) showModal(modalDialog(title="Merge error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+    })
+
+    # ---------------------------------------------------------------
+    # Save manual annotations to SE colData  (ann_update_se button)
+    # ---------------------------------------------------------------
+
+    observeEvent(input$ann_update_se, {
+      se_name <- input$object
+      req(!is.null(se_name), nzchar(se_name), !is.null(SEs[[se_name]]))
+      se <- SEs[[se_name]]
+      df <- ann_rv$results
+      if (nrow(df) == 0) {
+        showNotification("No annotations to save.", type="warning"); return()
+      }
+      # Deduplicate: keep latest per (well, plate_id, img_class)
+      df <- df[order(df$timestamp, decreasing=TRUE), , drop=FALSE]
+      key <- paste0(df$well, "||", ifelse(is.na(df$plate_id),"",df$plate_id), "||",
+                    ifelse(is.na(df$img_class),"",df$img_class))
+      df <- df[!duplicated(key), , drop=FALSE]
+
+      # Column name: manual_ann_<person> or manual_ann
+      person  <- trimws(input$ann_person %||% "")
+      col_nm  <- if (nzchar(person)) paste0("manual_ann_", make.names(person)) else "manual_ann"
+
+      cd      <- as.data.frame(SummarizedExperiment::colData(se))
+      names(df)[names(df)=="well"]    <- "Well"
+      names(df)[names(df)=="plate_id"]<- "Plate_ID"
+      joined  <- dplyr::left_join(cd[,c("Well","Plate_ID")], df,
+                                  by=c("Well","Plate_ID"))
+      new_cols <- setdiff(names(joined), c("Well","Plate_ID"))
+      SummarizedExperiment::colData(se)[[col_nm]] <-
+        S4Vectors::DataFrame(joined[, new_cols, drop=FALSE])
+      SEs[[se_name]] <- se
+      SEinit(SEs[[se_name]])
+      showNotification(paste0("Saved to colData column '", col_nm, "' (", nrow(df), " annotated wells)."),
+                       type="message", duration=6)
+    })
 
     if(is.null(logins)) waiter_hide()
   }
