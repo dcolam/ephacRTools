@@ -1911,7 +1911,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                         selected = if (length(cls) > 0) cls[1] else NULL)
     }, ignoreNULL = TRUE)
 
-    # Rebuild well queue when files, class, or plate selection changes
+    # Helper: composite key "well||plate_id" for unique identification across plates
+    .ann_key <- function(well, plate_id) paste0(well, "||", ifelse(is.na(plate_id), "", plate_id))
+
+    # Rebuild queue (stores composite "well||plate_id" keys)
     observeEvent(list(ann_img_meta_df(), input$ann_img_class, input$ann_plate_ids), {
       df   <- ann_img_meta_df()
       cls  <- input$ann_img_class
@@ -1920,42 +1923,55 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         ann_rv$shuffled <- character(0); ann_rv$idx <- 0L; return()
       }
       sub <- df[df$img_class == cls, , drop = FALSE]
-      # Filter by selected plates when a selection exists
-      if (!is.null(pids) && length(pids) > 0) {
-        if (img_client_mode()) {
-          # client mode: plate_id is the subdir stored directly in the data.frame
-          sub <- sub[!is.na(sub$plate_id) & sub$plate_id %in% pids, , drop = FALSE]
-        } else {
-          dirs          <- ann_plate_dirs()
-          plate_of_file <- vapply(sub$file, .ann_file_plate, character(1),
-                                  plate_dirs = dirs)
-          sub <- sub[!is.na(plate_of_file) & plate_of_file %in% pids, , drop = FALSE]
-        }
+
+      # Attach plate_id in server mode (computed from file paths)
+      if (!img_client_mode() && nrow(sub) > 0) {
+        dirs         <- ann_plate_dirs()
+        sub$plate_id <- vapply(sub$file, .ann_file_plate, character(1), plate_dirs = dirs)
       }
-      available <- unique(sub$well[!is.na(sub$well)])
+
+      # Filter by selected plates; skip when pids are all empty (flat folder = no structure)
+      real_pids <- pids[nzchar(pids %||% "")]
+      if (length(real_pids) > 0)
+        sub <- sub[!is.na(sub$plate_id) & sub$plate_id %in% real_pids, , drop = FALSE]
+
+      sub       <- sub[!is.na(sub$well), , drop = FALSE]
+      available <- unique(.ann_key(sub$well, sub$plate_id))
+      available <- available[nzchar(available)]
       if (length(available) == 0) { ann_rv$shuffled <- character(0); ann_rv$idx <- 0L; return() }
-      done_wells <- ann_rv$results$well[
+
+      done_keys <- .ann_key(ann_rv$results$well, ann_rv$results$plate_id)[
         !is.na(ann_rv$results$img_class) & ann_rv$results$img_class == cls]
-      pool <- setdiff(available, done_wells)
+      pool <- setdiff(available, done_keys)
       if (length(pool) == 0) pool <- available
       ann_rv$shuffled <- sample(pool)
       ann_rv$idx      <- 1L
     }, ignoreNULL = FALSE)
 
-    # Current item is a well ID (e.g. "A01")
+    # Current item: composite key "well||plate_id"
     ann_current <- reactive({
       if (length(ann_rv$shuffled) == 0 || ann_rv$idx < 1) return(NA_character_)
       ann_rv$shuffled[[ann_rv$idx]]
     })
 
-    # BF + fluoro file paths for the current well + selected class
+    # Split composite key into well + plate_id
+    .ann_split_key <- function(key) {
+      parts <- strsplit(key, "||", fixed = TRUE)[[1]]
+      list(well = parts[1],
+           pid  = if (length(parts) >= 2 && nzchar(parts[2])) parts[2] else NA_character_)
+    }
+
+    # BF + fluoro file paths (or blob: URLs) for the current well+plate + selected class
     ann_pair <- reactive({
-      well <- ann_current()
-      cls  <- input$ann_img_class
-      if (is.na(well) || is.null(cls) || !nzchar(cls %||% ""))
+      key <- ann_current()
+      cls <- input$ann_img_class
+      if (is.na(key) || is.null(cls) || !nzchar(cls %||% ""))
         return(list(bf = NA_character_, fluoro = NA_character_))
+      kp      <- .ann_split_key(key)
       df      <- ann_img_meta_df()
-      sub     <- df[df$well == well & df$img_class == cls, , drop = FALSE]
+      sub     <- df[df$well == kp$well & df$img_class == cls, , drop = FALSE]
+      if (!is.na(kp$pid))
+        sub <- sub[!is.na(sub$plate_id) & sub$plate_id == kp$pid, , drop = FALSE]
       bf_row  <- sub[tolower(sub$channel) == "bf", , drop = FALSE]
       flu_row <- sub[tolower(sub$channel) != "bf", , drop = FALSE]
       list(
@@ -1994,8 +2010,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       if (length(ann_rv$shuffled) == 0)
         return(tags$p(style = "color: #aaa; padding: 20px;",
                       "Select an image folder in the Image Plate Viewer tab first."))
-      well <- ann_current()
-      if (is.na(well)) return(tags$p("No well available."))
+      key <- ann_current()
+      if (is.na(key)) return(tags$p("No well available."))
+      kp   <- .ann_split_key(key)
+      well <- kp$well
 
       pair <- ann_pair()
 
@@ -2016,17 +2034,22 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         }
       }
 
-      div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px;",
-          make_panel(pair$bf,     "BF"),
-          make_panel(pair$fluoro, "Fluoro"))
+      pid_lbl <- if (!is.na(kp$pid)) paste0(" \u2014 ", kp$pid) else ""
+      tagList(
+        tags$p(style = "font-size:13px; font-family:monospace; color:#555; margin:4px 8px;",
+               paste0(well, pid_lbl)),
+        div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px;",
+            make_panel(pair$bf,     "BF"),
+            make_panel(pair$fluoro, "Fluoro"))
+      )
     })
 
     output$ann_class_buttons <- renderUI({
       req(length(ann_rv$classes) > 0)
-      div(style = "display: grid; gap: 8px;",
+      div(style = "display: flex; flex-wrap: wrap; gap: 8px;",
           lapply(ann_rv$classes, function(lab) {
-            tags$button(lab, class = "btn btn-success btn-block",
-                        style = "width:100%; padding:10px; border-radius:8px; font-size:14px;",
+            tags$button(lab, class = "btn btn-success",
+                        style = "padding:10px 20px; border-radius:8px; font-size:14px;",
                         onclick = sprintf(
                           "Shiny.setInputValue('ann_class_selected', %s, {priority:'event'});",
                           jsonlite::toJSON(lab, auto_unbox = TRUE)))
@@ -2035,26 +2058,17 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
 
     observeEvent(input$ann_class_selected, {
-      well    <- ann_current(); req(!is.na(well))
-      cls     <- input$ann_img_class %||% NA_character_
-      person  <- trimws(input$ann_person)
-      se_name <- input$object
-      se      <- if (!is.null(se_name) && nzchar(se_name)) SEs[[se_name]] else NULL
-
-      # Get plate ID for this well+class
-      df  <- ann_img_meta_df()
-      sub <- df[df$well == well & !is.na(df$img_class) & df$img_class == cls, , drop = FALSE]
-      pid <- if (nrow(sub) > 0) {
-        if (img_client_mode())
-          sub$plate_id[1]
-        else
-          .ann_file_plate(sub$file[1], ann_plate_dirs())
-      } else NULL
+      key  <- ann_current(); req(!is.na(key))
+      kp   <- .ann_split_key(key)
+      well <- kp$well
+      pid  <- kp$pid %||% NA_character_
+      cls    <- input$ann_img_class %||% NA_character_
+      person <- trimws(input$ann_person)
 
       row <- data.frame(
         timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
         well      = well,
-        plate_id  = pid %||% NA_character_,
+        plate_id  = pid,
         img_class = cls,
         label     = input$ann_class_selected,
         person    = person,
@@ -2083,9 +2097,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
     observeEvent(input$ann_undo, {
       if (nrow(ann_rv$results) == 0) return()
-      last_well        <- ann_rv$results$well[nrow(ann_rv$results)]
+      last       <- ann_rv$results[nrow(ann_rv$results), ]
+      last_key   <- .ann_key(last$well, last$plate_id)
       ann_rv$results   <- ann_rv$results[-nrow(ann_rv$results), , drop = FALSE]
-      ann_rv$shuffled  <- c(last_well, ann_rv$shuffled)
+      ann_rv$shuffled  <- c(last_key, ann_rv$shuffled)
       ann_rv$idx       <- 1L
       if (!img_client_mode()) {
         cp <- ann_csv_path()
@@ -2104,11 +2119,41 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       }
     })
 
+    # Helper: read and normalise a CSV into the standard results columns
+    .read_ann_csv <- function(path) {
+      df <- tryCatch(read.csv(path, stringsAsFactors = FALSE), error = function(e) NULL)
+      if (is.null(df) || nrow(df) == 0) return(NULL)
+      req_cols <- c("timestamp", "well", "plate_id", "img_class", "label", "person")
+      for (col in req_cols)
+        if (!col %in% colnames(df)) df[[col]] <- NA_character_
+      df[, req_cols]
+    }
+
+    # Upload CSV → load as current results (resumes annotation)
+    observeEvent(input$ann_upload_csv, {
+      req(input$ann_upload_csv)
+      df <- .read_ann_csv(input$ann_upload_csv$datapath)
+      if (!is.null(df)) ann_rv$results <- df
+    })
+
+    # Merge & deduplicate: keep the most recent label per (well, plate_id, img_class)
+    observeEvent(input$ann_merge_results, {
+      df <- ann_rv$results
+      if (nrow(df) == 0) return()
+      df <- df[order(df$timestamp, decreasing = TRUE), , drop = FALSE]
+      key <- paste0(df$well, "||",
+                    ifelse(is.na(df$plate_id), "", df$plate_id), "||",
+                    ifelse(is.na(df$img_class), "", df$img_class))
+      ann_rv$results <- df[!duplicated(key), , drop = FALSE]
+    })
+
     output$ann_progress <- renderText({
       cls       <- input$ann_img_class %||% ""
       df        <- ann_img_meta_df()
-      total     <- if (nrow(df) > 0 && nzchar(cls))
-        length(unique(df$well[!is.na(df$img_class) & df$img_class == cls])) else 0L
+      total     <- if (nrow(df) > 0 && nzchar(cls)) {
+        sub_cls <- df[!is.na(df$img_class) & df$img_class == cls, , drop = FALSE]
+        length(unique(.ann_key(sub_cls$well, sub_cls$plate_id)))
+      } else 0L
       labeled   <- sum(!is.na(ann_rv$results$img_class) & ann_rv$results$img_class == cls)
       remaining <- length(ann_rv$shuffled) - ann_rv$idx + 1L
       paste0("Labeled: ", labeled, " / ", total,
