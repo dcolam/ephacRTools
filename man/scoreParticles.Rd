@@ -7,7 +7,8 @@
 scoreParticles(
   agg_df,
   weights = c(Mean = 1, Area = 1, normArea = 1),
-  score_group_vars = c("Channel_Name", "Plate_ID")
+  score_group_vars = c("Channel_Name", "Plate_ID"),
+  center = FALSE
 )
 }
 \arguments{

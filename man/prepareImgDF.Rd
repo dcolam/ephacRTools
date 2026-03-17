@@ -2,45 +2,86 @@
 % Please edit documentation in R/imagingTools.R
 \name{prepareImgDF}
 \alias{prepareImgDF}
-\title{Prepare Imaging-results tables from Cluster-Analysis SQLite databases}
+\title{Prepare imaging-results from one or more Cluster Analysis SQLite databases}
 \usage{
 prepareImgDF(
   pathDB,
   analysis = "pa",
-  id_cols = c("Date", "Plate_ID", "Well", "Image_ID", "Channel_Name", "Selection",
-    "Selection_Area"),
-  num_cols = c("Area", "Mean", "IntDen", "Number_of_Particles"),
+  plate_col = "Plate_ID",
+  well_col = "Well",
+  channel_col = "Channel_Name",
+  selection_col = "Selection",
+  extra_id_cols = character(0),
+  meas_cols = c("Area", "Mean", "IntDen", "Number_of_Particles"),
   coloc_cols = c("Second_Channel", "Mask_Area"),
-  new_channel_names = c("blue", "green", "red", "farred"),
+  fluor_rank = NULL,
+  fluor_ranks = NULL,
+  roi_selections = NULL,
+  apply_corr_sel = TRUE,
+  corr_sel_filter = NULL,
   scale_num = FALSE,
   scale_cols = NULL,
   scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE)),
-  aggregate = TRUE,
+  aggregate = FALSE,
   cleanNames = TRUE
 )
 }
 \arguments{
-\item{pathDB}{Path to SQlite-DB}
+\item{pathDB}{Character vector of paths to one or more \code{.db} files.}
 
-\item{analysis}{pa or coloc, which table to extract, single option only}
+\item{analysis}{\code{"pa"} (Particle Analysis, default) or \code{"coloc"}.}
 
-\item{id_cols}{Columns which metadata about the image and measurement}
+\item{plate_col}{Name of the column containing the plate identifier.
+Default: \code{"Plate_ID"}.}
 
-\item{num_cols}{Numeric Columns about the particle metrices}
+\item{well_col}{Name of the column containing the well identifier.
+Default: \code{"Well"}.}
 
-\item{coloc_cols}{Colocalisation specific columns to include, default "Second_Channel","Mask_Area"}
+\item{channel_col}{Name of the column containing the channel name.
+Default: \code{"Channel_Name"}.}
 
-\item{scale_num}{Boolean parameter to include scaled numeric metrices (Default FALSE)}
+\item{selection_col}{Name of the column containing the selection/ROI name.
+Default: \code{"Selection"}.}
 
-\item{scale_fun}{Scale function passed through the numeric columns}
+\item{extra_id_cols}{Additional columns from the analysis table to retain
+(e.g. \code{c("Species", "Date")}). Default: none.}
 
-\item{aggregate}{Boolean; if TRUE (default) rows are averaged across sites before cleaning}
+\item{meas_cols}{Measurement columns to import from the measurement table.
+Default: \code{c("Area","Mean","IntDen","Number_of_Particles")}.
+\code{"Number_of_Particles"} and \code{"Selection_Area"} are always kept
+from the analysis table regardless.}
 
-\item{cleanNames}{Boolean; if TRUE (default) runs df_cleaned() and drops duplicated column suffixes}
+\item{coloc_cols}{Extra columns added when \code{analysis = "coloc"}.
+Default: \code{c("Second_Channel","Mask_Area")}.}
+
+\item{fluor_rank}{Integer. Image_ID rank within a well that corresponds to
+the fluorescence image (rank 1 = lowest Image_ID, typically fluorescence).
+Set to \code{NULL} to skip rank computation and keep all images.
+Default: \code{NULL}.}
+
+\item{roi_selections}{Character vector of \code{Selection} values to keep.
+\code{NULL} retains all rows. Default: \code{NULL}.}
+
+\item{scale_num}{Logical; add scaled versions of numeric columns. Default: \code{FALSE}.}
+
+\item{scale_cols}{Columns to scale (defaults to \code{meas_cols} if \code{NULL}).}
+
+\item{scale_fun}{Scaling function. Default: z-score (\code{scale(x,TRUE,TRUE)}).}
+
+\item{aggregate}{Logical; if \code{TRUE}, average rows within
+Channel × Well × Plate × Selection groups. Default: \code{FALSE}.}
+
+\item{cleanNames}{Logical; normalise well labels (strip site suffix, pad
+column digits). Default: \code{TRUE}.}
 }
 \value{
-A dataframe
+A combined data.frame. If \code{fluor_rank} is not \code{NULL},
+  an \code{Image_Type} column (\code{"fluor"} / \code{"bf"}) is present.
 }
 \description{
-Prepare Imaging-results tables from Cluster-Analysis SQLite databases
+Calls \code{\link{prepareSingleImgDF}} for each file and row-binds the
+results.
+}
+\seealso{
+\code{\link{previewImgDB}}, \code{\link{prepareSingleImgDF}}
 }

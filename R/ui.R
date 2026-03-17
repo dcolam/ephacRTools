@@ -90,7 +90,7 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                                                  menuSubItem("Define Conditions", tabName="tab_coldata"),
                                                                  menuSubItem("Define Sweeps", tabName="tab_rowdata"),
                                                                  menuSubItem("Change Assays", tabName="tab_assays"),
-                                                                 menuSubItem("Filtering", tabName="tab_assays")
+                                                                 menuSubItem("Filter Wells", tabName="tab_filter_wells")
                                                         )),
                                                       .modify_stop_propagation(
                                                         menuItem("Plotting", startExpanded=TRUE,
@@ -327,32 +327,32 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                              ),
                              tabItem("tab_img_import",
                                fluidRow(
-                                 box(width = 6, title = "Load Imaging Database (.db)",
-                                   tags$p("Upload Cluster Analysis SQLite databases and link them to the current SE dataset."),
+                                 box(width = 7, title = "Load Imaging Database (.db)",
+                                   tags$p(style="color:#666;",
+                                     "Upload Cluster Analysis SQLite databases (.db), then click ",
+                                     tags$strong("Scan"), " to inspect the database structure ",
+                                     "and configure the import below."),
                                    fluidRow(
-                                     column(6,
-                                       selectizeInput("img_seDataset", "Select SE:", choices=c(), multiple=FALSE)
+                                     column(7,
+                                       fileInput("img_fileDB", "Imaging Results (.db)",
+                                                 multiple=TRUE, accept=".db")
                                      ),
-                                     column(6,
-                                       fileInput("img_fileDB", "Imaging Results (.db)", multiple=TRUE, accept=".db")
-                                     )
-                                   ),
-                                   fluidRow(
-                                     column(12,
+                                     column(5,
                                        selectInput("img_tabletype", "Table type:",
-                                         choices = list("Particle Analysis"="pa","Colocalization"="coloc"),
-                                         multiple=TRUE, selected="pa"),
-                                       tableOutput("img_importDB_preview")
+                                         choices  = list("Particle Analysis"="pa",
+                                                         "Colocalization"="coloc"),
+                                         multiple = FALSE, selected="pa"),
+                                       br(),
+                                       actionButton("img_scan_btn", "Scan Databases",
+                                                    class="btn-info btn-block",
+                                                    icon=icon("magnifying-glass"))
                                      )
                                    ),
-                                   fluidRow(
-                                     column(12,
-                                       checkboxInput("img_aggregate_db", "Aggregate rows (mean per well)", value=TRUE),
-                                       actionButton("img_mergeSE", "Connect to SE", class="btn-primary")
-                                     )
-                                   )
+                                   tableOutput("img_importDB_preview"),
+                                   hr(),
+                                   uiOutput("img_config_ui")
                                  ),
-                                 box(width = 6, title = "Image Folder (JPG Thumbnails)",
+                                 box(width = 5, title = "Image Folder (JPG Thumbnails)",
                                    tags$p("Select the folder containing cropped JPG thumbnails exported by Cluster Analysis.",
                                           "Filenames must follow: ", tags$code("..._Well-site_Channel_Class_crop.jpg")),
                                    localImgBrowserUI("imgbrowser"),
@@ -366,63 +366,216 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                    div(style="font-size:11px;font-family:monospace;color:#666;margin-top:4px;word-break:break-all;",
                                        textOutput("img_folder_display"))
                                  )
+                               ),
+                               fluidRow(
+                                 box(width = 5, title = "Load Pre-prepared Particle Table (.rds)",
+                                   status = "warning", solidHeader = FALSE,
+                                   tags$p(style="color:#666;",
+                                     "Load a previously exported particle data frame (.rds) directly ",
+                                     "into the classification pipeline, skipping the database import."),
+                                   fileInput("img_rds_file", "Particle table (.rds)", accept=".rds"),
+                                   actionButton("img_load_rds", "Load", class="btn-warning btn-block"),
+                                   verbatimTextOutput("img_rds_status")
+                                 )
                                )
                              ),
                              tabItem("tab_img_classify",
                                fluidRow(
                                  box(width=12, title="Automatic Cell Classification from Particle Data",
                                      tags$p(style="color:#666;",
-                                            "Run the classification pipeline step by step. Each step uses the output of the previous. ",
-                                            "At the end, add the result to the current SE colData."))),
+                                            "Run the pipeline step by step. Each step uses the output of the previous. ",
+                                            "Diagnostic plots update after each step."))
+                               ),
+
+                               # ── Step 1: Load ──────────────────────────────────────────────────────────
                                fluidRow(
-                                 # Step 1
-                                 box(width=2, title="1 \u2014 Load",
-                                   collapsible=TRUE,
-                                   selectizeInput("cls_seDataset", "SE:", choices=c(), multiple=FALSE),
-                                   selectInput("cls_tabletype", "Table:",
-                                     choices=list("Particle Analysis"="pa","Colocalization"="coloc"), selected="pa"),
-                                   checkboxInput("cls_aggregate", "Pre-aggregate by site", value=FALSE),
-                                   actionButton("cls_load", "Load", class="btn-primary btn-block"),
+                                 box(width=4, title="1 \u2014 Load", collapsible=TRUE,
+                                   tags$p(style="color:#666; font-size:11px;",
+                                          "Load particles from the Import Data tab. SE metadata will be joined ",
+                                          "immediately and is available for faceting in all plots. ",
+                                          tags$em("Reload always resets all downstream steps.")),
+                                   selectizeInput("cls_seDataset", "SE (for step 6 & faceting):", choices=c(), multiple=FALSE),
+                                   hr(),
+                                   selectInput("cls_scale_mode", "Scaling mode (for filter step):",
+                                     choices=c(
+                                       "Uncentered \u00f7 median (recommended)"  = "uncentered",
+                                       "Centered z-score"                         = "centered"),
+                                     selected="uncentered"),
+                                   helpText(style="font-size:10px;",
+                                            "Uncentered: Mean \u00f7 median(Mean) per group. ",
+                                            "Centered: (Mean \u2212 \u03bc) \u00f7 \u03c3 per group. ",
+                                            "Affects the preview and links to the recommended filter method."),
+                                   hr(),
+                                   selectInput("cls_scale_groups", "Scale within:",
+                                     choices=c(
+                                       "Channel \u00d7 Plate"  = "channel_plate",
+                                       "Channel only"          = "channel",
+                                       "Channel \u00d7 Well"   = "channel_well"),
+                                     selected="channel_plate"),
+                                   hr(),
+                                   uiOutput("cls_meta_col_ui"),
+                                   hr(),
+                                   actionButton("cls_load", "Check / Reload", class="btn-primary btn-block"),
                                    hr(),
                                    verbatimTextOutput("cls_load_status")
                                  ),
-                                 # Step 2
-                                 box(width=2, title="2 \u2014 Filter",
-                                   collapsible=TRUE,
-                                   selectInput("cls_filter_method", "Method:",
-                                     choices=c("Z-score"="zscore", "Median ratio"="median_ratio")),
-                                   numericInput("cls_filter_threshold", "Threshold:", value=NA, step=0.1),
+                                 box(width=8, title="Raw Particles: Distribution", collapsible=TRUE,
+                                   fluidRow(
+                                     column(4,
+                                       selectInput("cls_load_metric", "Metric:",
+                                         choices=c("Mean", "Area"), selected="Mean")),
+                                     column(4,
+                                       radioButtons("cls_load_scale", "View:",
+                                         choices=c("Raw"="raw", "Scaled (÷SD)"="scaled"),
+                                         selected="raw", inline=TRUE))
+                                   ),
+                                   tabsetPanel(
+                                     tabPanel("ECDF",
+                                       br(),
+                                       helpText(style="font-size:10px; color:#888;",
+                                                "Scaled view uses scale(center=F,scale=T) — same scaling as the filter step. ",
+                                                "Dashed line = current Step 2 threshold (left = would be rejected)."),
+                                       withSpinner(plotlyOutput("cls_diag_load_ecdf",  height="280px"))),
+                                     tabPanel("Particles / well",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_load_hist",  height="280px"))),
+                                     tabPanel("Scaled preview (Mean only)",
+                                       br(),
+                                       helpText(style="font-size:10px; color:#888;",
+                                                "Scaled Mean with dashed line at the current Step 2 threshold. ",
+                                                "Particles LEFT of the line would be rejected."),
+                                       withSpinner(plotlyOutput("cls_diag_scaled_preview", height="260px")))
+                                   )
+                                 )
+                               ),
+
+                               # ── Step 2: Filter ────────────────────────────────────────────────────────
+                               fluidRow(
+                                 box(width=4, title="2 \u2014 Filter", collapsible=TRUE,
+                                   tags$p(style="color:#666; font-size:11px;",
+                                          "Optional — aggregation can skip directly to Step 3 using raw particles. ",
+                                          "The method is pre-selected based on your scaling mode."),
+                                   uiOutput("cls_filter_method_ui"),
+                                   uiOutput("cls_filter_threshold_ui"),
                                    helpText(style="font-size:10px;",
-                                            "Leave blank for method default (z-score: 0, median ratio: 0.33)."),
+                                            "Leave at default (NA) to use the method default. ",
+                                            "z-score default = 0, uncentered SD default = median(scaled)/3 per group. ",
+                                            "Check the Threshold preview tab for a live view of the cut."),
                                    actionButton("cls_filter", "Filter", class="btn-primary btn-block"),
                                    hr(),
                                    verbatimTextOutput("cls_filter_status")
                                  ),
-                                 # Step 3
-                                 box(width=2, title="3 \u2014 Aggregate",
-                                   collapsible=TRUE,
+                                 box(width=8, title="Filter Diagnostics", collapsible=TRUE,
+                                   tabsetPanel(
+                                     tabPanel("Threshold preview",
+                                       br(),
+                                       helpText(style="font-size:10px; color:#888;",
+                                                "Scaled distribution with dashed line at current threshold. ",
+                                                "Change the threshold input and this updates live."),
+                                       withSpinner(plotlyOutput("cls_diag_filter_threshold", height="270px"))),
+                                     tabPanel("Before vs After (raw)",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_filter_ecdf",      height="280px"))),
+                                     tabPanel("Retention %",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_filter_retain",    height="280px")))
+                                   )
+                                 )
+                               ),
+
+                               # ── Step 3: Aggregate ─────────────────────────────────────────────────────
+                               fluidRow(
+                                 box(width=4, title="3 \u2014 Aggregate + Scale", collapsible=TRUE,
                                    tags$p(style="color:#666; font-size:11px;",
-                                          "One row per Channel \u00d7 Plate \u00d7 Well.",
-                                          "Fully-filtered wells are set to 0 (Negative)."),
+                                          "Step 3a: summarise to one row per Channel \u00d7 Plate \u00d7 Well. ",
+                                          "Step 3b: scale the aggregated metrics within groups (for scoring). ",
+                                          "Uses filtered particles if available, otherwise raw."),
+                                   selectInput("cls_agg_fun", "Aggregation function:",
+                                     choices=c(
+                                       "Mean (recommended)" = "mean",
+                                       "Median"             = "median",
+                                       "Sum"                = "sum"),
+                                     selected="mean"),
+                                   helpText(style="font-size:10px;",
+                                            "Applied to Mean and Area. normArea always = sum(Area)/mean(Selection_Area)."),
+                                   hr(),
+                                   selectInput("cls_agg_scale_within", "Scale within (Step 3b):",
+                                     choices=c(
+                                       "Channel only (recommended)" = "channel",
+                                       "Channel \u00d7 Plate"       = "channel_plate",
+                                       "None (skip scaling)"        = "none"),
+                                     selected="channel"),
+                                   checkboxInput("cls_agg_scale_center",
+                                     "Center when scaling (z-score)?", value=FALSE),
+                                   helpText(style="font-size:10px;",
+                                            "Uncentered (\u00f7SD) is recommended: keeps negative wells near 0."),
                                    actionButton("cls_aggregate_btn", "Aggregate", class="btn-primary btn-block"),
                                    hr(),
                                    verbatimTextOutput("cls_agg_status")
                                  ),
-                                 # Step 4
-                                 box(width=2, title="4 \u2014 Score",
-                                   collapsible=TRUE,
+                                 box(width=8, title="Aggregated: Per-channel Distribution", collapsible=TRUE,
+                                   fluidRow(
+                                     column(5,
+                                       selectInput("cls_agg_metric", "Metric:",
+                                         choices=c("Mean_agg", "Area_agg", "normArea", "n_particles",
+                                                   "Mean_z",   "Area_z",   "normArea_z"),
+                                         selected="Mean_agg")),
+                                     column(4,
+                                       radioButtons("cls_agg_view", "Show:",
+                                         choices=c("Raw"="raw", "Scaled"="scaled"),
+                                         selected="raw", inline=TRUE))
+                                   ),
+                                   withSpinner(plotlyOutput("cls_diag_agg_box", height="290px"))
+                                 )
+                               ),
+
+                               # ── Step 4: Score ─────────────────────────────────────────────────────────
+                               fluidRow(
+                                 box(width=4, title="4 \u2014 Score", collapsible=TRUE,
                                    tags$p(style="color:#666; font-size:11px;",
-                                          "Scales each metric within Channel \u00d7 Plate, then combines."),
+                                          "Scales each metric within Channel \u00d7 Plate, then combines with weights."),
                                    numericInput("cls_w_mean",    "Weight: Mean",     value=1, min=0, step=0.5),
                                    numericInput("cls_w_area",    "Weight: Area",     value=1, min=0, step=0.5),
                                    numericInput("cls_w_normarea","Weight: normArea", value=1, min=0, step=0.5),
+                                   hr(),
+                                   checkboxInput("cls_score_center", "Center scores (z-score)?", value=FALSE),
+                                   conditionalPanel("input.cls_score_center == true",
+                                     tags$div(
+                                       style="background:#fff3cd; border:1px solid #ffc107; padding:7px; border-radius:4px; font-size:10px; margin-bottom:6px;",
+                                       tags$strong("\u26a0 Warning:"),
+                                       " Centered z-score scoring can assign near-average scores to empty/negative ",
+                                       "wells (those zeroed out by aggregation). Only use if you know what you are doing. ",
+                                       tags$strong("Uncentered (default) is recommended.")
+                                     )
+                                   ),
                                    actionButton("cls_score", "Score", class="btn-primary btn-block"),
                                    hr(),
                                    verbatimTextOutput("cls_score_status")
                                  ),
-                                 # Step 5
-                                 box(width=2, title="5 \u2014 Classify",
-                                   collapsible=TRUE,
+                                 box(width=8, title="Score Diagnostics", collapsible=TRUE,
+                                   tabsetPanel(
+                                     tabPanel("Score ECDF",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_score_ecdf", height="300px"))),
+                                     tabPanel("Metric ECDFs",
+                                       br(),
+                                       fluidRow(column(5,
+                                         selectInput("cls_score_metric", "Metric:",
+                                           choices=c("channel_score",
+                                                     "Mean_agg", "Area_agg", "normArea",
+                                                     "Mean_z",   "Area_z",   "normArea_z"),
+                                           selected="channel_score"))),
+                                       withSpinner(plotlyOutput("cls_diag_metric_ecdf", height="270px"))),
+                                     tabPanel("Scatter",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_score_scatter", height="300px")))
+                                   )
+                                 )
+                               ),
+
+                               # ── Step 5: Classify ──────────────────────────────────────────────────────
+                               fluidRow(
+                                 box(width=4, title="5 \u2014 Classify", collapsible=TRUE,
                                    sliderInput("cls_delta",    "Delta:", min=0.1, max=2,   value=0.5, step=0.1),
                                    sliderInput("cls_min_area", "Min area:", min=0, max=1, value=0.1, step=0.05),
                                    uiOutput("cls_channel_labels_ui"),
@@ -430,20 +583,64 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                    hr(),
                                    tableOutput("cls_classify_preview")
                                  ),
-                                 # Step 6
-                                 box(width=2, title="6 \u2014 Add to SE",
-                                   collapsible=TRUE,
+                                 box(width=8, title="Classification Diagnostics", collapsible=TRUE,
+                                   tabsetPanel(
+                                     tabPanel("Counts",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_classify_bar", height="290px"))),
+                                     tabPanel("Score | Channel",
+                                       br(),
+                                       withSpinner(plotlyOutput("cls_diag_score_channel", height="300px"))),
+                                     tabPanel("Score | Condition",
+                                       br(),
+                                       helpText(style="font-size:10px; color:#888;",
+                                                "ECDF of channel scores faceted by the SE column selected above."),
+                                       withSpinner(plotlyOutput("cls_diag_score_condition", height="290px"))),
+                                     tabPanel("Score | Classification",
+                                       br(),
+                                       helpText(style="font-size:10px; color:#888;",
+                                                "ECDF per channel, faceted by Classification. Color = SE column above (or Channel if not set)."),
+                                       withSpinner(plotlyOutput("cls_diag_score_cls", height="290px"))),
+                                     tabPanel("2D Correlation",
+                                       br(),
+                                       uiOutput("cls_corr_controls_2d"),
+                                       withSpinner(plotlyOutput("cls_diag_corr_2d", height="250px")))
+                                   )
+                                 )
+                               ),
+
+                               # ── 3D Score Correlation ──────────────────────────────────────────────────
+                               fluidRow(
+                                 box(width=12, title="3D Score Correlation Explorer", collapsible=TRUE,
+                                   fluidRow(
+                                     column(3,
+                                       tags$p(style="color:#666; font-size:11px;",
+                                              "Select axes and color variable from the scored / classified columns. ",
+                                              "Rotate the plot by dragging."),
+                                       uiOutput("cls_corr_controls_3d")
+                                     ),
+                                     column(9, withSpinner(plotlyOutput("cls_diag_corr_3d", height="480px")))
+                                   )
+                                 )
+                               ),
+
+                               # ── Step 6: Add to SE ─────────────────────────────────────────────────────
+                               fluidRow(
+                                 box(width=12, title="6 \u2014 Add to SE", collapsible=TRUE,
                                    tags$p(style="color:#666; font-size:11px;",
                                           "Joins result to colData by Well + Plate_ID."),
-                                   radioButtons("cls_merge_mode", "Storage:",
-                                     choices=c("Flat"="flat", "Nested DataFrame"="nested"),
-                                     selected="flat"),
-                                   conditionalPanel("input.cls_merge_mode == 'nested'",
-                                     textInput("cls_col_name", "Column name:", value="img_classification")
-                                   ),
-                                   actionButton("cls_merge_se", "Add to SE", class="btn-success btn-block"),
-                                   hr(),
-                                   verbatimTextOutput("cls_merge_status")
+                                   fluidRow(
+                                     column(4,
+                                       radioButtons("cls_merge_mode", "Storage:",
+                                         choices=c("Flat"="flat", "Nested DataFrame"="nested"),
+                                         selected="flat"),
+                                       conditionalPanel("input.cls_merge_mode == 'nested'",
+                                         textInput("cls_col_name", "Column name:", value="img_classification")
+                                       ),
+                                       actionButton("cls_merge_se", "Add to SE", class="btn-success btn-block")
+                                     ),
+                                     column(8, verbatimTextOutput("cls_merge_status"))
+                                   )
                                  )
                                )
                              ),
@@ -502,47 +699,168 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
 
 
+                             # ── Define Conditions ─────────────────────────────────────────────────
                              tabItem("tab_coldata",
+                               fluidRow(
+                                 box(width = 5, title = "Rule Builder",
+                                   helpText("Define a new colData column by mapping Plate_ID + Column ranges to label values."),
+                                   fluidRow(
+                                     column(8, textInput("cond_new_col", "New column name:", placeholder = "e.g. Condition")),
+                                     column(4, br(), actionButton("cond_add_rule", "Add Rule", icon = icon("plus"), class = "btn-info btn-sm"))
+                                   ),
+                                   uiOutput("cond_rules_ui"),
+                                   hr(),
+                                   fluidRow(
+                                     column(6, actionButton("cond_apply", "Apply to SE", icon = icon("check"), class = "btn-success")),
+                                     column(6, actionButton("cond_clear_rules", "Clear Rules", icon = icon("trash"), class = "btn-danger btn-sm"))
+                                   ),
+                                   br(),
+                                   helpText(style = "font-size:11px; color:#888;",
+                                     "Each rule assigns a label to wells matching the selected Plate_ID(s) and Column range. Rules are applied top-to-bottom; later rules override earlier ones.")
+                                 ),
+                                 box(width = 7, title = "Plate Grid Preview",
+                                   fluidRow(
+                                     column(6, selectInput("plate_id4", "Plate to preview:", choices = c())),
+                                     column(6, selectInput("cond_preview_col", "Color by:", choices = c()))
+                                   ),
+                                   withSpinner(plotlyOutput("plate_view_col", height = "320px")),
+                                   hr(),
+                                   withSpinner(DTOutput("cond_coldata_preview"))
+                                 )
+                               )
+                             ),
 
+                             # ── Define Sweeps ──────────────────────────────────────────────────────
+                             tabItem("tab_rowdata",
+                               fluidRow(
+                                 box(width = 5, title = "Recode Column Values",
+                                   selectInput("row_col_select", "Column to recode:", choices = c()),
+                                   uiOutput("row_recode_ui"),
+                                   fluidRow(
+                                     column(6, actionButton("row_add_recode", "Add mapping", icon = icon("plus"), class = "btn-info btn-sm")),
+                                     column(6, actionButton("row_apply_recode", "Apply recoding", icon = icon("check"), class = "btn-success btn-sm"))
+                                   ),
+                                   hr(),
+                                   tags$strong("Create logical column (LP step)"),
+                                   helpText(style = "font-size:11px;", "Creates a TRUE/FALSE column where the selected column equals the chosen value."),
+                                   fluidRow(
+                                     column(4, selectInput("lp_col", "Column:", choices = c())),
+                                     column(4, selectInput("lp_val", "Value:", choices = c())),
+                                     column(4, textInput("lp_new_col", "New col name:", value = "LP"))
+                                   ),
+                                   actionButton("lp_apply", "Create logical column", class = "btn-primary btn-sm")
+                                 ),
+                                 box(width = 7, title = "Current rowData",
+                                   withSpinner(DTOutput("row_data_table"))
+                                 )
+                               )
+                             ),
 
-                                              box(width = 6,
-                                                  fluidRow(
-                                                  column(width=4,
-                                                  selectInput("plate_id4", label = "Plate ID", choices = c())
-                                                  ),
-                                                  column(width=4,
-                                                  selectInput("condition", label = "Highlight Condition:", choices = c(),
-                                                              selected=FALSE)
-                                                  ),
-                                                  column(width=4,
-                                                  checkboxInput("all_plates2", label = "Same for All Plates", value = T))
-                                                  ),
-                                                  withSpinner(plotlyOutput("plate_view_col", height = "400px")),
-                                                  fluidRow(
-                                                    column(width=6,
-                                                           textInput("newCondition", label = "Name the New Condition Group:", value= "Ex. Genotype"),
-                                                           actionButton("createCondition", label="Submit")
-                                                    ),
-                                                    column(width=6,
-                                                           selectInput("subGroup", label = "Choose the Wells:", choices = c()),
-                                                           textInput("newCondition", label = "Name the selected Group:", value = "Ex. Control"),
-                                                           actionButton("createGroup", label="Submit")
+                             # ── Change Assays ──────────────────────────────────────────────────────
+                             tabItem("tab_assays",
+                               tabsetPanel(
+                                 tabPanel("Aggregate (colAG)",
+                                   br(),
+                                   fluidRow(
+                                     column(5,
+                                       selectInput("ag_assays", "Assays to aggregate:", choices = c(), multiple = TRUE),
+                                       tags$strong("Sweep selection:"),
+                                       radioButtons("ag_sweep_mode", NULL,
+                                         choices = c("All sweeps" = "all", "Row index range" = "range", "Use logical column" = "logical"),
+                                         selected = "all", inline = TRUE),
+                                       uiOutput("ag_sweep_ui"),
+                                       actionButton("ag_run", "Run colAG", icon = icon("play"), class = "btn-primary"),
+                                       br(), br(),
+                                       verbatimTextOutput("ag_status")
+                                     ),
+                                     column(7,
+                                       tags$strong("Result columns added to colData:"),
+                                       br(), br(),
+                                       withSpinner(DTOutput("ag_result_preview"))
+                                     )
+                                   )
+                                 ),
+                                 tabPanel("Transform Columns",
+                                   br(),
+                                   fluidRow(
+                                     column(5,
+                                       selectInput("transform_col", "Column to transform:", choices = c()),
+                                       selectInput("transform_fn", "Transformation:",
+                                         choices = c("× 1000" = "*1000", "÷ 1000" = "/1000",
+                                                     "× 1e9" = "*1e9", "÷ 1e9" = "/1e9",
+                                                     "log1p" = "log1p", "exp" = "exp",
+                                                     "abs" = "abs", "negate" = "negate",
+                                                     "Custom expression" = "custom")),
+                                       conditionalPanel("input.transform_fn == 'custom'",
+                                         textInput("transform_custom_expr", "R expression (use .x for column):",
+                                                   placeholder = "e.g. log1p(.x * 1000)")
+                                       ),
+                                       textInput("transform_new_col", "Save as (blank = overwrite):",
+                                                 placeholder = "e.g. Minima_mean_nA"),
+                                       actionButton("transform_apply", "Apply transform", icon = icon("check"), class = "btn-success"),
+                                       br(), br(),
+                                       verbatimTextOutput("transform_status")
+                                     ),
+                                     column(7,
+                                       tags$strong("Preview (before / after):"),
+                                       br(), br(),
+                                       withSpinner(plotlyOutput("transform_preview", height = "350px"))
+                                     )
+                                   )
+                                 ),
+                                 tabPanel("Dimensionality Reduction",
+                                   br(),
+                                   fluidRow(
+                                     column(5,
+                                       selectInput("dr_assays", "Assays:", choices = c(), multiple = TRUE),
+                                       selectInput("dr_colnames", "Numeric colData columns:", choices = c(), multiple = TRUE),
+                                       numericInput("dr_k", "k clusters:", value = 3, min = 1, max = 30),
+                                       selectInput("dr_scaling", "Scaling:",
+                                         choices = c("Within assay" = "within", "Global" = "global", "None" = "none"),
+                                         selected = "within"),
+                                       checkboxInput("dr_center", "Center before scaling", value = FALSE),
+                                       actionButton("dr_run", "Run reducedDim.Cellwise", icon = icon("play"), class = "btn-primary"),
+                                       br(), br(),
+                                       verbatimTextOutput("dr_status")
+                                     ),
+                                     column(7,
+                                       tags$strong("PCA / Cluster preview:"),
+                                       br(), br(),
+                                       withSpinner(plotlyOutput("dr_preview", height = "380px")),
+                                       br(),
+                                       selectInput("dr_color_col", "Color by:", choices = c())
+                                     )
+                                   )
+                                 )
+                               )
+                             ),
 
-                                                    )
-                                                  )
-
-
-
-
-                                              ),
-
-
-                                     box(width = 6,
-                                         withSpinner(DTOutput("features_col"))
-
-                                         )
-
-
+                             # ── Filter Wells ───────────────────────────────────────────────────────
+                             tabItem("tab_filter_wells",
+                               fluidRow(
+                                 box(width = 5, title = "Filter Wells",
+                                   helpText("Subset the SE to only keep wells matching all active filters."),
+                                   selectInput("fw_col", "Filter by column:", choices = c()),
+                                   uiOutput("fw_val_ui"),
+                                   radioButtons("fw_mode", "Keep wells where value is:",
+                                     choices = c("IN selection" = "keep", "NOT IN selection" = "exclude"),
+                                     selected = "keep", inline = TRUE),
+                                   actionButton("fw_add", "Add filter", icon = icon("plus"), class = "btn-info btn-sm"),
+                                   br(), br(),
+                                   uiOutput("fw_active_filters_ui"),
+                                   hr(),
+                                   textOutput("fw_preview_n"),
+                                   br(),
+                                   actionButton("fw_apply", "Apply filter to SE", icon = icon("scissors"), class = "btn-danger"),
+                                   br(), br(),
+                                   verbatimTextOutput("fw_status")
+                                 ),
+                                 box(width = 7, title = "Preview",
+                                   withSpinner(plotlyOutput("fw_plate_preview", height = "340px")),
+                                   br(),
+                                   withSpinner(DTOutput("fw_coldata_preview"))
+                                 )
+                               )
                              ),
 
 

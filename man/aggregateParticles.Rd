@@ -4,7 +4,13 @@
 \alias{aggregateParticles}
 \title{Aggregate filtered particle data per well and channel}
 \usage{
-aggregateParticles(df, group_vars = c("Channel_Name", "Plate_ID", "Well"))
+aggregateParticles(
+  df,
+  group_vars = c("Channel_Name", "Plate_ID", "Well"),
+  agg_fun = c("mean", "median", "sum"),
+  scale_within = "Channel_Name",
+  scale_center = FALSE
+)
 }
 \arguments{
 \item{df}{Data frame (optionally pre-filtered by \code{filterParticles}).

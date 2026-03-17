@@ -1,152 +1,404 @@
 #' @importFrom magrittr %>%
 NULL
-#' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
-#' @param pathDB Path to SQlite-DB
-#' @param analysis pa or coloc, which table to extract
-#' @param id_cols Columns which metadata about the image and measurement
-#' @param num_cols Numeric Columns about the particle metrices
-#' @param scale_num Boolean parameter to include scaled numeric metrices (Default FALSE)
-#' @param scale_fun Scale function passed through the numeric columns
-#' @param aggregate Boolean; if TRUE (default) rows are averaged across sites before cleaning
-#' @param cleanNames Boolean; if TRUE (default) runs df_cleaned() and drops duplicated column suffixes
-#' @return A dataframe
+
+# ---------------------------------------------------------------------------
+# previewImgDB — scan databases before import to discover column structure
+# ---------------------------------------------------------------------------
+
+#' Scan Cluster Analysis databases to discover available columns and values
+#'
+#' Queries one or more SQLite databases to return the metadata needed to
+#' configure the import (column names, distinct Selection values with counts,
+#' Image_ID rank distribution per well, available measurement columns, etc.).
+#' This is used by the \code{tinySEV} Import Data UI to populate dynamic
+#' configuration inputs before the actual import.
+#'
+#' @param paths Character vector of paths to \code{.db} SQLite files.
+#' @param analysis \code{"pa"} (Particle Analysis, default) or
+#'   \code{"coloc"} (Colocalization).
+#'
+#' @return A named list:
+#'   \describe{
+#'     \item{pa_cols}{Character vector — all columns in the analysis table
+#'       (union across all DBs, excluding \code{PA_ID}).}
+#'     \item{meas_cols}{Character vector — columns available in the
+#'       measurement table (excluding \code{PA_ID} and \code{Label}).}
+#'     \item{selections}{Named integer vector — Selection value → total row
+#'       count, sorted descending.}
+#'     \item{channels}{Character vector — distinct Channel_Name values.}
+#'     \item{n_rows}{Integer — total particle rows across all DBs.}
+#'     \item{n_wells}{Integer — approximate number of unique wells.}
+#'     \item{image_ranks}{data.frame with columns \code{rank} and \code{n} —
+#'       how many Image_IDs appear at each rank position within a well
+#'       (rank 1 = lowest Image_ID per well, typically fluorescence).}
+#'   }
+#'
+#' @export
+previewImgDB <- function(paths, analysis = "pa") {
+  pa_tbl   <- if (analysis == "pa") "Particle_Analysis_Table" else "Coloc_Analysis_Table"
+  meas_tbl <- if (analysis == "pa") "PA_Measurement_Tables"   else "Coloc_Measurement_Tables"
+
+  all_pa_cols   <- character(0)
+  all_meas_cols <- character(0)
+  sel_counts    <- list()
+  channels      <- character(0)
+  total_rows    <- 0L
+  all_wells     <- character(0)
+  rank_counts   <- list()
+
+  per_db <- list()
+
+  for (p in paths) {
+    con <- DBI::dbConnect(RSQLite::SQLite(), p)
+    db_rank_counts <- list()
+    tryCatch({
+      all_pa_cols   <- union(all_pa_cols,
+                             setdiff(DBI::dbListFields(con, pa_tbl),   "PA_ID"))
+      all_meas_cols <- union(all_meas_cols,
+                             setdiff(DBI::dbListFields(con, meas_tbl), c("PA_ID", "Label")))
+
+      # Selection value counts (global + per-DB)
+      sel <- DBI::dbGetQuery(con,
+        paste0("SELECT Selection, COUNT(*) AS n FROM ", pa_tbl,
+               " GROUP BY Selection ORDER BY n DESC LIMIT 200"))
+      db_sel <- setNames(as.integer(sel$n), sel$Selection)
+      for (i in seq_len(nrow(sel))) {
+        k <- sel$Selection[i]
+        sel_counts[[k]] <- (sel_counts[[k]] %||% 0L) + as.integer(sel$n[i])
+      }
+
+      # Channels
+      ch <- DBI::dbGetQuery(con,
+        paste0("SELECT DISTINCT Channel_Name FROM ", pa_tbl))$Channel_Name
+      channels <- union(channels, ch)
+
+      # Row count
+      n <- DBI::dbGetQuery(con,
+        paste0("SELECT COUNT(*) AS n FROM ", pa_tbl))$n
+      total_rows <- total_rows + as.integer(n)
+
+      # Wells
+      w <- DBI::dbGetQuery(con,
+        paste0("SELECT DISTINCT Well FROM ", pa_tbl))$Well
+      all_wells <- union(all_wells, w)
+
+      # Image_ID rank per well (rank 1 = smallest Image_ID within a well)
+      img <- DBI::dbGetQuery(con,
+        paste0("SELECT Well, Image_ID FROM ", pa_tbl,
+               " GROUP BY Well, Image_ID ORDER BY Well, CAST(Image_ID AS REAL)"))
+      if (nrow(img) > 0) {
+        img$rank <- ave(as.numeric(img$Image_ID), img$Well,
+                        FUN = function(x) rank(x, ties.method = "first"))
+        for (r in unique(img$rank)) {
+          k <- as.character(as.integer(r))
+          rank_counts[[k]]    <- (rank_counts[[k]]    %||% 0L) + sum(img$rank == r)
+          db_rank_counts[[k]] <- (db_rank_counts[[k]] %||% 0L) + sum(img$rank == r)
+        }
+      }
+
+      # Per-DB record
+      db_rk <- as.integer(names(db_rank_counts))
+      per_db[[length(per_db) + 1]] <- list(
+        name        = basename(p),
+        n_rows      = as.integer(n),
+        n_wells     = length(w),
+        image_ranks = if (length(db_rank_counts) > 0)
+          data.frame(rank = db_rk[order(db_rk)],
+                     n    = unlist(db_rank_counts)[order(db_rk)],
+                     stringsAsFactors = FALSE)
+        else data.frame(rank = integer(0), n = integer(0)),
+        top_selections = head(db_sel, 10)
+      )
+    }, error = function(e) warning("previewImgDB: error reading ", p, ": ", e$message))
+    DBI::dbDisconnect(con)
+  }
+
+  sel_sorted <- sort(unlist(sel_counts), decreasing = TRUE)
+
+  rank_keys <- as.integer(names(rank_counts))
+  rank_df   <- if (length(rank_counts) > 0)
+    data.frame(rank = rank_keys[order(rank_keys)],
+               n    = unlist(rank_counts)[order(rank_keys)],
+               stringsAsFactors = FALSE)
+  else data.frame(rank = integer(0), n = integer(0))
+
+  list(
+    pa_cols     = all_pa_cols,
+    meas_cols   = all_meas_cols,
+    selections  = sel_sorted,
+    channels    = channels,
+    n_rows      = total_rows,
+    n_wells     = length(all_wells),
+    image_ranks = rank_df,
+    per_db      = per_db        # list: one entry per uploaded DB
+  )
+}
+
+# ---------------------------------------------------------------------------
+# prepareSingleImgDF — import a single .db file
+# ---------------------------------------------------------------------------
+
+#' Prepare imaging-results table from a single Cluster Analysis SQLite database
+#'
+#' Joins the analysis table with its measurement table, normalises well labels,
+#' computes per-well Image_ID rank (rank 1 = lowest Image_ID per well, typically
+#' the fluorescence image), and optionally filters to specified selection values.
+#'
+#' @param pathDB Path to a single SQLite \code{.db} file.
+#' @param analysis \code{"pa"} (Particle Analysis, default) or \code{"coloc"}.
+#' @param plate_col Name of the column containing the plate identifier.
+#'   Default: \code{"Plate_ID"}.
+#' @param well_col Name of the column containing the well identifier.
+#'   Default: \code{"Well"}.
+#' @param channel_col Name of the column containing the channel name.
+#'   Default: \code{"Channel_Name"}.
+#' @param selection_col Name of the column containing the selection/ROI name.
+#'   Default: \code{"Selection"}.
+#' @param extra_id_cols Additional columns from the analysis table to retain
+#'   (e.g. \code{c("Species", "Date")}). Default: none.
+#' @param meas_cols Measurement columns to import from the measurement table.
+#'   Default: \code{c("Area","Mean","IntDen","Number_of_Particles")}.
+#'   \code{"Number_of_Particles"} and \code{"Selection_Area"} are always kept
+#'   from the analysis table regardless.
+#' @param fluor_rank Integer. Image_ID rank within a well that corresponds to
+#'   the fluorescence image (rank 1 = lowest Image_ID, typically fluorescence).
+#'   Set to \code{NULL} to skip rank computation and keep all images.
+#'   Default: \code{NULL}.
+#' @param roi_selections Character vector of \code{Selection} values to keep.
+#'   \code{NULL} retains all rows. Default: \code{NULL}.
+#' @param scale_num Logical; add scaled versions of numeric columns. Default: \code{FALSE}.
+#' @param scale_cols Columns to scale (defaults to \code{meas_cols} if \code{NULL}).
+#' @param scale_fun Scaling function. Default: z-score (\code{scale(x,TRUE,TRUE)}).
+#' @param aggregate Logical; if \code{TRUE}, average rows within
+#'   Channel × Well × Plate × Selection groups. Default: \code{FALSE}.
+#' @param cleanNames Logical; normalise well labels (strip site suffix, pad
+#'   column digits). Default: \code{TRUE}.
+#'
+#' @return A data.frame with one row per particle (or per group if
+#'   \code{aggregate = TRUE}).
+#'
+#' @seealso \code{\link{previewImgDB}}, \code{\link{prepareImgDF}}
 #' @export
 prepareSingleImgDF <- function(pathDB,
-                               analysis   = c("pa", "coloc"),
-                               id_cols    = c("Date","Plate_ID","Well",
-                                              "Image_ID","Channel_Name",
-                                              "Selection","Selection_Area"),
-                               num_cols   = c("Area","Mean","IntDen"),
-                               scale_num  = FALSE,
-                               scale_cols = NULL,
-                               scale_fun  = function(x)
+                               analysis      = c("pa", "coloc"),
+                               plate_col     = "Plate_ID",
+                               well_col      = "Well",
+                               channel_col   = "Channel_Name",
+                               selection_col = "Selection",
+                               extra_id_cols = character(0),
+                               meas_cols     = c("Area", "Mean", "IntDen",
+                                                 "Number_of_Particles"),
+                               fluor_rank     = NULL,
+                               roi_selections = NULL,
+                               apply_corr_sel = TRUE,
+                               corr_sel_filter = NULL,
+                               scale_num     = FALSE,
+                               scale_cols    = NULL,
+                               scale_fun     = function(x)
                                  as.numeric(scale(x, TRUE, TRUE)),
-                               aggregate  = TRUE,
-                               cleanNames = TRUE) {
+                               aggregate     = FALSE,
+                               cleanNames    = TRUE) {
 
   analysis <- match.arg(analysis)
+  pa_tbl   <- if (analysis == "pa") "Particle_Analysis_Table" else "Coloc_Analysis_Table"
+  meas_tbl <- if (analysis == "pa") "PA_Measurement_Tables"   else "Coloc_Measurement_Tables"
+  id_col   <- if (analysis == "pa") "PA_ID"                   else "COLOC_ID"
 
-  ## ---------- helper that does your existing pipeline ------------------
-  process_tbl <- function(tbl) {
-    tbl <- dplyr::select(tbl, tidyselect::any_of(c(id_cols, num_cols)))
+  con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-    if (aggregate) {
-      id_cols <- intersect(names(tbl), id_cols)
-      tbl <- ag(tbl, cols = id_cols, fun = mean)
-    }
+  tbl <- DBI::dbGetQuery(con, paste0(
+    "SELECT * FROM ", pa_tbl, " AS pa",
+    " JOIN ", meas_tbl, " AS meas ON meas.", id_col, " = pa.", id_col))
 
-    if (isTRUE(cleanNames)) {
-      tbl <- df_cleaned(tbl)
-      tbl <- tbl[ , !grepl("(\\.1|\\.\\.\\.[0-9]+)$", names(tbl)) ]
-    }
+  DBI::dbDisconnect(con)
 
-    # optional scaling
-    if (isTRUE(scale_num)) {
-      if (is.null(scale_cols)){
-        scale_cols <- intersect(num_cols, names(tbl))}
-      for (col in scale_cols) {
-        new_col <- paste0(col, "_Scaled")
-        tbl[[new_col]] <- scale_fun(tbl[[col]])
-        tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
-                               .after = dplyr::all_of(col))
-      }
-    }
-      return(tbl)
+  # Remove duplicate join key column
+  dup <- which(names(tbl) == id_col)
+  if (length(dup) > 1) tbl <- tbl[, -dup[-1], drop = FALSE]
+
+  # ── Rename user-specified columns to standard names ──────────────────────
+  col_map <- setNames(c(plate_col, well_col, channel_col, selection_col),
+                      c("Plate_ID",  "Well",   "Channel_Name", "Selection"))
+  for (std in names(col_map)) {
+    src <- col_map[[std]]
+    if (src != std && src %in% names(tbl))
+      names(tbl)[names(tbl) == src] <- std
   }
-    con <- DBI::dbConnect(RSQLite::SQLite(), pathDB)
-    on.exit(DBI::dbDisconnect(con), add = TRUE)
-    if (analysis == "pa") {
-      tbl <- DBI::dbGetQuery(con, "
-        SELECT *
-        FROM Particle_Analysis_Table  AS pa
-        JOIN  PA_Measurement_Tables   AS meas
-             ON meas.PA_ID = pa.PA_ID")
-  } else {                          # analysis == "coloc"
-    tbl <- DBI::dbGetQuery(con, "
-        SELECT *
-        FROM Coloc_Analysis_Table  AS ca
-        JOIN  Coloc_Measurement_Tables  AS meas
-             ON meas.COLOC_ID = ca.COLOC_ID")
+
+  # ── Select columns ────────────────────────────────────────────────────────
+  always  <- c("Plate_ID", "Well", "Channel_Name", "Selection",
+               "Image_ID", "Selection_Area", "Number_of_Particles")
+  meas_extra <- setdiff(meas_cols, c("Number_of_Particles", "Selection_Area"))
+  keep    <- unique(c(always, extra_id_cols, meas_extra))
+  tbl     <- dplyr::select(tbl, tidyselect::any_of(keep))
+
+  # ── Well normalisation ────────────────────────────────────────────────────
+  if (isTRUE(cleanNames)) {
+    # Strip site suffix: "B10-1" → "B10"
+    tbl$Well <- vapply(tbl$Well,
+      function(x) strsplit(x, "-")[[1]][1], character(1))
+    # Normalise to "A01" format
+    row_ltr  <- substr(tbl$Well, 1, 1)
+    col_num  <- suppressWarnings(as.integer(substr(tbl$Well, 2, 3)))
+    tbl$Well <- paste0(row_ltr, sprintf("%02d", col_num))
+    # Plate_ID: strip \r / whitespace
+    tbl$Plate_ID <- vapply(tbl$Plate_ID,
+      function(x) trimws(strsplit(x, "\r")[[1]][1]), character(1))
   }
-    process_tbl(tbl)
+
+  # ── CorrSel labeling: Hole_ROI (min area) / background_ROI (max area) ─────
+  # For each unique Selection value, the smallest Selection_Area = Hole_ROI,
+  # the largest = background_ROI.  This resolves ambiguity when the same
+  # Selection name (e.g. "14618.vsi - 009 BF") appears at two different areas.
+  if (isTRUE(apply_corr_sel) &&
+      "Selection" %in% names(tbl) &&
+      "Selection_Area" %in% names(tbl)) {
+    tbl$CorrSel <- NA_character_
+    for (sel in unique(tbl$Selection)) {
+      idx   <- tbl$Selection == sel
+      areas <- tbl$Selection_Area[idx]
+      sel_min <- min(areas, na.rm = TRUE)
+      sel_max <- max(areas, na.rm = TRUE)
+      tbl$CorrSel[idx & tbl$Selection_Area == sel_min] <- "Hole_ROI"
+      tbl$CorrSel[idx & tbl$Selection_Area == sel_max] <- "background_ROI"
+    }
+  }
+
+  # ── Filter by CorrSel ─────────────────────────────────────────────────────
+  if (!is.null(corr_sel_filter) && length(corr_sel_filter) > 0 &&
+      "CorrSel" %in% names(tbl)) {
+    tbl <- tbl[tbl$CorrSel %in% corr_sel_filter, , drop = FALSE]
+  }
+
+  # ── Image_ID rank within well ─────────────────────────────────────────────
+  if ("Image_ID" %in% names(tbl) && !is.null(fluor_rank)) {
+    tbl$Image_ID_num <- suppressWarnings(as.numeric(tbl$Image_ID))
+    tbl <- dplyr::group_by(tbl, Plate_ID, Well) %>%
+      dplyr::mutate(Image_rank = dplyr::dense_rank(Image_ID_num)) %>%
+      dplyr::ungroup() %>%
+      as.data.frame()
+    tbl$Image_Type <- ifelse(tbl$Image_rank == as.integer(fluor_rank),
+                             "fluor", "bf")
+  }
+
+  # ── Filter by ROI selections ──────────────────────────────────────────────
+  if (!is.null(roi_selections) && length(roi_selections) > 0 &&
+      "Selection" %in% names(tbl)) {
+    tbl <- tbl[tbl$Selection %in% roi_selections, , drop = FALSE]
+  }
+
+  # ── Aggregate (optional) ─────────────────────────────────────────────────
+  if (isTRUE(aggregate)) {
+    grp <- intersect(c("Plate_ID", "Well", "Channel_Name", "Selection",
+                       "Image_Type", "Image_rank", extra_id_cols), names(tbl))
+    tbl <- ag(tbl, cols = grp, fun = mean)
+  }
+
+  # ── Optional scaling ──────────────────────────────────────────────────────
+  if (isTRUE(scale_num)) {
+    if (is.null(scale_cols))
+      scale_cols <- intersect(meas_extra, names(tbl))
+    for (col in scale_cols) {
+      if (!col %in% names(tbl)) next
+      new_col       <- paste0(col, "_Scaled")
+      tbl[[new_col]] <- scale_fun(tbl[[col]])
+      tbl <- dplyr::relocate(tbl, dplyr::all_of(new_col),
+                              .after = dplyr::all_of(col))
+    }
+  }
+
+  tbl
 }
-#' Prepare Imaging-results tables from Cluster-Analysis SQLite databases
-#' @param pathDB Path to SQlite-DB
-#' @param analysis pa or coloc, which table to extract, single option only
-#' @param id_cols Columns which metadata about the image and measurement
-#' @param num_cols Numeric Columns about the particle metrices
-#' @param coloc_cols Colocalisation specific columns to include, default "Second_Channel","Mask_Area"
-#' @param scale_num Boolean parameter to include scaled numeric metrices (Default FALSE)
-#' @param scale_fun Scale function passed through the numeric columns
-#' @param aggregate Boolean; if TRUE (default) rows are averaged across sites before cleaning
-#' @param cleanNames Boolean; if TRUE (default) runs df_cleaned() and drops duplicated column suffixes
-#' @return A dataframe
+
+# ---------------------------------------------------------------------------
+# prepareImgDF — wrapper for one or multiple .db files
+# ---------------------------------------------------------------------------
+
+#' Prepare imaging-results from one or more Cluster Analysis SQLite databases
+#'
+#' Calls \code{\link{prepareSingleImgDF}} for each file and row-binds the
+#' results.
+#'
+#' @inheritParams prepareSingleImgDF
+#' @param pathDB Character vector of paths to one or more \code{.db} files.
+#' @param coloc_cols Extra columns added when \code{analysis = "coloc"}.
+#'   Default: \code{c("Second_Channel","Mask_Area")}.
+#'
+#' @return A combined data.frame. If \code{fluor_rank} is not \code{NULL},
+#'   an \code{Image_Type} column (\code{"fluor"} / \code{"bf"}) is present.
+#'
+#' @seealso \code{\link{previewImgDB}}, \code{\link{prepareSingleImgDF}}
 #' @export
 prepareImgDF <- function(pathDB,
-                               analysis   = "pa",
-                               id_cols    = c("Date","Plate_ID","Well",
-                                              "Image_ID","Channel_Name",
-                                              "Selection","Selection_Area"),
-                               num_cols   = c("Area","Mean","IntDen",
-                                              "Number_of_Particles"),
-                               coloc_cols = c("Second_Channel","Mask_Area"),
-                              new_channel_names = c("blue", "green", "red", "farred"),
-                               scale_num  = FALSE,
-                               scale_cols = NULL,
-                               scale_fun  = function(x)
-                                 as.numeric(scale(x, TRUE, TRUE)),
-                               aggregate  = TRUE,
-                               cleanNames = TRUE){
+                         analysis        = "pa",
+                         plate_col       = "Plate_ID",
+                         well_col        = "Well",
+                         channel_col     = "Channel_Name",
+                         selection_col   = "Selection",
+                         extra_id_cols   = character(0),
+                         meas_cols       = c("Area", "Mean", "IntDen",
+                                             "Number_of_Particles"),
+                         coloc_cols      = c("Second_Channel", "Mask_Area"),
+                         fluor_rank      = NULL,
+                         fluor_ranks     = NULL,
+                         roi_selections  = NULL,
+                         apply_corr_sel  = TRUE,
+                         corr_sel_filter = NULL,
+                         scale_num       = FALSE,
+                         scale_cols      = NULL,
+                         scale_fun       = function(x) as.numeric(scale(x, TRUE, TRUE)),
+                         aggregate       = FALSE,
+                         cleanNames      = TRUE) {
 
-  if("coloc" %in% analysis){
-    id_cols <- c(id_cols,
-                 coloc_cols)
+  if ("coloc" %in% analysis)
+    extra_id_cols <- union(extra_id_cols, coloc_cols)
+
+  # fluor_ranks: named integer vector "1","2",... → per-DB rank override
+  # fluor_rank:  global default used when a DB has no entry in fluor_ranks
+  call_single <- function(p, idx) {
+    this_rank <- if (!is.null(fluor_ranks) &&
+                     as.character(idx) %in% names(fluor_ranks))
+      fluor_ranks[[as.character(idx)]]
+    else
+      fluor_rank
+    out <- tryCatch(
+      prepareSingleImgDF(p,
+        analysis        = analysis,
+        plate_col       = plate_col,
+        well_col        = well_col,
+        channel_col     = channel_col,
+        selection_col   = selection_col,
+        extra_id_cols   = extra_id_cols,
+        meas_cols       = meas_cols,
+        fluor_rank      = this_rank,
+        roi_selections  = roi_selections,
+        apply_corr_sel  = apply_corr_sel,
+        corr_sel_filter = corr_sel_filter,
+        scale_num       = scale_num,
+        scale_cols      = scale_cols,
+        scale_fun       = scale_fun,
+        aggregate       = aggregate,
+        cleanNames      = cleanNames),
+      error = function(e) {
+        warning("prepareSingleImgDF failed for ", p, ": ", e$message); NULL }
+    )
+    out
   }
 
-  if(length(pathDB) == 1){
-    df <- prepareSingleImgDF(pathDB, analysis=analysis,
-                             id_cols = id_cols,
-                             num_cols = num_cols,
-                             scale_num=scale_num,
-                             scale_cols=scale_cols,
-                             scale_fun=scale_fun,
-                             aggregate=aggregate,
-                             cleanNames=cleanNames)
-  }else{
-    dfs <- lapply(pathDB, function(x) {
-      out <- prepareSingleImgDF(x, analysis=analysis,
-                                id_cols = id_cols,
-                                num_cols = num_cols,
-                                scale_num=scale_num,
-                                scale_cols=scale_cols,
-                                scale_fun=scale_fun,
-                                aggregate=aggregate,
-                                cleanNames=cleanNames)
-      if (!is.data.frame(out)) {
-        warning(paste("prepareSingleImgDF failed for", x))
-        return(NULL)
-      }
-      return(out)
-    })
-      #safe_names <- lapply(pathDB, function(x){basename(x)})
-      #print(safe_names)
-      #names(dfs) <- safe_names
-      dfs <- Filter(Negate(is.null), dfs)
-      names(dfs) <- paste0("DB", seq_along(pathDB))
-      df <- dplyr::bind_rows(dfs, .id = "column_label")
-    }
-
-    if (!"Plate_ID" %in% colnames(df)) {
+  if (length(pathDB) == 1) {
+    df <- call_single(pathDB, 1L)
+  } else {
+    dfs  <- lapply(seq_along(pathDB), function(i) call_single(pathDB[i], i))
+    dfs  <- Filter(Negate(is.null), dfs)
+    if (length(dfs) == 0) stop("All databases failed to import.")
+    names(dfs) <- paste0("DB", seq_along(dfs))
+    df <- dplyr::bind_rows(dfs, .id = "column_label")
+    if (!"Plate_ID" %in% names(df))
       df$Plate_ID <- df$column_label
-    }else{
-      df$Plate_ID <- sapply(df$Plate_ID, function(x){
-        unlist(stringr::str_split(x, "\\r"))[1]
-      })
-    }
-  df$Image_ID <- as.numeric(df$Image_ID)
-  df$Image_Type <- ifelse(df$Image_ID %% 2 != 0, "fluor", "bf")
+  }
 
-  return(df)
+  df
 }
 #' Clean and normalize dataframe. Adds column and row identifiers and finds the
 #' selections with the Hole-ROI
@@ -176,15 +428,16 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 
   df$CorrSel <- NA
   for(sel in unique(df$Selection)){
-    #sel <- "4617.vsi - 283 BF"
     selMin <- min(subset(df, Selection == sel)$Selection_Area)
     selMax <- max(subset(df, Selection == sel)$Selection_Area)
 
     df[df$Selection == sel & df$Selection_Area == selMin,"CorrSel"] <- "Hole_ROI"
     df[df$Selection == sel & df$Selection_Area == selMax,"CorrSel"] <- "background_ROI"
   }
-  df$Image_ID <- as.numeric(df$Image_ID)
-  df$Image_Type <- ifelse(as.numeric(df$Image_ID) %% 2 != 0, "fluor", "bf")
+  # Image_Type is no longer derived from Image_ID parity (the odd/even pattern
+  # is not reliable across datasets).  Use prepareSingleImgDF(fluor_rank=) for
+  # correct assignment; this column is left as-is here for backward compat.
+  if (!"Image_Type" %in% names(df)) df$Image_Type <- NA_character_
 
   df$Channel <- ifelse(df$Channel_Name == "BFP", channels[1],
                         ifelse(df$Channel_Name == "mCherry", channels[2],

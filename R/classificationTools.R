@@ -56,16 +56,24 @@ filterParticles <- function(df,
       dplyr::ungroup()
     reject <- !is.na(df$Mean_scaled) & df$Mean_scaled < threshold
   } else {
-    # median_ratio
-    if (is.null(threshold)) threshold <- 1 / 3
+    # median_ratio: uncentered SD scaling — Mean / sd(Mean) per group.
+    # Default threshold is median(Mean_scaled) / 3 computed per group.
     df <- df %>%
       dplyr::group_by(dplyr::across(dplyr::any_of(group_vars))) %>%
       dplyr::mutate(
-        Mean_scaled = .data$Mean /
-          (median(.data$Mean, na.rm = TRUE) + .Machine$double.eps)
+        Mean_scaled = as.numeric(scale(.data$Mean, center = FALSE, scale = TRUE))
       ) %>%
       dplyr::ungroup()
-    reject <- !is.na(df$Mean_scaled) & df$Mean_scaled < threshold
+    if (is.null(threshold)) {
+      # Dynamic per-group threshold: median of scaled values / 3
+      thr_df <- df %>%
+        dplyr::group_by(dplyr::across(dplyr::any_of(group_vars))) %>%
+        dplyr::mutate(.thr = median(.data$Mean_scaled, na.rm = TRUE) / 3) %>%
+        dplyr::ungroup()
+      reject <- !is.na(df$Mean_scaled) & df$Mean_scaled < thr_df$.thr
+    } else {
+      reject <- !is.na(df$Mean_scaled) & df$Mean_scaled < threshold
+    }
   }
 
   # Blank out numeric columns for rejected particles
@@ -107,7 +115,17 @@ filterParticles <- function(df,
 #' @importFrom dplyr filter group_by summarise across any_of distinct left_join
 #' @export
 aggregateParticles <- function(df,
-                               group_vars = c("Channel_Name", "Plate_ID", "Well")) {
+                               group_vars   = c("Channel_Name", "Plate_ID", "Well"),
+                               agg_fun      = c("mean", "median", "sum"),
+                               scale_within = "Channel_Name",
+                               scale_center = FALSE) {
+
+  agg_fun <- match.arg(agg_fun)
+  .agg <- switch(agg_fun,
+    mean   = function(x) mean(x,   na.rm = TRUE),
+    median = function(x) median(x, na.rm = TRUE),
+    sum    = function(x) sum(x,    na.rm = TRUE)
+  )
 
   # Restrict to hole ROI if available
   if ("CorrSel" %in% names(df)) {
@@ -122,8 +140,8 @@ aggregateParticles <- function(df,
     dplyr::filter(!is.na(.data$Mean)) %>%
     dplyr::group_by(dplyr::across(dplyr::any_of(group_vars))) %>%
     dplyr::summarise(
-      Mean_agg    = mean(.data$Mean,            na.rm = TRUE),
-      Area_agg    = mean(.data$Area,            na.rm = TRUE),
+      Mean_agg    = .agg(.data$Mean),
+      Area_agg    = .agg(.data$Area),
       normArea    = sum(.data$Area,             na.rm = TRUE) /
                     (mean(.data$Selection_Area, na.rm = TRUE) + .Machine$double.eps),
       n_particles = dplyr::n(),
@@ -141,6 +159,32 @@ aggregateParticles <- function(df,
   stat_cols <- intersect(c("Mean_agg", "Area_agg", "normArea", "n_particles"),
                          names(out))
   for (col in stat_cols) out[[col]][is.na(out[[col]])] <- 0
+
+  # Optional: scale aggregated metrics within scale_within groups
+  # Produces Mean_z, Area_z, normArea_z alongside the raw aggregated values.
+  if (!is.null(scale_within) && length(scale_within) > 0) {
+    .scale_fn <- function(x) {
+      x <- as.numeric(x)
+      if (isTRUE(scale_center)) {
+        m <- mean(x, na.rm = TRUE)
+        s <- sd(x,   na.rm = TRUE)
+        if (is.na(s) || s == 0) return(ifelse(is.na(x), NA_real_, 0))
+        (x - m) / (s + .Machine$double.eps)
+      } else {
+        s <- sd(x, na.rm = TRUE)
+        if (is.na(s) || s == 0) return(ifelse(is.na(x), NA_real_, 0))
+        x / (s + .Machine$double.eps)
+      }
+    }
+    out <- out %>%
+      dplyr::group_by(dplyr::across(dplyr::any_of(scale_within))) %>%
+      dplyr::mutate(
+        Mean_z     = .scale_fn(.data$Mean_agg),
+        Area_z     = .scale_fn(.data$Area_agg),
+        normArea_z = .scale_fn(.data$normArea)
+      ) %>%
+      dplyr::ungroup()
+  }
 
   out
 }
@@ -180,7 +224,16 @@ aggregateParticles <- function(df,
 #' @export
 scoreParticles <- function(agg_df,
                            weights          = c(Mean = 1, Area = 1, normArea = 1),
-                           score_group_vars = c("Channel_Name", "Plate_ID")) {
+                           score_group_vars = c("Channel_Name", "Plate_ID"),
+                           center           = FALSE) {
+
+  if (isTRUE(center)) {
+    warning(paste(
+      "center=TRUE uses z-score scaling which can assign near-average scores to",
+      "empty wells (those set to 0 by aggregateParticles). Uncentered scoring",
+      "(center=FALSE, the default) is recommended for most imaging workflows."
+    ), call. = FALSE)
+  }
 
   # Normalise weights to sum to 1
   w <- weights[c("Mean", "Area", "normArea")]
@@ -188,23 +241,39 @@ scoreParticles <- function(agg_df,
   if (sum(w) == 0) stop("weights must have at least one positive value")
   w <- w / sum(w)
 
-  # Uncentred scaling within a group: divide by sd only
-  .scale_uc <- function(x) {
-    x <- as.numeric(x)
-    s <- sd(x, na.rm = TRUE)
-    if (is.na(s) || s == 0) return(ifelse(is.na(x), NA_real_, 0))
-    x / (s + .Machine$double.eps)
+  # Scaling function: uncentred (÷ sd) or centred (z-score) within a group
+  .scale_fn <- if (isTRUE(center)) {
+    function(x) {
+      x <- as.numeric(x)
+      m <- mean(x, na.rm = TRUE)
+      s <- sd(x,   na.rm = TRUE)
+      if (is.na(s) || s == 0) return(ifelse(is.na(x), NA_real_, 0))
+      (x - m) / (s + .Machine$double.eps)
+    }
+  } else {
+    function(x) {
+      x <- as.numeric(x)
+      s <- sd(x, na.rm = TRUE)
+      if (is.na(s) || s == 0) return(ifelse(is.na(x), NA_real_, 0))
+      x / (s + .Machine$double.eps)
+    }
   }
 
-  # Scale each metric independently within each channel (× plate) group
-  agg_df <- agg_df %>%
-    dplyr::group_by(dplyr::across(dplyr::any_of(score_group_vars))) %>%
-    dplyr::mutate(
-      Mean_z     = .scale_uc(.data$Mean_agg),
-      Area_z     = .scale_uc(.data$Area_agg),
-      normArea_z = .scale_uc(.data$normArea)
-    ) %>%
-    dplyr::ungroup()
+  # If _z columns are already present (computed by aggregateParticles),
+  # only recompute when score_group_vars differs from what was used there.
+  # As a simple heuristic: recompute when score_group_vars has >1 element
+  # (i.e. Channel × Plate), skip when they are already available.
+  has_z <- all(c("Mean_z", "Area_z", "normArea_z") %in% names(agg_df))
+  if (!has_z) {
+    agg_df <- agg_df %>%
+      dplyr::group_by(dplyr::across(dplyr::any_of(score_group_vars))) %>%
+      dplyr::mutate(
+        Mean_z     = .scale_fn(.data$Mean_agg),
+        Area_z     = .scale_fn(.data$Area_agg),
+        normArea_z = .scale_fn(.data$normArea)
+      ) %>%
+      dplyr::ungroup()
+  }
 
   # Replace NA with 0 before combining
   mz <- ifelse(is.na(agg_df$Mean_z),     0, agg_df$Mean_z)
@@ -390,8 +459,12 @@ classifyImgParticles <- function(df,
                                  filter_threshold  = NULL,
                                  filter_group_vars = c("Channel_Name", "Plate_ID"),
                                  agg_group_vars    = c("Channel_Name", "Plate_ID", "Well"),
+                                 agg_fun           = c("mean", "median", "sum"),
+                                 scale_within      = "Channel_Name",
+                                 scale_center      = FALSE,
                                  weights           = c(Mean = 1, Area = 1, normArea = 1),
                                  score_group_vars  = c("Channel_Name", "Plate_ID"),
+                                 center            = FALSE,
                                  delta             = 0.5,
                                  min_area          = 0.1,
                                  channel_labels    = NULL,
@@ -404,10 +477,14 @@ classifyImgParticles <- function(df,
                                 threshold  = filter_threshold,
                                 group_vars = filter_group_vars)
 
-  df_agg    <- aggregateParticles(df_filt, group_vars = agg_group_vars)
+  df_agg    <- aggregateParticles(df_filt, group_vars   = agg_group_vars,
+                                  agg_fun      = agg_fun,
+                                  scale_within = scale_within,
+                                  scale_center = scale_center)
 
   df_scored <- scoreParticles(df_agg, weights = weights,
-                               score_group_vars = score_group_vars)
+                               score_group_vars = score_group_vars,
+                               center = center)
 
   if (return_scores) return(df_scored)
 

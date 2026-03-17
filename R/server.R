@@ -243,6 +243,20 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         updateSelectizeInput(session, "img_seDataset",  choices=names(SEs), selected=input$object)
         updateSelectizeInput(session, "cls_seDataset",  choices=names(SEs), selected=input$object)
 
+        # Customize Object Groups selectors
+        all_cd_cols <- colnames(as.data.frame(colData(x)))
+        num_cd_cols <- colnames(as.data.frame(colData(x))[ , purrr::map_lgl(as.data.frame(colData(x)), is.numeric), drop=FALSE])
+        rd_cols     <- colnames(as.data.frame(rowData(x)))
+        updateSelectInput(session, "cond_preview_col", choices = all_cd_cols, selected = all_cd_cols[1])
+        updateSelectInput(session, "row_col_select",   choices = rd_cols,     selected = rd_cols[1])
+        updateSelectInput(session, "lp_col",           choices = rd_cols,     selected = rd_cols[1])
+        updateSelectInput(session, "ag_assays",        choices = assayNames(x))
+        updateSelectInput(session, "transform_col",    choices = num_cd_cols, selected = if (length(num_cd_cols) > 0) num_cd_cols[length(num_cd_cols)] else NULL)
+        updateSelectInput(session, "fw_col",           choices = all_cd_cols, selected = all_cd_cols[1])
+        updateSelectInput(session, "dr_assays",        choices = assayNames(x))
+        updateSelectInput(session, "dr_colnames",      choices = num_cd_cols)
+        updateSelectInput(session, "dr_color_col",     choices = all_cd_cols, selected = all_cd_cols[1])
+
         # Auto-load image folder stored in SE metadata
         folder <- tryCatch(S4Vectors::metadata(x)$image_path_jpgs, error = function(e) NULL)
         if (!is.null(folder) && nzchar(folder) && dir.exists(folder)) {
@@ -457,25 +471,321 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       })
     })
 
-    observeEvent(input$img_mergeSE, {
+    # ── Scan reactive ────────────────────────────────────────────────────────
+    img_scan_rv <- reactiveValues(preview = NULL)
+
+    observeEvent(input$img_scan_btn, {
+      req(input$img_fileDB)
       tryCatch({
-        req(input$img_seDataset, input$img_fileDB, input$img_tabletype)
-        l_files <- input$img_fileDB$datapath
-        withProgress(message="Loading Imaging Results", value=0, {
-          incProgress(0.5, detail="This may take a while...")
+        withProgress(message = "Scanning databases\u2026", value = 0.5, {
+          prev <- previewImgDB(input$img_fileDB$datapath,
+                               analysis = input$img_tabletype %||% "pa")
+          img_scan_rv$preview <- prev
+          incProgress(1)
+        })
+      }, error = function(e) {
+        showModal(modalDialog(title = "Scan Error", easyClose = TRUE,
+          tags$pre(conditionMessage(e))))
+      })
+    })
+
+    # Reset scan when new files are uploaded
+    observeEvent(input$img_fileDB, { img_scan_rv$preview <- NULL })
+
+    # ── Dynamic configuration UI ─────────────────────────────────────────────
+    output$img_config_ui <- renderUI({
+      prev <- img_scan_rv$preview
+      if (is.null(prev))
+        return(helpText(style="color:#aaa; font-size:11px; padding:4px 0;",
+                        "Upload .db files and click Scan to configure the import."))
+
+      pa_cols   <- prev$pa_cols
+      meas_cols <- prev$meas_cols
+      sel_vals  <- prev$selections
+      rank_df   <- prev$image_ranks
+
+      # Auto-detect column defaults
+      auto <- function(candidates, fallback = pa_cols[1])
+        Filter(function(x) x %in% pa_cols, candidates)[1] %||% fallback
+      auto_plate   <- auto(c("Plate_ID", "plate_id", "plate"))
+      auto_well    <- auto(c("Well", "well", "Well_ID"))
+      auto_channel <- auto(c("Channel_Name", "channel", "Channel"))
+      auto_sel     <- auto(c("Selection", "selection", "ROI"))
+
+      # Auto-detect ROI: prefer "allSelected"; else first non-BF value
+      non_bf_names <- names(sel_vals)[!grepl("\\sBF$", names(sel_vals))]
+      auto_roi <- if ("allSelected" %in% names(sel_vals)) "allSelected" else
+                  if (length(non_bf_names) > 0) non_bf_names[1] else character(0)
+
+      # Build labelled choices for selection checkboxes (top 20)
+      top_sel      <- head(sel_vals, 20)
+      sel_choices  <- setNames(names(top_sel),
+                               paste0(names(top_sel), "  (n=", top_sel, ")"))
+
+      # Extra optional columns (everything not already mandatory)
+      mandatory    <- unique(c(auto_plate, auto_well, auto_channel, auto_sel,
+                               "Image_ID", "Selection_Area", "Number_of_Particles"))
+      extra_avail  <- setdiff(pa_cols, mandatory)
+
+      # Rank hint text
+      rank_hint <- if (nrow(rank_df) > 0)
+        paste(paste0("rank ", rank_df$rank, " \u2192 ",
+                     rank_df$n, " Image_IDs"), collapse = " | ")
+      else "no rank info"
+
+      tagList(
+        # ── Summary ──────────────────────────────────────────────────────────
+        tags$p(style="font-size:11px; color:#555; margin-bottom:6px;",
+               icon("circle-info"),
+               sprintf(" %d rows | %d wells | channels: %s",
+                       prev$n_rows, prev$n_wells,
+                       paste(prev$channels, collapse=", "))),
+        tags$h5(style="margin-top:4px;", "1. Column Mapping"),
+        fluidRow(
+          column(6,
+            selectInput("img_col_plate",   "Plate ID column:",
+                        choices=pa_cols, selected=auto_plate),
+            selectInput("img_col_channel", "Channel column:",
+                        choices=pa_cols, selected=auto_channel)
+          ),
+          column(6,
+            selectInput("img_col_well",      "Well column:",
+                        choices=pa_cols, selected=auto_well),
+            selectInput("img_col_selection", "Selection column:",
+                        choices=pa_cols, selected=auto_sel)
+          )
+        ),
+        if (length(extra_avail) > 0)
+          checkboxGroupInput("img_extra_cols",
+                             "Extra metadata columns to keep (optional):",
+                             choices=extra_avail, inline=TRUE),
+        hr(),
+        # ── ROI labeling & filter ─────────────────────────────────────────────
+        tags$h5("2. ROI Labeling & Filter"),
+        checkboxInput("img_apply_corr_sel",
+          "Label ROIs by area (adds CorrSel column: Hole_ROI / background_ROI)",
+          value = TRUE),
+        helpText(style="font-size:10px; margin-top:-4px;",
+          "For each unique Selection value, smallest area \u2192 Hole_ROI, ",
+          "largest \u2192 background_ROI. Resolves cases where the same ",
+          "Selection name appears at two areas (e.g. BF hole vs inverted ROI)."),
+        conditionalPanel("input.img_apply_corr_sel == true",
+          checkboxGroupInput("img_corr_sel_filter",
+            "Keep only CorrSel:",
+            choices  = c("Hole_ROI", "background_ROI"),
+            selected = "Hole_ROI",
+            inline   = TRUE)
+        ),
+        tags$p(style="font-size:11px; color:#777; margin-top:6px; margin-bottom:2px;",
+               "Additional filter by raw Selection name (optional):"),
+        checkboxGroupInput("img_roi_selections", NULL,
+                           choices  = sel_choices,
+                           selected = auto_roi),
+        hr(),
+        # ── Fluorescence image detection ──────────────────────────────────────
+        tags$h5("3. Fluorescence Image Detection"),
+        helpText(style="font-size:10px;",
+          "Images within each well are ranked by Image_ID (rank 1 = lowest). ",
+          "Set the fluorescence rank per database — useful when different ",
+          "databases in the same upload have different Image_ID patterns."),
+        radioButtons("img_fluor_method", NULL,
+          choices  = c("Keep only fluorescence (by rank)" = "rank",
+                       "Keep all images"                  = "all"),
+          selected = "rank", inline = TRUE),
+        conditionalPanel("input.img_fluor_method == 'rank'",
+          if (!is.null(prev$per_db) && length(prev$per_db) > 0) {
+            tagList(
+              tags$p(style="font-size:11px; color:#555; margin-bottom:4px;",
+                     "Fluorescence rank per database:"),
+              do.call(tagList, lapply(seq_along(prev$per_db), function(i) {
+                db   <- prev$per_db[[i]]
+                rdf  <- db$image_ranks
+                hint <- if (nrow(rdf) > 0)
+                  paste(paste0("rank ", rdf$rank, ": ", rdf$n, " imgs"),
+                        collapse = " | ")
+                else "no rank info"
+                fluidRow(
+                  column(5,
+                    tags$p(style="font-size:11px; margin-top:8px; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis;",
+                           tags$abbr(title=db$name, db$name))),
+                  column(4,
+                    tags$p(style="font-size:10px; color:#888; margin-top:8px;",
+                           hint)),
+                  column(3,
+                    numericInput(paste0("img_fluor_rank_", i), NULL,
+                                 value=2L, min=1L, max=10L, step=1L))
+                )
+              }))
+            )
+          } else {
+            fluidRow(column(4,
+              numericInput("img_fluor_rank_1", "Fluorescence = rank:",
+                           value=2L, min=1L, max=10L, step=1L)))
+          }
+        ),
+        hr(),
+        # ── Measurement columns ───────────────────────────────────────────────
+        tags$h5("4. Particle Measurements to Import"),
+        checkboxGroupInput("img_meas_cols", NULL,
+          choices  = meas_cols,
+          selected = intersect(c("Area","Mean","StdDev","IntDen"), meas_cols),
+          inline   = TRUE),
+        helpText(style="font-size:10px;",
+                 "Number_of_Particles and Selection_Area are always included."),
+        hr(),
+        # ── Import ────────────────────────────────────────────────────────────
+        actionButton("img_mergeSE", "Import", class="btn-primary btn-block"),
+        verbatimTextOutput("img_import_status"),
+        helpText(style="font-size:11px; color:#aaa; margin-top:4px;",
+                 "Imported particles are available in the Auto Classification pipeline."),
+        hr(),
+        tags$p(style="font-size:12px; color:#888; margin-bottom:4px;",
+               "Optional \u2014 merge aggregated data into an SE object:"),
+        fluidRow(
+          column(8,
+            selectizeInput("img_seDataset", "SE:", choices=c(), multiple=FALSE)
+          ),
+          column(4,
+            br(),
+            actionButton("img_connectSE", "Connect to SE",
+                         class="btn-default btn-sm btn-block")
+          )
+        )
+      )
+    })
+
+    # ── Import handler ───────────────────────────────────────────────────────
+    observeEvent(input$img_mergeSE, {
+      req(input$img_fileDB, input$img_tabletype)
+      tryCatch({
+        l_files         <- input$img_fileDB$datapath
+        ttype           <- input$img_tabletype[[1]] %||% "pa"
+        plate_col       <- input$img_col_plate     %||% "Plate_ID"
+        well_col        <- input$img_col_well      %||% "Well"
+        channel_col     <- input$img_col_channel   %||% "Channel_Name"
+        selection_col   <- input$img_col_selection %||% "Selection"
+        extra_cols      <- input$img_extra_cols    %||% character(0)
+        meas_sel        <- input$img_meas_cols     %||% c("Area", "Mean", "IntDen")
+        roi_sel         <- if (length(input$img_roi_selections) > 0)
+                             input$img_roi_selections else NULL
+        apply_cs        <- isTRUE(input$img_apply_corr_sel)
+        corr_sel_filter <- if (apply_cs && length(input$img_corr_sel_filter) > 0)
+                             input$img_corr_sel_filter else NULL
+
+        # Per-DB fluor ranks — one numericInput per DB (img_fluor_rank_1, _2, ...)
+        fluor_ranks <- if (identical(input$img_fluor_method, "rank")) {
+          n_dbs <- length(l_files)
+          ranks <- vapply(seq_len(n_dbs), function(i) {
+            as.integer(input[[paste0("img_fluor_rank_", i)]] %||% 2L)
+          }, integer(1))
+          setNames(ranks, as.character(seq_len(n_dbs)))
+        } else NULL
+
+        withProgress(message = "Importing particle data", value = 0.3, {
+          df <- prepareImgDF(
+            l_files,
+            analysis        = ttype,
+            plate_col       = plate_col,
+            well_col        = well_col,
+            channel_col     = channel_col,
+            selection_col   = selection_col,
+            extra_id_cols   = extra_cols,
+            meas_cols       = meas_sel,
+            fluor_rank      = NULL,
+            fluor_ranks     = fluor_ranks,
+            roi_selections  = roi_sel,
+            apply_corr_sel  = apply_cs,
+            corr_sel_filter = corr_sel_filter,
+            aggregate       = FALSE,
+            cleanNames      = TRUE
+          )
+          cls_rv$particles  <- df
+          cls_rv$filtered   <- NULL
+          cls_rv$aggregated <- NULL
+          cls_rv$scored     <- NULL
+          cls_rv$classified <- NULL
+          incProgress(1)
+        })
+      }, error = function(e) {
+        showModal(modalDialog(title = "Import Error", easyClose = TRUE,
+          tags$pre(conditionMessage(e))))
+      })
+    })
+
+    output$img_import_status <- renderText({
+      df <- cls_rv$particles
+      if (is.null(df)) return("No data imported yet.")
+      n_w   <- length(unique(paste(df$Plate_ID, df$Well)))
+      n_ch  <- length(unique(df$Channel_Name))
+      n_pl  <- length(unique(df$Plate_ID))
+      sels   <- if ("Selection"  %in% names(df)) paste(unique(df$Selection),  collapse=", ") else "\u2014"
+      itype  <- if ("Image_Type" %in% names(df)) paste(unique(df$Image_Type), collapse=", ") else "not set"
+      corrsl <- if ("CorrSel"    %in% names(df)) paste(unique(df$CorrSel),    collapse=", ") else "not applied"
+      paste0(nrow(df), " particles | ", n_w, " wells | ",
+             n_ch, " channel(s) | ", n_pl, " plate(s)\n",
+             "Selections: ", sels, "\n",
+             "CorrSel:    ", corrsl, "\n",
+             "Image types: ", itype, "\n",
+             "Ready for Auto Classification.")
+    })
+
+    # ── RDS particle table loader ────────────────────────────────────────────
+    observeEvent(input$img_load_rds, {
+      req(input$img_rds_file)
+      tryCatch({
+        df <- readRDS(input$img_rds_file$datapath)
+        if (!is.data.frame(df))
+          stop("The .rds file must contain a data.frame.")
+        cls_rv$particles  <- df
+        cls_rv$filtered   <- NULL
+        cls_rv$aggregated <- NULL
+        cls_rv$scored     <- NULL
+        cls_rv$classified <- NULL
+      }, error = function(e) {
+        showModal(modalDialog(title = "Load Error", easyClose = TRUE,
+          tags$pre(conditionMessage(e))))
+      })
+    })
+
+    output$img_rds_status <- renderText({
+      req(input$img_rds_file)
+      df <- cls_rv$particles
+      if (is.null(df)) return("Not loaded.")
+      n_w  <- length(unique(paste(df$Plate_ID %||% "?", df$Well %||% "?")))
+      n_ch <- if ("Channel_Name" %in% names(df)) length(unique(df$Channel_Name)) else "?"
+      n_pl <- if ("Plate_ID"    %in% names(df)) length(unique(df$Plate_ID))    else "?"
+      paste0(nrow(df), " rows | ", n_w, " wells | ",
+             n_ch, " channel(s) | ", n_pl, " plate(s)")
+    })
+
+    observeEvent(input$img_connectSE, {
+      req(input$img_seDataset, input$img_fileDB, input$img_tabletype)
+      tryCatch({
+        l_files       <- input$img_fileDB$datapath
+        plate_col     <- input$img_col_plate     %||% "Plate_ID"
+        well_col      <- input$img_col_well      %||% "Well"
+        channel_col   <- input$img_col_channel   %||% "Channel_Name"
+        selection_col <- input$img_col_selection %||% "Selection"
+        withProgress(message = "Connecting to SE", value = 0.3, {
           for (tabletype in input$img_tabletype) {
-            df_img <- prepareImgDF(l_files, analysis=tabletype,
-                                   aggregate=isTRUE(input$img_aggregate_db))
+            df_img <- prepareImgDF(l_files,
+              analysis      = tabletype,
+              plate_col     = plate_col,
+              well_col      = well_col,
+              channel_col   = channel_col,
+              selection_col = selection_col,
+              aggregate     = TRUE,
+              cleanNames    = TRUE)
             SEname <- input$img_seDataset
             SEs[[SEname]] <- mergeSEandImg(SEs[[SEname]], df_img, tableType=tabletype)
             SEinit(SEs[[SEname]])
-            incProgress(0.75, detail="Updating UI")
             updateSelectInput(session, "object", selected=SEname,
                               choices=union(names(objects), names(SEs)))
-            incProgress(1, detail="Done")
           }
+          incProgress(1)
         })
-      }, error=function(e) {
+      }, error = function(e) {
         showModal(modalDialog(title="Error", easyClose=TRUE,
           tags$pre(conditionMessage(e))))
       })
@@ -1217,78 +1527,568 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     #updateSelectInput(session, "selected_well1", selected = matching_wells)
   })
 
-  output$plate_view_col <- renderPlotly({
-    # Create grid
+  # ============================================================
+  # CUSTOMIZE OBJECT GROUPS — Define Conditions (tab_coldata)
+  # ============================================================
+
+  # Helper: make a plate grid plotly from colData
+  .make_plate_grid <- function(coldata_df, fill_col = "Well") {
     rows <- LETTERS[1:16]
     cols <- sprintf("%02d", 1:24)
-    grid <- expand.grid(Row = rows, Col = cols)
+    grid <- expand.grid(Row = rows, Col = cols, stringsAsFactors = FALSE)
     grid$Well <- paste0(grid$Row, grid$Col)
-    grid$Selected <-  TRUE#grid$Well %in% selected_wells$data$well
-
-    # Plot it
-    # p <- ggplot(grid, aes(x = Col, y = Row)) +
-    #   geom_tile(aes(fill = Selected), color = "grey50") +
-    #   scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "white")) +
-    #   scale_y_discrete(limits = rev) +
-    #   theme_void() +
-    #   theme(legend.position = "none",
-    #         panel.border = element_rect(color = "black", fill = NA))
-
-    # if(length(get_wells(input$plate_id4)) > 0 & !input$all_plates2){
-    #   grid$Selected <- ifelse(grid$Well %in% get_wells(input$plate_id4), TRUE, FALSE)
-    #   grid$Plate_ID <-input$plate_id4
-    # }else{
-    #   grid$Selected <- TRUE
-    #   grid$Plate_ID <- "All_Plates"
-    # }
-    #melted.dat$is_selected <- ifelse(melted.dat$Well %in% input$selected_well, TRUE, FALSE)
-    grid$Selected <- TRUE
-    grid$key_combined <- paste(grid$Well, grid$Plate_ID, sep = ", ")
-
-    coldata <- as.data.frame(colData(SE()))
-    coldata <- coldata[coldata$Plate_ID %in% input$plate_id4,]
-
-    if(input$condition == "" | !is.null(input$condition)){
-      condition <- "Well"
-
-    }else{
-      condition <- input$condition
+    grid$Col_num <- as.integer(grid$Col)
+    if (!is.null(coldata_df) && fill_col %in% colnames(coldata_df)) {
+      grid <- merge(grid, coldata_df[, unique(c("Well", fill_col))], by = "Well", all.x = TRUE)
+      fill_vals <- grid[[fill_col]]
+    } else {
+      fill_vals <- NA_character_
     }
-    p <- ggplot(grid, aes(x = as.numeric(Col), y = Row, key = key_combined, fill=coldata[[condition]])) +
-      geom_tile() +
-      scale_x_continuous(breaks = 1:24) +
-      scale_y_discrete(limits = rev) +
-      geom_text(aes(label = paste(Row, Col, sep="")), color = "white") +
-      theme_minimal() + labs(fill=input$condition, xlab="Column")
+    grid$fill_val <- as.character(fill_vals)
+    p <- ggplot(grid, aes(x = Col_num, y = Row, fill = fill_val,
+                          text = paste0(Well, ": ", fill_val))) +
+      geom_tile(color = "grey70") +
+      scale_x_continuous(breaks = 1:24, expand = c(0, 0)) +
+      scale_y_discrete(limits = rev, expand = c(0, 0)) +
+      geom_text(aes(label = paste0(Row, sub("^0", "", Col))),
+                size = 2.2, color = "white") +
+      theme_minimal(base_size = 11) +
+      labs(fill = fill_col, x = "Column", y = NULL)
+    ggplotly(p, tooltip = "text")
+  }
 
-    ggplotly(p, source = "condition_plot")
+  # Reactive: rule list stored as a list of lists
+  cond_rules <- reactiveVal(list())
+  cond_rule_counter <- reactiveVal(0L)
 
+  observeEvent(input$cond_add_rule, {
+    n <- cond_rule_counter() + 1L
+    cond_rule_counter(n)
+    rules <- cond_rules()
+    rules[[as.character(n)]] <- list(id = n, plates = NULL, col_min = 1L, col_max = 24L, label = "")
+    cond_rules(rules)
+  })
 
+  observeEvent(input$cond_clear_rules, {
+    cond_rules(list())
+    cond_rule_counter(0L)
+  })
+
+  output$cond_rules_ui <- renderUI({
+    se <- SE()
+    rules <- cond_rules()
+    if (length(rules) == 0) return(helpText("Click 'Add Rule' to define a mapping."))
+    plate_ids <- if (!is.null(se)) unique(as.character(colData(se)$Plate_ID)) else character(0)
+    tagList(lapply(seq_along(rules), function(i) {
+      r <- rules[[i]]
+      rid <- as.character(r$id)
+      wellPanel(
+        style = "padding: 8px; margin-bottom: 6px;",
+        fluidRow(
+          column(12,
+            tags$strong(paste("Rule", i)),
+            actionButton(paste0("cond_rm_rule_", rid), "×",
+                         class = "btn-danger btn-xs pull-right",
+                         style = "margin-top:-2px;")
+          )
+        ),
+        fluidRow(
+          column(6,
+            selectizeInput(paste0("cond_rule_plates_", rid), "Plate_ID(s):",
+                           choices = plate_ids, multiple = TRUE,
+                           selected = r$plates,
+                           options = list(placeholder = "All plates"))
+          ),
+          column(3,
+            numericInput(paste0("cond_rule_col_min_", rid), "Col min:", value = r$col_min, min = 1L, max = 24L, step = 1L)
+          ),
+          column(3,
+            numericInput(paste0("cond_rule_col_max_", rid), "Col max:", value = r$col_max, min = 1L, max = 24L, step = 1L)
+          )
+        ),
+        fluidRow(
+          column(12,
+            textInput(paste0("cond_rule_label_", rid), "Label value:", value = r$label, placeholder = "e.g. WT")
+          )
+        )
+      )
+    }))
+  })
+
+  # Remove individual rules
+  observe({
+    rules <- cond_rules()
+    lapply(names(rules), function(rid) {
+      btn_id <- paste0("cond_rm_rule_", rid)
+      observeEvent(input[[btn_id]], {
+        cur <- cond_rules()
+        cur[[rid]] <- NULL
+        cond_rules(cur)
+      }, ignoreInit = TRUE, once = TRUE)
+    })
+  })
+
+  # Plate grid for condition preview
+  output$plate_view_col <- renderPlotly({
+    se <- SE()
+    req(se, input$plate_id4)
+    cd <- as.data.frame(colData(se))
+    cd <- cd[cd$Plate_ID %in% input$plate_id4, , drop = FALSE]
+    fill_col <- if (!is.null(input$cond_preview_col) && input$cond_preview_col %in% colnames(cd))
+      input$cond_preview_col else "Well"
+    .make_plate_grid(cd, fill_col)
+  })
+
+  output$cond_coldata_preview <- renderDT({
+    se <- SE()
+    req(se)
+    cd <- as.data.frame(colData(se))
+    if (!is.null(input$plate_id4) && nchar(input$plate_id4[1]) > 0)
+      cd <- cd[cd$Plate_ID %in% input$plate_id4, , drop = FALSE]
+    datatable(cd, options = list(pageLength = 8, scrollX = TRUE), rownames = FALSE)
+  })
+
+  # Collect current rule values from inputs
+  .collect_rules <- function(rules) {
+    lapply(names(rules), function(rid) {
+      list(
+        plates  = input[[paste0("cond_rule_plates_", rid)]],
+        col_min = input[[paste0("cond_rule_col_min_", rid)]],
+        col_max = input[[paste0("cond_rule_col_max_", rid)]],
+        label   = input[[paste0("cond_rule_label_", rid)]]
+      )
+    })
+  }
+
+  observeEvent(input$cond_apply, {
+    se <- SE()
+    req(se, input$cond_new_col, nchar(trimws(input$cond_new_col)) > 0)
+    rules <- .collect_rules(cond_rules())
+    if (length(rules) == 0) {
+      showNotification("No rules defined.", type = "warning")
+      return()
+    }
+    tryCatch({
+      cd <- as.data.frame(colData(se))
+      new_col <- trimws(input$cond_new_col)
+      cd[[new_col]] <- NA_character_
+      for (r in rules) {
+        plates  <- if (is.null(r$plates) || length(r$plates) == 0) unique(cd$Plate_ID) else r$plates
+        col_min <- as.integer(r$col_min %||% 1L)
+        col_max <- as.integer(r$col_max %||% 24L)
+        label   <- r$label
+        well_col <- as.integer(sub("^[A-Za-z]+", "", cd$Well))
+        idx <- cd$Plate_ID %in% plates & !is.na(well_col) & well_col >= col_min & well_col <= col_max
+        cd[[new_col]][idx] <- label
+      }
+      colData(se)[[new_col]] <- cd[[new_col]]
+      SEs[[input$object]] <- se
+      SEinit(SEs[[input$object]])
+      updateSelectInput(session, "cond_preview_col",
+                        choices = colnames(as.data.frame(colData(se))),
+                        selected = new_col)
+      showNotification(paste0("Column '", new_col, "' added to colData."), type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error:", conditionMessage(e)), type = "error")
+    })
   })
 
 
-  observeEvent(input$createCondition, {
-    tryCatch({
-      se <- SE()
-    if(!is.null(input$newCondition) | input$newCondition == ""){
+  # ============================================================
+  # CUSTOMIZE OBJECT GROUPS — Define Sweeps (tab_rowdata)
+  # ============================================================
 
-      se[[input$newCondition]] <- "init"
+  row_recode_counter <- reactiveVal(0L)
+
+  observeEvent(input$row_col_select, {
+    se <- SE()
+    req(se, input$row_col_select)
+    rd <- as.data.frame(rowData(se))
+    vals <- unique(as.character(rd[[input$row_col_select]]))
+    updateSelectInput(session, "lp_val", choices = vals, selected = vals[1])
+  })
+
+  observeEvent(input$row_add_recode, {
+    n <- row_recode_counter() + 1L
+    row_recode_counter(n)
+  })
+
+  output$row_recode_ui <- renderUI({
+    n <- row_recode_counter()
+    se <- SE()
+    if (n == 0 || is.null(se)) return(helpText("Click 'Add mapping' to add old → new value pairs."))
+    rd <- as.data.frame(rowData(se))
+    col <- input$row_col_select
+    old_vals <- if (!is.null(col) && col %in% colnames(rd))
+      unique(as.character(rd[[col]])) else character(0)
+
+    tagList(lapply(seq_len(n), function(i) {
+      fluidRow(
+        column(5, selectInput(paste0("recode_old_", i), if (i == 1) "Old value" else NULL,
+                              choices = old_vals, width = "100%")),
+        column(5, textInput(paste0("recode_new_", i), if (i == 1) "New value" else NULL,
+                            placeholder = "New label", width = "100%")),
+        column(2, if (i == 1) br() else NULL,
+               actionButton(paste0("recode_rm_", i), "×", class = "btn-danger btn-xs"))
+      )
+    }))
+  })
+
+  output$row_data_table <- renderDT({
+    se <- SE()
+    req(se)
+    rd <- as.data.frame(rowData(se))
+    datatable(rd, options = list(pageLength = 10, scrollX = TRUE), rownames = TRUE)
+  })
+
+  observeEvent(input$row_apply_recode, {
+    se <- SE()
+    req(se, input$row_col_select)
+    n <- row_recode_counter()
+    if (n == 0) { showNotification("No mappings defined.", type = "warning"); return() }
+    tryCatch({
+      col <- input$row_col_select
+      rd_col <- as.character(rowData(se)[[col]])
+      for (i in seq_len(n)) {
+        old_v <- input[[paste0("recode_old_", i)]]
+        new_v <- input[[paste0("recode_new_", i)]]
+        if (!is.null(old_v) && !is.null(new_v) && nchar(trimws(new_v)) > 0)
+          rd_col[rd_col == old_v] <- trimws(new_v)
+      }
+      rowData(se)[[col]] <- rd_col
       SEs[[input$object]] <- se
       SEinit(SEs[[input$object]])
+      showNotification(paste0("Column '", col, "' recoded."), type = "message")
+      row_recode_counter(0L)
+    }, error = function(e) {
+      showNotification(paste("Error:", conditionMessage(e)), type = "error")
+    })
+  })
 
-      coldat <- colnames(as.data.frame(colData(se))[ , !purrr::map_lgl(as.data.frame(colData(se)), is.numeric)])
+  observeEvent(input$lp_apply, {
+    se <- SE()
+    req(se, input$lp_col, input$lp_val, input$lp_new_col)
+    tryCatch({
+      lp_vals <- rowData(se)[[input$lp_col]]
+      rowData(se)[[trimws(input$lp_new_col)]] <- lp_vals == input$lp_val
+      SEs[[input$object]] <- se
+      SEinit(SEs[[input$object]])
+      showNotification(paste0("Logical column '", input$lp_new_col, "' created."), type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error:", conditionMessage(e)), type = "error")
+    })
+  })
 
-      updateSelectInput(session, "condition", choices=coldat, selected = input$newCondition)
+
+  # ============================================================
+  # CUSTOMIZE OBJECT GROUPS — Change Assays (tab_assays)
+  # ============================================================
+
+  # -- Sweep selector UI for colAG --
+  output$ag_sweep_ui <- renderUI({
+    se <- SE()
+    req(se)
+    mode <- input$ag_sweep_mode
+    if (mode == "all") return(NULL)
+    if (mode == "range") {
+      nr <- nrow(se)
+      return(fluidRow(
+        column(6, numericInput("ag_sweep_min", "First sweep:", value = 1L, min = 1L, max = nr, step = 1L)),
+        column(6, numericInput("ag_sweep_max", "Last sweep:", value = nr, min = 1L, max = nr, step = 1L))
+      ))
     }
-      }, error=function(e){
-        print(conditionMessage(e))
-        print(traceback())
-        showModal(modalDialog(easyClose=TRUE, title="Error with upload",
-                              "The file was not recognized. Are you sure that it is a R .rds file?",
-                              tags$pre(e)))
-      })
+    if (mode == "logical") {
+      rd <- as.data.frame(rowData(se))
+      log_cols <- colnames(rd)[purrr::map_lgl(rd, is.logical)]
+      if (length(log_cols) == 0) return(helpText("No logical columns in rowData. Create one in 'Define Sweeps'."))
+      return(selectInput("ag_sweep_logical_col", "Logical column (TRUE = use sweep):", choices = log_cols))
+    }
+  })
+
+  ag_status_msg <- reactiveVal("")
+  output$ag_status <- renderText(ag_status_msg())
+
+  observeEvent(input$ag_run, {
+    se <- SE()
+    req(se, input$ag_assays)
+    tryCatch({
+      sweeps <- switch(input$ag_sweep_mode,
+        "all"     = row.names(se),
+        "range"   = {
+          idx <- seq(input$ag_sweep_min, input$ag_sweep_max)
+          row.names(se)[idx[idx >= 1 & idx <= nrow(se)]]
+        },
+        "logical" = {
+          req(input$ag_sweep_logical_col)
+          row.names(se)[isTRUE(rowData(se)[[input$ag_sweep_logical_col]])]
+        }
+      )
+      se <- colAG(se, assayList = input$ag_assays, sweeps = sweeps)
+      SEs[[input$object]] <- se
+      SEinit(SEs[[input$object]])
+      # Refresh transform col selector
+      cd <- as.data.frame(colData(se))
+      num_cols <- colnames(cd)[purrr::map_lgl(cd, is.numeric)]
+      updateSelectInput(session, "transform_col", choices = num_cols, selected = num_cols[length(num_cols)])
+      added <- paste(paste0(input$ag_assays, "_mean"), collapse = ", ")
+      ag_status_msg(paste0("Done. Added: ", added))
+    }, error = function(e) {
+      ag_status_msg(paste("Error:", conditionMessage(e)))
+    })
+  })
+
+  output$ag_result_preview <- renderDT({
+    se <- SE()
+    req(se)
+    cd <- as.data.frame(colData(se))
+    mean_cols <- grep("_mean$", colnames(cd), value = TRUE)
+    if (length(mean_cols) == 0) return(datatable(data.frame(message = "No _mean columns yet.")))
+    datatable(cd[, c("Well", "Plate_ID", mean_cols), drop = FALSE],
+              options = list(pageLength = 8, scrollX = TRUE), rownames = FALSE)
+  })
+
+  # -- Transform Columns --
+
+  transform_status_msg <- reactiveVal("")
+  output$transform_status <- renderText(transform_status_msg())
+
+  output$transform_preview <- renderPlotly({
+    se <- SE()
+    req(se, input$transform_col, input$transform_fn)
+    col <- input$transform_col
+    cd <- as.data.frame(colData(se))
+    req(col %in% colnames(cd))
+    x_raw <- cd[[col]]
+    x_new <- tryCatch({
+      switch(input$transform_fn,
+        "*1000"  = x_raw * 1000,
+        "/1000"  = x_raw / 1000,
+        "*1e9"   = x_raw * 1e9,
+        "/1e9"   = x_raw / 1e9,
+        "log1p"  = log1p(x_raw),
+        "exp"    = exp(x_raw),
+        "abs"    = abs(x_raw),
+        "negate" = -x_raw,
+        "custom" = {
+          req(input$transform_custom_expr)
+          .x <- x_raw
+          eval(parse(text = input$transform_custom_expr))
+        }
+      )
+    }, error = function(e) NA_real_)
+    df_plot <- data.frame(
+      Before = x_raw, After = x_new,
+      Well = cd$Well, Plate_ID = cd$Plate_ID
+    )
+    plot_ly(df_plot, x = ~Before, y = ~After, type = "scatter", mode = "markers",
+            text = ~paste0(Well, " (", Plate_ID, ")"),
+            hoverinfo = "text+x+y", marker = list(size = 6, opacity = 0.7)) %>%
+      layout(xaxis = list(title = paste("Before:", col)),
+             yaxis = list(title = "After transform"))
+  })
+
+  observeEvent(input$transform_apply, {
+    se <- SE()
+    req(se, input$transform_col, input$transform_fn)
+    col <- input$transform_col
+    cd <- as.data.frame(colData(se))
+    req(col %in% colnames(cd))
+    tryCatch({
+      x_raw <- cd[[col]]
+      x_new <- switch(input$transform_fn,
+        "*1000"  = x_raw * 1000,
+        "/1000"  = x_raw / 1000,
+        "*1e9"   = x_raw * 1e9,
+        "/1e9"   = x_raw / 1e9,
+        "log1p"  = log1p(x_raw),
+        "exp"    = exp(x_raw),
+        "abs"    = abs(x_raw),
+        "negate" = -x_raw,
+        "custom" = {
+          req(input$transform_custom_expr)
+          .x <- x_raw
+          eval(parse(text = input$transform_custom_expr))
+        }
+      )
+      dest_col <- trimws(input$transform_new_col %||% "")
+      if (nchar(dest_col) == 0) dest_col <- col
+      colData(se)[[dest_col]] <- x_new
+      SEs[[input$object]] <- se
+      SEinit(SEs[[input$object]])
+      transform_status_msg(paste0("Saved to '", dest_col, "'."))
+    }, error = function(e) {
+      transform_status_msg(paste("Error:", conditionMessage(e)))
+    })
+  })
+
+  # -- Dimensionality Reduction --
+  dr_status_msg <- reactiveVal("")
+  output$dr_status <- renderText(dr_status_msg())
+
+  observeEvent(input$dr_run, {
+    se <- SE()
+    req(se)
+    an_sel <- if (length(input$dr_assays) > 0) input$dr_assays else c()
+    cn_sel <- if (length(input$dr_colnames) > 0) input$dr_colnames else c()
+    if (length(an_sel) == 0 && length(cn_sel) == 0) {
+      dr_status_msg("Select at least one assay or column."); return()
+    }
+    scaling <- if (input$dr_scaling == "none") "global" else input$dr_scaling
+    tryCatch({
+      dr_status_msg("Running… (may take a moment)")
+      se_new <- reducedDim.Cellwise(
+        se, assayList = an_sel, colNames = cn_sel,
+        scaling = scaling, center = isTRUE(input$dr_center),
+        k_clusters = as.integer(input$dr_k)
+      )
+      SEs[[input$object]] <- se_new
+      SEinit(SEs[[input$object]])
+      dr_status_msg("Done. PCA, tSNE, and UMAP added to reducedDims.")
+      cd <- as.data.frame(colData(se_new))
+      updateSelectInput(session, "dr_color_col", choices = colnames(cd))
+    }, error = function(e) {
+      dr_status_msg(paste("Error:", conditionMessage(e)))
+    })
+  })
+
+  output$dr_preview <- renderPlotly({
+    se <- SE()
+    req(se)
+    rds <- tryCatch(SingleCellExperiment::reducedDims(se), error = function(e) NULL)
+    req(!is.null(rds), "PCA" %in% names(rds))
+    pca <- as.data.frame(rds[["PCA"]])
+    req(ncol(pca) >= 2)
+    cd <- as.data.frame(colData(se))
+    df <- cbind(pca[, 1:2], cd[, intersect(colnames(cd), c("Well","Plate_ID", input$dr_color_col)), drop=FALSE])
+    colnames(df)[1:2] <- c("PC1", "PC2")
+    color_col <- input$dr_color_col
+    if (!is.null(color_col) && color_col %in% colnames(df)) {
+      plot_ly(df, x = ~PC1, y = ~PC2, color = ~get(color_col),
+              type = "scatter", mode = "markers",
+              text = if ("Well" %in% colnames(df)) ~Well else NULL,
+              marker = list(size = 7)) %>%
+        layout(title = "PCA (PC1 vs PC2)", coloraxis = list(colorbar = list(title = color_col)))
+    } else {
+      plot_ly(df, x = ~PC1, y = ~PC2, type = "scatter", mode = "markers",
+              marker = list(size = 7)) %>%
+        layout(title = "PCA (PC1 vs PC2)")
+    }
+  })
 
 
+  # ============================================================
+  # CUSTOMIZE OBJECT GROUPS — Filter Wells (tab_filter_wells)
+  # ============================================================
+
+  fw_filters <- reactiveVal(list())
+
+  output$fw_val_ui <- renderUI({
+    se <- SE()
+    req(se, input$fw_col)
+    cd <- as.data.frame(colData(se))
+    col <- input$fw_col
+    req(col %in% colnames(cd))
+    vals <- unique(as.character(cd[[col]]))
+    selectizeInput("fw_val", "Value(s):", choices = vals, multiple = TRUE, selected = vals[1])
+  })
+
+  observeEvent(input$fw_add, {
+    req(input$fw_col, input$fw_val)
+    filters <- fw_filters()
+    key <- paste0(input$fw_col, "_", length(filters) + 1L)
+    filters[[key]] <- list(col = input$fw_col, vals = input$fw_val, mode = input$fw_mode)
+    fw_filters(filters)
+  })
+
+  output$fw_active_filters_ui <- renderUI({
+    filters <- fw_filters()
+    if (length(filters) == 0) return(helpText("No active filters."))
+    tagList(lapply(names(filters), function(k) {
+      f <- filters[[k]]
+      verb <- if (f$mode == "keep") "IN" else "NOT IN"
+      wellPanel(style = "padding:6px; margin-bottom:4px;",
+        fluidRow(
+          column(10, tags$small(paste0(f$col, " ", verb, " {", paste(f$vals, collapse=", "), "}"))),
+          column(2,  actionButton(paste0("fw_rm_", k), "×", class = "btn-danger btn-xs"))
+        )
+      )
+    }))
+  })
+
+  observe({
+    filters <- fw_filters()
+    lapply(names(filters), function(k) {
+      btn_id <- paste0("fw_rm_", k)
+      observeEvent(input[[btn_id]], {
+        cur <- fw_filters()
+        cur[[k]] <- NULL
+        fw_filters(cur)
+      }, ignoreInit = TRUE, once = TRUE)
+    })
+  })
+
+  # Reactive: wells to keep after applying all filters
+  fw_wells_keep <- reactive({
+    se <- SE()
+    req(se)
+    cd <- as.data.frame(colData(se))
+    keep <- rep(TRUE, nrow(cd))
+    filters <- fw_filters()
+    for (f in filters) {
+      col_vals <- as.character(cd[[f$col]])
+      if (f$mode == "keep")
+        keep <- keep & (col_vals %in% f$vals)
+      else
+        keep <- keep & !(col_vals %in% f$vals)
+    }
+    keep
+  })
+
+  output$fw_preview_n <- renderText({
+    se <- SE()
+    req(se)
+    keep <- fw_wells_keep()
+    paste0("Will keep ", sum(keep), " / ", length(keep), " wells.")
+  })
+
+  output$fw_plate_preview <- renderPlotly({
+    se <- SE()
+    req(se)
+    cd <- as.data.frame(colData(se))
+    keep <- fw_wells_keep()
+    cd$Keep <- ifelse(keep, "Keep", "Remove")
+    plates <- unique(cd$Plate_ID)
+    cd <- cd[cd$Plate_ID == plates[1], , drop = FALSE]
+    .make_plate_grid(cd, "Keep")
+  })
+
+  output$fw_coldata_preview <- renderDT({
+    se <- SE()
+    req(se)
+    cd <- as.data.frame(colData(se))
+    keep <- fw_wells_keep()
+    cd$Keep <- ifelse(keep, "Keep", "Remove")
+    datatable(cd[, c("Well","Plate_ID","Keep"), drop=FALSE],
+              options = list(pageLength = 8, scrollX = TRUE), rownames = FALSE)
+  })
+
+  fw_status_msg <- reactiveVal("")
+  output$fw_status <- renderText(fw_status_msg())
+
+  observeEvent(input$fw_apply, {
+    se <- SE()
+    req(se)
+    keep <- fw_wells_keep()
+    if (sum(keep) == 0) { showNotification("No wells would remain!", type = "error"); return() }
+    tryCatch({
+      se_filtered <- se[, keep]
+      SEs[[input$object]] <- se_filtered
+      SEinit(SEs[[input$object]])
+      fw_filters(list())
+      showNotification(paste0("SE filtered to ", sum(keep), " wells."), type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error:", conditionMessage(e)), type = "error")
+    })
   })
 
 
@@ -1436,8 +2236,23 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       d <- imgbrowser_data()
       req(!is.null(d), d$n > 0)
 
-      plates <- if (length(d$subdirs) > 0 && nzchar(d$subdirs[1]))
+      all_plates <- if (length(d$subdirs) > 0 && nzchar(d$subdirs[1]))
         d$subdirs else "(all)"
+
+      # Filter to only plates that exist in the active SE
+      se <- tryCatch(SE(), error = function(e) NULL)
+      se_plates <- if (!is.null(se)) unique(colData(se)$Plate_ID) else character(0)
+
+      plates <- if (length(se_plates) > 0 && !identical(all_plates, "(all)")) {
+        # Keep subdirs whose name contains a SE Plate_ID as a substring
+        matched <- all_plates[vapply(all_plates, function(p)
+          any(grepl(p, se_plates, fixed = TRUE) | grepl(se_plates, p, fixed = TRUE)),
+          logical(1))]
+        if (length(matched) > 0) matched else all_plates   # fallback: show all
+      } else {
+        all_plates
+      }
+
       updateSelectInput(session, "plate_img_id",
                         choices = plates, selected = plates[1])
       updateSelectInput(session, "img_channel",
@@ -2308,33 +3123,603 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     output$cls_score_status  <- renderText({ req(cls_rv$scored);     paste0("Scored: ", nrow(cls_rv$scored), " rows. Score range: [", round(min(cls_rv$scored$channel_score, na.rm=TRUE),3), ", ", round(max(cls_rv$scored$channel_score, na.rm=TRUE),3), "].") })
     output$cls_merge_status  <- renderText({ req(input$cls_merge_se); "" })
 
+    # Resolve scale group input → actual column names
+    cls_scale_group_vars <- reactive({
+      switch(input$cls_scale_groups %||% "channel_plate",
+        channel_plate = c("Channel_Name", "Plate_ID"),
+        channel       = "Channel_Name",
+        channel_well  = c("Channel_Name", "Well")
+      )
+    })
+
+    # Reactive: scaled preview (no filtering — used for diagnostics only)
+    # Always uses scale(center=X, scale=TRUE) to match filterParticles logic.
+    cls_scaled_preview <- reactive({
+      req(cls_rv$particles)
+      df         <- cls_rv$particles
+      scale_mode <- input$cls_scale_mode %||% "uncentered"
+      gvars      <- cls_scale_group_vars()
+      center     <- scale_mode == "centered"
+      req("Mean" %in% names(df), "Channel_Name" %in% names(df))
+      df %>%
+        dplyr::group_by(dplyr::across(dplyr::any_of(gvars))) %>%
+        dplyr::mutate(
+          Mean_scaled = as.numeric(scale(.data$Mean, center = center, scale = TRUE)),
+          Area_scaled = as.numeric(scale(.data$Area, center = center, scale = TRUE))
+        ) %>%
+        dplyr::ungroup()
+    })
+
+    # ── Diagnostic plots ──────────────────────────────────────────────────────
+
+    # Filter method selector — pre-selected based on scale mode
+    output$cls_filter_method_ui <- renderUI({
+      scale_mode     <- input$cls_scale_mode %||% "uncentered"
+      default_method <- if (scale_mode == "centered") "zscore" else "median_ratio"
+      cur_method     <- input$cls_filter_method %||% default_method
+      mismatch <- (scale_mode == "centered"   && cur_method == "median_ratio") ||
+                  (scale_mode == "uncentered" && cur_method == "zscore")
+      tagList(
+        selectInput("cls_filter_method", "Method:",
+          choices  = c("Uncentered SD \u00f7 median/3 (recommended)" = "median_ratio",
+                       "Centered z-score (threshold = 0)"             = "zscore"),
+          selected = default_method),
+        if (mismatch)
+          tags$p(style="color:#e67e22; font-size:10px;",
+                 "\u26a0 Method and scaling mode mismatch — results may be suboptimal.")
+        else NULL
+      )
+    })
+
+    # Threshold slider — range adapts to the current filter method
+    output$cls_filter_threshold_ui <- renderUI({
+      method <- input$cls_filter_method %||% "median_ratio"
+      if (method == "zscore") {
+        tagList(
+          sliderInput("cls_filter_threshold", "Threshold (z-score):",
+            min=-3, max=3, value=0, step=0.05),
+          helpText(style="font-size:10px;",
+                   "Particles with z-score below this value are rejected. Default = 0 (below mean)."))
+      } else {
+        tagList(
+          sliderInput("cls_filter_threshold", "Threshold (SD units, NA = auto):",
+            min=0, max=3, value=0.33, step=0.01),
+          helpText(style="font-size:10px;",
+                   "Default auto = median(scaled)/3 per group. Set a fixed value to override."),
+          checkboxInput("cls_threshold_auto", "Use auto threshold (median/3 per group)", value=TRUE))
+      }
+    })
+
+    # Step 1 — ECDF: metric + raw/scaled toggle, with optional faceting
+    output$cls_diag_load_ecdf <- renderPlotly({
+      metric    <- input$cls_load_metric %||% "Mean"
+      view_mode <- input$cls_load_scale  %||% "raw"
+      if (view_mode == "scaled") {
+        req(cls_scaled_preview())
+        df       <- cls_scaled_preview()
+        col_name <- paste0(metric, "_scaled")
+        req(col_name %in% names(df))
+        x_label  <- paste0(metric, " (scaled \u00f7 SD)")
+      } else {
+        req(cls_rv$particles)
+        df       <- cls_rv$particles
+        col_name <- metric
+        req(col_name %in% names(df))
+        x_label  <- paste0(metric, " (raw)")
+      }
+      df <- df[!is.na(df[[col_name]]), , drop=FALSE]
+      df$`.x` <- df[[col_name]]
+      meta      <- input$cls_meta_col %||% ""
+      use_facet <- nzchar(meta) && meta %in% names(df)
+      df$`.facet` <- if (use_facet) df[[meta]] else "All"
+      thr <- if (view_mode == "scaled" && metric == "Mean") {
+        method <- input$cls_filter_method %||% "median_ratio"
+        auto   <- isTRUE(input$cls_threshold_auto)
+        thr_v  <- input$cls_filter_threshold %||% NA_real_
+        if (!is.na(thr_v) && !auto) thr_v else if (method == "zscore") 0 else NULL
+      } else NULL
+      p <- ggplot(df, aes(x=.x, color=Channel_Name)) +
+        stat_ecdf(geom="step", linewidth=0.8) +
+        labs(title=paste0("ECDF — ", metric, if (view_mode=="scaled") " (scaled)" else " (raw)"),
+             x=x_label, y="Cumulative fraction", color="Channel") +
+        theme_minimal(base_size=11)
+      if (!is.null(thr))
+        p <- p + geom_vline(xintercept=thr, linetype="dashed", color="red", linewidth=0.8)
+      if (use_facet) p <- p + facet_wrap(~.facet, labeller=label_both)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # Step 1 — Raw: Histogram of particles per well
+    output$cls_diag_load_hist <- renderPlotly({
+      req(cls_rv$particles)
+      df <- cls_rv$particles
+      req("Well" %in% names(df), "Channel_Name" %in% names(df))
+      cnt <- as.data.frame(table(Well=df$Well, Channel_Name=df$Channel_Name))
+      cnt <- cnt[cnt$Freq > 0, ]
+      p <- ggplot(cnt, aes(x=Freq, fill=Channel_Name)) +
+        geom_histogram(bins=30, alpha=0.7, position="identity") +
+        labs(title="Particles per well", x="# particles", y="# wells", fill="Channel") +
+        theme_minimal(base_size=11)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # Step 1 — Scaled preview ECDF with threshold line
+    output$cls_diag_scaled_preview <- renderPlotly({
+      req(cls_scaled_preview())
+      df  <- cls_scaled_preview()
+      req("Mean_scaled" %in% names(df), "Channel_Name" %in% names(df))
+      method   <- input$cls_filter_method %||% "median_ratio"
+      auto_thr <- isTRUE(input$cls_threshold_auto)
+      thr_v    <- input$cls_filter_threshold %||% NA_real_
+      # Show fixed threshold line; skip if auto (per-group) since no single line applies
+      thr <- if (!auto_thr && !is.na(thr_v)) thr_v else if (method == "zscore") 0 else NULL
+      meta      <- input$cls_meta_col %||% ""
+      use_facet <- nzchar(meta) && meta %in% names(df)
+      df$`.facet` <- if (use_facet) df[[meta]] else "All"
+      df <- df[!is.na(df$Mean_scaled), , drop=FALSE]
+      scale_lbl <- if ((input$cls_scale_mode %||% "uncentered") == "centered") "z-score" else "\u00f7 SD"
+      p <- ggplot(df, aes(x=Mean_scaled, color=Channel_Name)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        labs(title=paste0("Scaled Mean (", scale_lbl, ") — filter preview"),
+             x=paste0("Mean_scaled (", scale_lbl, ")"),
+             y="Cumulative fraction", color="Channel") +
+        theme_minimal(base_size=11)
+      if (!is.null(thr))
+        p <- p + geom_vline(xintercept=thr, linetype="dashed", color="red", linewidth=0.9) +
+             annotate("text", x=thr, y=0.08, hjust=-0.1, size=3, color="red",
+                      label=paste0("threshold = ", round(thr, 3)))
+      if (use_facet) p <- p + facet_wrap(~.facet, labeller=label_both)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # Step 2 — Threshold preview: scaled ECDF + live threshold line
+    output$cls_diag_filter_threshold <- renderPlotly({
+      req(cls_scaled_preview())
+      df     <- cls_scaled_preview()
+      req("Mean_scaled" %in% names(df), "Channel_Name" %in% names(df))
+      method   <- input$cls_filter_method %||% "median_ratio"
+      auto_thr <- isTRUE(input$cls_threshold_auto)
+      thr_v    <- input$cls_filter_threshold %||% NA_real_
+      # For auto (median/3 per group): show per-group median/3 lines in annotation
+      show_fixed_line <- !auto_thr || method == "zscore"
+      thr <- if (!is.na(thr_v) && !auto_thr) thr_v else if (method == "zscore") 0 else NA_real_
+      meta      <- input$cls_meta_col %||% ""
+      use_facet <- nzchar(meta) && meta %in% names(df)
+      df$`.facet` <- if (use_facet) df[[meta]] else "All"
+      df <- df[!is.na(df$Mean_scaled), , drop=FALSE]
+      p <- ggplot(df, aes(x=Mean_scaled, color=Channel_Name)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        labs(title="Threshold preview — scaled Mean",
+             x="Mean_scaled", y="Cumulative fraction", color="Channel") +
+        theme_minimal(base_size=11)
+      if (show_fixed_line && !is.na(thr)) {
+        pct_rej <- round(100 * mean(df$Mean_scaled < thr, na.rm=TRUE), 1)
+        p <- p +
+          geom_vline(xintercept=thr, linetype="dashed", color="red", linewidth=0.9) +
+          annotate("text", x=thr, y=0.06, hjust=-0.1, size=3, color="red",
+                   label=paste0("thr=", round(thr, 2), " (", pct_rej, "% rejected)"))
+      } else if (auto_thr && method == "median_ratio") {
+        # Show per-channel per-group median/3 as vertical segments
+        thr_df <- df %>%
+          dplyr::group_by(Channel_Name) %>%
+          dplyr::summarise(auto_t = median(Mean_scaled, na.rm=TRUE)/3, .groups="drop")
+        p <- p + geom_vline(data=thr_df, aes(xintercept=auto_t, color=Channel_Name),
+                            linetype="dashed", linewidth=0.8) +
+             geom_text(data=thr_df, aes(x=auto_t, label=paste0("median/3=", round(auto_t,2)),
+                                         color=Channel_Name), y=0.06, hjust=-0.1, size=2.8)
+      }
+      if (use_facet) p <- p + facet_wrap(~.facet, labeller=label_both)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # Step 2 — Filter: ECDF before vs after (per channel, with optional faceting)
+    output$cls_diag_filter_ecdf <- renderPlotly({
+      req(cls_rv$particles, cls_rv$filtered)
+      meta      <- input$cls_meta_col %||% ""
+      keep_cols <- intersect(c("Mean", "Channel_Name", if (nzchar(meta)) meta else NULL),
+                             names(cls_rv$particles))
+      b <- cls_rv$particles[!is.na(cls_rv$particles$Mean), keep_cols, drop=FALSE]
+      a <- cls_rv$filtered[!is.na(cls_rv$filtered$Mean),
+                           intersect(keep_cols, names(cls_rv$filtered)), drop=FALSE]
+      b$Stage <- "Before"; a$Stage <- "After"
+      df <- rbind(b, a)
+      use_facet <- nzchar(meta) && meta %in% names(df)
+      df$`.facet` <- if (use_facet) df[[meta]] else "All"
+      p <- ggplot(df, aes(x=Mean, color=Channel_Name, linetype=Stage)) +
+        stat_ecdf(geom="step", linewidth=0.8) +
+        labs(title="Raw Mean ECDF: before vs after filter",
+             x="Mean intensity", y="Cumulative fraction",
+             color="Channel", linetype="Stage") +
+        theme_minimal(base_size=11)
+      if (use_facet) p <- p + facet_wrap(~.facet, labeller=label_both)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.25))
+    })
+
+    # Step 2 — Filter: % particles retained per channel
+    output$cls_diag_filter_retain <- renderPlotly({
+      req(cls_rv$filtered)
+      df <- cls_rv$filtered
+      req("Channel_Name" %in% names(df), "Mean" %in% names(df))
+      ret <- tapply(!is.na(df$Mean), df$Channel_Name, mean, na.rm=TRUE)
+      ret_df <- data.frame(Channel=names(ret), pct=as.numeric(ret)*100, stringsAsFactors=FALSE)
+      p <- ggplot(ret_df, aes(x=Channel, y=pct, fill=Channel)) +
+        geom_col(alpha=0.85) +
+        geom_hline(yintercept=50, linetype="dashed", color="grey50") +
+        scale_y_continuous(limits=c(0,100)) +
+        labs(title="% particles retained after filter", x="Channel", y="% retained") +
+        theme_minimal(base_size=11) + theme(legend.position="none")
+      ggplotly(p)
+    })
+
+    # Step 3 — Aggregate: boxplot + jitter, metric + raw/scaled toggle, with faceting
+    output$cls_diag_agg_box <- renderPlotly({
+      req(cls_rv$aggregated)
+      df        <- .join_se_meta(cls_rv$aggregated, input$cls_seDataset)
+      view_mode <- input$cls_agg_view    %||% "raw"
+      metric    <- input$cls_agg_metric  %||% "Mean_agg"
+      # If "scaled" selected, map raw metric names to their _z equivalents
+      raw_to_z <- c(Mean_agg="Mean_z", Area_agg="Area_z", normArea="normArea_z")
+      col_name <- if (view_mode == "scaled" && metric %in% names(raw_to_z)) {
+        raw_to_z[[metric]]
+      } else {
+        metric
+      }
+      req(col_name %in% names(df), "Channel_Name" %in% names(df))
+      df$`.m`     <- df[[col_name]]
+      df$`.hover` <- paste0("Well: ",   df$Well     %||% "?",
+                            "<br>Plate: ", df$Plate_ID %||% "?",
+                            "<br>",  col_name, ": ", round(df[[col_name]], 4))
+      meta      <- input$cls_meta_col %||% ""
+      use_facet <- nzchar(meta) && meta %in% names(df)
+      df$`.facet` <- if (use_facet) df[[meta]] else "All"
+      add_hline   <- col_name == "normArea"
+      p <- ggplot(df, aes(x=Channel_Name, y=.m, fill=Channel_Name)) +
+        geom_boxplot(alpha=0.45, outlier.shape=NA, width=0.5) +
+        geom_jitter(aes(text=.hover), width=0.18, size=1.8, alpha=0.65) +
+        labs(title=paste(col_name, "per channel"), x="Channel", y=col_name) +
+        theme_minimal(base_size=11) + theme(legend.position="none")
+      if (add_hline)
+        p <- p + geom_hline(yintercept=0.1, linetype="dashed", color="grey40")
+      if (use_facet) p <- p + facet_wrap(~.facet, labeller=label_both)
+      ggplotly(p, tooltip="text")
+    })
+
+    # Step 4 — Score: ECDF of channel_score per channel
+    output$cls_diag_score_ecdf <- renderPlotly({
+      req(cls_rv$scored)
+      df <- cls_rv$scored
+      req("channel_score" %in% names(df), "Channel_Name" %in% names(df))
+      p <- ggplot(df, aes(x=channel_score, color=Channel_Name)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        labs(title="ECDF — channel_score", x="channel_score", y="Cumulative fraction",
+             color="Channel") +
+        theme_minimal(base_size=11)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # Step 4 — Score: scatter of Mean_z vs normArea_z colored by channel_score
+    output$cls_diag_score_scatter <- renderPlotly({
+      req(cls_rv$scored)
+      df <- cls_rv$scored
+      req("Mean_z" %in% names(df), "normArea_z" %in% names(df), "channel_score" %in% names(df))
+      p <- ggplot(df, aes(x=Mean_z, y=normArea_z, color=channel_score, shape=Channel_Name,
+                          text=paste0("Well: ", Well,
+                                      "<br>Channel: ", Channel_Name,
+                                      "<br>Score: ",   round(channel_score, 3),
+                                      "<br>Mean_z: ",  round(Mean_z, 3),
+                                      "<br>normArea_z: ", round(normArea_z, 3)))) +
+        geom_point(alpha=0.75, size=2.5) +
+        scale_color_viridis_c(option="plasma", name="Score") +
+        labs(title="Score components", x="Mean_z", y="normArea_z") +
+        theme_minimal(base_size=11)
+      ggplotly(p, tooltip="text")
+    })
+
+    # Step 4 — Score: ECDF of any selectable metric
+    output$cls_diag_metric_ecdf <- renderPlotly({
+      req(cls_rv$scored)
+      df     <- cls_rv$scored
+      metric <- input$cls_score_metric %||% "channel_score"
+      req(metric %in% names(df), "Channel_Name" %in% names(df))
+      df$`.m` <- df[[metric]]
+      df <- df[!is.na(df$.m), , drop=FALSE]
+      p <- ggplot(df, aes(x=.m, color=Channel_Name)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        labs(title=paste("ECDF —", metric), x=metric, y="Cumulative fraction", color="Channel") +
+        theme_minimal(base_size=11)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # ── Helpers for SE metadata joining ──────────────────────────────────────
+
+    # Join SE colData onto any data frame keyed by Well + Plate_ID
+    .join_se_meta <- function(df, se_name) {
+      if (is.null(se_name) || !nzchar(se_name) || is.null(SEs[[se_name]])) return(df)
+      cd <- tryCatch(as.data.frame(SummarizedExperiment::colData(SEs[[se_name]])),
+                     error = function(e) NULL)
+      if (is.null(cd)) return(df)
+      join_by  <- intersect(c("Well", "Plate_ID"), intersect(names(cd), names(df)))
+      new_cols <- setdiff(names(cd), names(df))
+      if (length(join_by) == 0 || length(new_cols) == 0) return(df)
+      dplyr::left_join(df, cd[, c(join_by, new_cols), drop=FALSE], by=join_by)
+    }
+
+    # Scored data with SE metadata columns appended
+    cls_scored_meta <- reactive({
+      .join_se_meta(req(cls_rv$scored), input$cls_seDataset)
+    })
+
+    # Classified data pivoted to long format (one row per Well × Channel), + SE metadata
+    cls_analysis_long <- reactive({
+      req(cls_rv$classified)
+      df <- .join_se_meta(cls_rv$classified, input$cls_seDataset)
+      score_cols <- setdiff(grep("_score$", names(df), value=TRUE), "max_score")
+      if (length(score_cols) == 0) return(df)
+      long <- tidyr::pivot_longer(df, cols=dplyr::all_of(score_cols),
+                                  names_to="Channel", values_to="Score")
+      long$Channel <- sub("_score$", "", long$Channel)
+      long
+    })
+
+    # Metadata column selector — reads from particles (SE cols joined at load)
+    # Plate_ID is always offered; default to it for sensible faceting.
+    output$cls_meta_col_ui <- renderUI({
+      df <- cls_rv$particles
+      if (is.null(df)) {
+        return(helpText(style="font-size:10px; color:#888;",
+                        "Load particles first. SE metadata is joined at load time."))
+      }
+      # Per-particle identifiers that should never be used as facet variables
+      never_facet <- c("Well", "Channel_Name", "Image_Type", "CorrSel",
+                       "Selection", "Image_ID", "Mean", "Area", "IntDen",
+                       "Number_of_Particles", "Selection_Area",
+                       "Mean_scaled", "Area_scaled", "Row", "Column", "QC")
+      char_cols <- names(df)[vapply(df, function(x) is.character(x) || is.factor(x), logical(1))]
+      char_cols <- setdiff(char_cols, never_facet)
+      # Plate_ID is per-well and always a useful facet option — ensure it's included
+      if ("Plate_ID" %in% names(df)) char_cols <- union("Plate_ID", char_cols)
+      if (length(char_cols) == 0) {
+        return(helpText(style="font-size:10px; color:#888;",
+                        "No grouping columns found. Select an SE before loading to join metadata."))
+      }
+      default_col <- if ("Plate_ID" %in% char_cols) "Plate_ID" else char_cols[1]
+      selectInput("cls_meta_col", "Facet / group by:",
+                  choices = c("(none)" = "", char_cols), selected = default_col)
+    })
+
+    # Step 5 — ECDF of per-channel scores (from wide classified → long)
+    output$cls_diag_score_channel <- renderPlotly({
+      req(cls_analysis_long())
+      df <- cls_analysis_long()
+      req("Score" %in% names(df), "Channel" %in% names(df))
+      p <- ggplot(df, aes(x=Score, color=Channel)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        labs(title="Channel score ECDF", x="channel_score",
+             y="Cumulative fraction", color="Channel") +
+        theme_minimal(base_size=11)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.2))
+    })
+
+    # Step 5 — ECDF faceted by selected SE metadata column
+    output$cls_diag_score_condition <- renderPlotly({
+      req(cls_analysis_long())
+      df      <- cls_analysis_long()
+      meta    <- input$cls_meta_col
+      req(!is.null(meta), nzchar(meta), meta %in% names(df))
+      req("Score" %in% names(df), "Channel" %in% names(df))
+      df$`.facet` <- df[[meta]]
+      p <- ggplot(df, aes(x=Score, color=Channel)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        facet_wrap(~.facet, labeller=label_both) +
+        labs(title=paste("Score ECDF — faceted by", meta),
+             x="channel_score", y="Cumulative fraction", color="Channel") +
+        theme_minimal(base_size=11)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.12))
+    })
+
+    # Step 5 — ECDF faceted by Classification, colored by SE metadata (or Channel)
+    output$cls_diag_score_cls <- renderPlotly({
+      req(cls_analysis_long())
+      df      <- cls_analysis_long()
+      req("Score" %in% names(df), "Channel" %in% names(df),
+          "Classification" %in% names(df))
+      meta <- input$cls_meta_col
+      use_meta <- !is.null(meta) && nzchar(meta) && meta %in% names(df)
+      df$`.color` <- if (use_meta) df[[meta]] else df$Channel
+      color_lbl   <- if (use_meta) meta else "Channel"
+      p <- ggplot(df, aes(x=Score, color=.color)) +
+        stat_ecdf(geom="step", linewidth=0.9) +
+        facet_wrap(~Classification, labeller=label_both) +
+        labs(title="Score ECDF — faceted by Classification",
+             x="channel_score", y="Cumulative fraction", color=color_lbl) +
+        theme_minimal(base_size=11)
+      ggplotly(p) %>% plotly::layout(legend=list(orientation="h", y=-0.12))
+    })
+
+    # Step 5 — Classify: bar chart of classification counts
+    output$cls_diag_classify_bar <- renderPlotly({
+      req(cls_rv$classified)
+      df <- as.data.frame(table(Classification=cls_rv$classified$Classification))
+      df <- df[order(df$Freq, decreasing=TRUE), ]
+      p <- ggplot(df, aes(x=reorder(Classification, -Freq), y=Freq, fill=Classification,
+                          text=paste0(Classification, ": ", Freq, " wells"))) +
+        geom_col(alpha=0.85) +
+        labs(title="Classification counts", x="Classification", y="# wells") +
+        theme_minimal(base_size=11) +
+        theme(legend.position="none", axis.text.x=element_text(angle=30, hjust=1))
+      ggplotly(p, tooltip="text")
+    })
+
+    # Step 5 — 2D correlation controls (dynamic: populated from classified + SE columns)
+    output$cls_corr_controls_2d <- renderUI({
+      req(cls_rv$classified)
+      df         <- cls_analysis_long()   # has SE meta if available
+      score_cols <- grep("_score$|_normArea$", names(cls_rv$classified), value=TRUE)
+      if (length(score_cols) < 1) return(helpText("Score columns not available."))
+      # Color options: classification + plate + any char SE columns in the joined df
+      base_color <- intersect(c("Classification", "Plate_ID"), names(df))
+      se_cols    <- if (!is.null(input$cls_meta_col) && nzchar(input$cls_meta_col) &&
+                        input$cls_meta_col %in% names(df))
+                     input$cls_meta_col else character(0)
+      color_opts <- unique(c(base_color, se_cols, score_cols))
+      sel_y <- if (length(score_cols) >= 2) score_cols[2] else score_cols[1]
+      fluidRow(
+        column(4, selectInput("cls_corr_x",     "X axis:", choices=score_cols,
+                              selected=score_cols[1])),
+        column(4, selectInput("cls_corr_y",     "Y axis:", choices=score_cols,
+                              selected=sel_y)),
+        column(4, selectInput("cls_corr_color", "Color:",  choices=color_opts,
+                              selected=color_opts[1]))
+      )
+    })
+
+    # Step 5 — 2D score scatter (uses SE-joined classified data)
+    output$cls_diag_corr_2d <- renderPlotly({
+      req(cls_rv$classified, input$cls_corr_x, input$cls_corr_y)
+      df      <- .join_se_meta(cls_rv$classified, input$cls_seDataset)
+      x_col   <- input$cls_corr_x
+      y_col   <- input$cls_corr_y
+      col_col <- input$cls_corr_color %||% "Classification"
+      req(x_col %in% names(df), y_col %in% names(df), col_col %in% names(df))
+      df$`.x`     <- df[[x_col]]
+      df$`.y`     <- df[[y_col]]
+      df$`.color` <- df[[col_col]]
+      df$`.hover` <- paste0("Well: ", df$Well,
+                            "<br>Plate: ", df$Plate_ID,
+                            "<br>Class: ", df$Classification)
+      p <- ggplot(df, aes(x=.x, y=.y, color=.color, text=.hover)) +
+        geom_point(alpha=0.75, size=2.5) +
+        labs(title=paste(x_col, "vs", y_col), x=x_col, y=y_col, color=col_col) +
+        theme_minimal(base_size=11)
+      ggplotly(p, tooltip="text") %>%
+        plotly::layout(legend=list(orientation="h", y=-0.25))
+    })
+
+    # 3D correlation controls (dynamic, uses SE-joined data for color options)
+    output$cls_corr_controls_3d <- renderUI({
+      req(cls_rv$classified)
+      df       <- .join_se_meta(cls_rv$classified, input$cls_seDataset)
+      num_cols <- grep("_score$|_normArea$|^max_score$", names(cls_rv$classified), value=TRUE)
+      if (length(num_cols) < 1) return(helpText("Score columns not available."))
+      se_cols    <- if (!is.null(input$cls_meta_col) && nzchar(input$cls_meta_col) &&
+                        input$cls_meta_col %in% names(df))
+                     input$cls_meta_col else character(0)
+      color_opts <- unique(c(intersect(c("Classification", "Plate_ID"), names(df)),
+                             se_cols, num_cols))
+      sel_y <- if (length(num_cols) >= 2) num_cols[2] else num_cols[1]
+      sel_z <- if (length(num_cols) >= 3) num_cols[3] else num_cols[1]
+      tagList(
+        selectInput("cls_3d_x",     "X axis:", choices=num_cols, selected=num_cols[1]),
+        selectInput("cls_3d_y",     "Y axis:", choices=num_cols, selected=sel_y),
+        selectInput("cls_3d_z",     "Z axis:", choices=num_cols, selected=sel_z),
+        selectInput("cls_3d_color", "Color:",  choices=color_opts, selected=color_opts[1]),
+        helpText(style="font-size:10px;",
+                 "Tip: drag to rotate, scroll to zoom, double-click legend to isolate a group.")
+      )
+    })
+
+    # 3D score scatter (plotly native, SE-joined)
+    output$cls_diag_corr_3d <- renderPlotly({
+      req(cls_rv$classified, input$cls_3d_x, input$cls_3d_y, input$cls_3d_z)
+      df      <- .join_se_meta(cls_rv$classified, input$cls_seDataset)
+      x_col   <- input$cls_3d_x
+      y_col   <- input$cls_3d_y
+      z_col   <- input$cls_3d_z
+      col_col <- input$cls_3d_color %||% "Classification"
+      req(all(c(x_col, y_col, z_col) %in% names(df)), col_col %in% names(df))
+      color_vec <- df[[col_col]]
+      is_numeric_color <- is.numeric(color_vec)
+      hover_txt <- paste0("Well: ",   df$Well,
+                          "<br>Plate: ", df$Plate_ID,
+                          "<br>Class: ", df$Classification,
+                          "<br>", x_col, ": ", round(df[[x_col]], 3),
+                          "<br>", y_col, ": ", round(df[[y_col]], 3),
+                          "<br>", z_col, ": ", round(df[[z_col]], 3))
+      if (is_numeric_color) {
+        plotly::plot_ly(df,
+          x=~df[[x_col]], y=~df[[y_col]], z=~df[[z_col]],
+          color=~color_vec,
+          colors=viridis::viridis(20),
+          type="scatter3d", mode="markers",
+          marker=list(size=4, opacity=0.8),
+          text=hover_txt, hoverinfo="text") %>%
+          plotly::layout(
+            scene=list(
+              xaxis=list(title=x_col),
+              yaxis=list(title=y_col),
+              zaxis=list(title=z_col)
+            ),
+            coloraxis=list(colorbar=list(title=col_col))
+          )
+      } else {
+        plotly::plot_ly(df,
+          x=~df[[x_col]], y=~df[[y_col]], z=~df[[z_col]],
+          color=~as.factor(color_vec),
+          type="scatter3d", mode="markers",
+          marker=list(size=4, opacity=0.8),
+          text=hover_txt, hoverinfo="text") %>%
+          plotly::layout(
+            scene=list(
+              xaxis=list(title=x_col),
+              yaxis=list(title=y_col),
+              zaxis=list(title=z_col)
+            ),
+            legend=list(title=list(text=col_col))
+          )
+      }
+    })
+
     observeEvent(input$cls_load, {
-      req(input$cls_seDataset, input$img_fileDB)
       tryCatch({
-        withProgress(message="Loading particles", value=0.3, {
-          l_files <- input$img_fileDB$datapath
-          ttype   <- input$cls_tabletype %||% "pa"
-          df <- prepareImgDF(l_files, analysis=ttype,
-                             aggregate=isTRUE(input$cls_aggregate),
-                             cleanNames=FALSE)
-          df <- subset(df, Image_Type == "fluor")
-          cls_rv$particles  <- df
-          cls_rv$filtered   <- NULL
-          cls_rv$aggregated <- NULL
-          cls_rv$scored     <- NULL
-          cls_rv$classified <- NULL
-          incProgress(1)
-        })
-      }, error=function(e) showModal(modalDialog(title="Load error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
+        # Always reset downstream steps
+        cls_rv$filtered   <- NULL
+        cls_rv$aggregated <- NULL
+        cls_rv$scored     <- NULL
+        cls_rv$classified <- NULL
+
+        if (is.null(cls_rv$particles)) {
+          req(input$img_fileDB)
+          withProgress(message = "Loading particles", value = 0.3, {
+            l_files <- input$img_fileDB$datapath
+            df <- prepareImgDF(l_files, analysis = "pa",
+                               aggregate = FALSE, cleanNames = TRUE)
+            if ("Image_Type" %in% names(df))
+              df <- subset(df, Image_Type == "fluor")
+            cls_rv$particles <- df
+            incProgress(1)
+          })
+        }
+
+        # Join SE metadata immediately so all downstream plots can facet by it
+        se_name <- input$cls_seDataset
+        df      <- cls_rv$particles
+        if (!is.null(se_name) && nzchar(se_name) && !is.null(SEs[[se_name]])) {
+          df <- .join_se_meta(df, se_name)
+        }
+        cls_rv$particles <- df
+
+        showNotification(
+          paste0("Ready: ", nrow(cls_rv$particles),
+                 " particles. Downstream steps reset."),
+          type = "message", duration = 4)
+
+      }, error = function(e) showModal(modalDialog(title = "Load error",
+          tags$pre(conditionMessage(e)), easyClose = TRUE)))
     })
 
     observeEvent(input$cls_filter, {
       req(cls_rv$particles)
       tryCatch({
-        thr <- if (is.na(input$cls_filter_threshold)) NULL else input$cls_filter_threshold
+        method   <- input$cls_filter_method %||% "median_ratio"
+        auto_thr <- isTRUE(input$cls_threshold_auto)
+        thr_v    <- input$cls_filter_threshold %||% NA_real_
+        # NULL = use method default (auto median/3 for median_ratio, 0 for zscore)
+        thr   <- if (!auto_thr && !is.na(thr_v)) thr_v else NULL
+        gvars <- cls_scale_group_vars()
         cls_rv$filtered   <- filterParticles(cls_rv$particles,
-                                              method    = input$cls_filter_method,
-                                              threshold = thr)
+                                              method     = method,
+                                              threshold  = thr,
+                                              group_vars = gvars)
         cls_rv$aggregated <- NULL
         cls_rv$scored     <- NULL
         cls_rv$classified <- NULL
@@ -2345,7 +3730,17 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       src <- cls_rv$filtered %||% cls_rv$particles
       req(src)
       tryCatch({
-        cls_rv$aggregated <- aggregateParticles(src)
+        agg_fun      <- input$cls_agg_fun %||% "mean"
+        scale_choice <- input$cls_agg_scale_within %||% "channel"
+        scale_within <- switch(scale_choice,
+          channel       = "Channel_Name",
+          channel_plate = c("Channel_Name", "Plate_ID"),
+          none          = NULL)
+        scale_center <- isTRUE(input$cls_agg_scale_center)
+        cls_rv$aggregated <- aggregateParticles(src,
+                                                agg_fun      = agg_fun,
+                                                scale_within = scale_within,
+                                                scale_center = scale_center)
         cls_rv$scored     <- NULL
         cls_rv$classified <- NULL
       }, error=function(e) showModal(modalDialog(title="Aggregate error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
@@ -2354,10 +3749,11 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     observeEvent(input$cls_score, {
       req(cls_rv$aggregated)
       tryCatch({
-        wts <- c(Mean    = input$cls_w_mean     %||% 1,
-                 Area    = input$cls_w_area     %||% 1,
-                 normArea= input$cls_w_normarea %||% 1)
-        cls_rv$scored     <- scoreParticles(cls_rv$aggregated, weights=wts)
+        wts    <- c(Mean     = input$cls_w_mean     %||% 1,
+                    Area     = input$cls_w_area     %||% 1,
+                    normArea = input$cls_w_normarea %||% 1)
+        center <- isTRUE(input$cls_score_center)
+        cls_rv$scored     <- scoreParticles(cls_rv$aggregated, weights=wts, center=center)
         cls_rv$classified <- NULL
       }, error=function(e) showModal(modalDialog(title="Score error", tags$pre(conditionMessage(e)), easyClose=TRUE)))
     })

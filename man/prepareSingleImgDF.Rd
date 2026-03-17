@@ -2,41 +2,82 @@
 % Please edit documentation in R/imagingTools.R
 \name{prepareSingleImgDF}
 \alias{prepareSingleImgDF}
-\title{Prepare Imaging-results tables from Cluster-Analysis SQLite databases}
+\title{Prepare imaging-results table from a single Cluster Analysis SQLite database}
 \usage{
 prepareSingleImgDF(
   pathDB,
   analysis = c("pa", "coloc"),
-  id_cols = c("Date", "Plate_ID", "Well", "Image_ID", "Channel_Name", "Selection",
-    "Selection_Area"),
-  num_cols = c("Area", "Mean", "IntDen"),
+  plate_col = "Plate_ID",
+  well_col = "Well",
+  channel_col = "Channel_Name",
+  selection_col = "Selection",
+  extra_id_cols = character(0),
+  meas_cols = c("Area", "Mean", "IntDen", "Number_of_Particles"),
+  fluor_rank = NULL,
+  roi_selections = NULL,
+  apply_corr_sel = TRUE,
+  corr_sel_filter = NULL,
   scale_num = FALSE,
   scale_cols = NULL,
   scale_fun = function(x) as.numeric(scale(x, TRUE, TRUE)),
-  aggregate = TRUE,
+  aggregate = FALSE,
   cleanNames = TRUE
 )
 }
 \arguments{
-\item{pathDB}{Path to SQlite-DB}
+\item{pathDB}{Path to a single SQLite \code{.db} file.}
 
-\item{analysis}{pa or coloc, which table to extract}
+\item{analysis}{\code{"pa"} (Particle Analysis, default) or \code{"coloc"}.}
 
-\item{id_cols}{Columns which metadata about the image and measurement}
+\item{plate_col}{Name of the column containing the plate identifier.
+Default: \code{"Plate_ID"}.}
 
-\item{num_cols}{Numeric Columns about the particle metrices}
+\item{well_col}{Name of the column containing the well identifier.
+Default: \code{"Well"}.}
 
-\item{scale_num}{Boolean parameter to include scaled numeric metrices (Default FALSE)}
+\item{channel_col}{Name of the column containing the channel name.
+Default: \code{"Channel_Name"}.}
 
-\item{scale_fun}{Scale function passed through the numeric columns}
+\item{selection_col}{Name of the column containing the selection/ROI name.
+Default: \code{"Selection"}.}
 
-\item{aggregate}{Boolean; if TRUE (default) rows are averaged across sites before cleaning}
+\item{extra_id_cols}{Additional columns from the analysis table to retain
+(e.g. \code{c("Species", "Date")}). Default: none.}
 
-\item{cleanNames}{Boolean; if TRUE (default) runs df_cleaned() and drops duplicated column suffixes}
+\item{meas_cols}{Measurement columns to import from the measurement table.
+Default: \code{c("Area","Mean","IntDen","Number_of_Particles")}.
+\code{"Number_of_Particles"} and \code{"Selection_Area"} are always kept
+from the analysis table regardless.}
+
+\item{fluor_rank}{Integer. Image_ID rank within a well that corresponds to
+the fluorescence image (rank 1 = lowest Image_ID, typically fluorescence).
+Set to \code{NULL} to skip rank computation and keep all images.
+Default: \code{NULL}.}
+
+\item{roi_selections}{Character vector of \code{Selection} values to keep.
+\code{NULL} retains all rows. Default: \code{NULL}.}
+
+\item{scale_num}{Logical; add scaled versions of numeric columns. Default: \code{FALSE}.}
+
+\item{scale_cols}{Columns to scale (defaults to \code{meas_cols} if \code{NULL}).}
+
+\item{scale_fun}{Scaling function. Default: z-score (\code{scale(x,TRUE,TRUE)}).}
+
+\item{aggregate}{Logical; if \code{TRUE}, average rows within
+Channel × Well × Plate × Selection groups. Default: \code{FALSE}.}
+
+\item{cleanNames}{Logical; normalise well labels (strip site suffix, pad
+column digits). Default: \code{TRUE}.}
 }
 \value{
-A dataframe
+A data.frame with one row per particle (or per group if
+  \code{aggregate = TRUE}).
 }
 \description{
-Prepare Imaging-results tables from Cluster-Analysis SQLite databases
+Joins the analysis table with its measurement table, normalises well labels,
+computes per-well Image_ID rank (rank 1 = lowest Image_ID per well, typically
+the fluorescence image), and optionally filters to specified selection values.
+}
+\seealso{
+\code{\link{previewImgDB}}, \code{\link{prepareImgDF}}
 }
