@@ -2899,12 +2899,19 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       )
     })
 
-    ann_advance <- function() {
+    ann_advance <- function(remove_current = TRUE) {
       n <- length(ann_rv$shuffled)
       if (n == 0) return()
-      nxt <- ann_rv$idx %% n + 1L
-      if (nxt == 1L) ann_rv$shuffled <- sample(ann_rv$shuffled)
-      ann_rv$idx <- nxt
+      if (remove_current) {
+        # Labeled: remove current well from queue (it's done)
+        idx <- ann_rv$idx
+        ann_rv$shuffled <- ann_rv$shuffled[-idx]
+        n2 <- length(ann_rv$shuffled)
+        ann_rv$idx <- if (n2 == 0L) 0L else if (idx > n2) 1L else idx
+      } else {
+        # Skipped: keep well in queue, move to next
+        ann_rv$idx <- ann_rv$idx %% n + 1L
+      }
     }
 
     # Helper: try to infer plate ID from the file path using SE plate IDs
@@ -2941,9 +2948,13 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
 
     output$ann_image_ui <- renderUI({
-      if (length(ann_rv$shuffled) == 0)
-        return(tags$p(style = "color: #aaa; padding: 20px;",
-                      "Select an image folder in the Image Plate Viewer tab first."))
+      if (length(ann_rv$shuffled) == 0) {
+        msg <- if (nrow(ann_img_meta_df()) > 0)
+          "All wells in the queue have been annotated."
+        else
+          "Select an image folder in the Image Plate Viewer tab first."
+        return(tags$p(style = "color: #aaa; padding: 20px;", msg))
+      }
       key <- ann_current()
       if (is.na(key)) return(tags$p("No well available."))
       kp   <- .ann_split_key(key)
@@ -2951,7 +2962,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
       pair <- ann_pair()
 
-      make_panel <- function(fp, label, img_id) {
+      b_bf  <- input$ann_bf_b  %||% 1
+      c_bf  <- input$ann_bf_c  %||% 1
+      b_flu <- input$ann_flu_b %||% 1
+      c_flu <- input$ann_flu_c %||% 1
+
+      make_panel <- function(fp, label, img_id, b, c) {
         ok  <- !is.null(fp) && !is.na(fp) && nzchar(fp)
         url <- if (!ok) NA_character_
                 else if (img_client_mode()) fp
@@ -2959,7 +2975,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         if (ok && !is.na(url)) {
           div(style = "text-align: center;",
               tags$img(src = url, id = img_id,
-                       style = "max-width: 100%; max-height: 52vh; border-radius: 6px;"),
+                       style = sprintf("max-width:100%%; max-height:52vh; border-radius:6px; filter:brightness(%s) contrast(%s);", b, c)),
               tags$p(style = "font-size: 12px; color: #666; margin: 4px 0 0;", label))
         } else {
           div(style = paste0("display:flex; align-items:center; justify-content:center;",
@@ -2973,8 +2989,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         tags$p(style = "font-size:13px; font-family:monospace; color:#555; margin:4px 8px;",
                paste0(well, pid_lbl)),
         div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px;",
-            make_panel(pair$bf,     "BF",     "ann_bf_img"),
-            make_panel(pair$fluoro, "Fluoro", "ann_flu_img"))
+            make_panel(pair$bf,     "BF",     "ann_bf_img", b_bf,  c_bf),
+            make_panel(pair$fluoro, "Fluoro", "ann_flu_img", b_flu, c_flu))
       )
     })
 
@@ -3027,7 +3043,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     })
 
     observeEvent(input$ann_clear_classes, { ann_rv$classes <- character(0) })
-    observeEvent(input$ann_skip,          { ann_advance() })
+    observeEvent(input$ann_skip,          { ann_advance(remove_current = FALSE) })
 
     observeEvent(input$ann_undo, {
       if (nrow(ann_rv$results) == 0) return()
