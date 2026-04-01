@@ -584,10 +584,13 @@ cross-channel comparison.</p>
 </table>
 <p><strong>How it works:</strong> 1. Each metric (<code>Mean_agg</code>,
 <code>Area_agg</code>, <code>normArea</code>) is scaled <strong>without
-centering</strong> (divided by its SD across all wells). This preserves
-zeros and keeps scores non-negative. 2. <code>NA</code> values are
-replaced with <code>0</code> before combining. 3. The weighted sum is
-computed:
+centering</strong> (divided by its SD) <strong>within each channel
+group</strong> (default: per <code>Channel_Name × Plate_ID</code>).
+Scaling per-channel means a dim channel and a bright channel each have
+scores relative to their own well populations, making cross-channel
+comparisons inside <code>classifyWells()</code> fair. 2. <code>NA</code>
+values (wells where all particles were filtered) are replaced with
+<code>0</code> before combining. 3. The weighted sum is computed:
 <code>channel_score = w_Mean * Mean_z + w_Area * Area_z + w_normArea * normArea_z</code>.</p>
 <p><strong>Output columns added:</strong> <code>Mean_z</code>,
 <code>Area_z</code>, <code>normArea_z</code>,

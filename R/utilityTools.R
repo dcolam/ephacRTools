@@ -2,6 +2,37 @@
 NULL
 #' @import SingleCellExperiment
 NULL
+
+#' Subset a SummarizedExperiment by a colData expression
+#'
+#' A convenience wrapper around \code{se[, keep]} that works like
+#' \code{base::subset()} — you write a plain expression using colData column
+#' names directly, and \code{NA}s in the result are automatically treated as
+#' \code{FALSE} so they never cause a subscript error.
+#'
+#' @param se A \code{SummarizedExperiment} (or \code{SingleCellExperiment}).
+#' @param subset A logical expression evaluated in the context of
+#'   \code{colData(se)}.  Column names can be used directly without the
+#'   \code{se$} prefix.
+#'
+#' @return A subsetted \code{SummarizedExperiment} containing only the columns
+#'   (wells) for which \code{subset} is \code{TRUE}.
+#'
+#' @examples
+#' \dontrun{
+#' se <- subsetSE(se, Condition != "Empty" & Induction != "empty")
+#' se <- subsetSE(se, Plate_ID %in% c("P1", "P2") & QC == "Pass")
+#' }
+#'
+#' @importFrom SummarizedExperiment colData
+#' @export
+subsetSE <- function(se, subset) {
+  cd   <- as.data.frame(SummarizedExperiment::colData(se))
+  expr <- substitute(subset)
+  keep <- eval(expr, cd, parent.frame())
+  keep[is.na(keep)] <- FALSE
+  se[, keep]
+}
 #' Add column-wise aggregation such as mean of any given assay and store it into colData
 #' @param assayName list of assay names to check
 #' @param assayList list of assays in the SE

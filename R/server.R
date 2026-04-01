@@ -264,6 +264,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           img_parent(folder)
         }
 
+      # Warn user before closing browser tab once data is loaded
+      session$sendCustomMessage("setWarnBeforeClose", TRUE)
+
       x <- mergeFlists(x)
       return(x)
     }
@@ -2102,11 +2105,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
   output$downloadRDS <- downloadHandler(
     filename = function() {
-      #paste(input$download_table, ' Edited Table.csv', sep='')
       paste(input$rdsObject, ".rds", sep="")
     },
     content = function(file) {
       saveRDS(SEs[[input$rdsObject]], file)
+      # Data has been exported — safe to close without warning
+      session$sendCustomMessage("setWarnBeforeClose", FALSE)
     }
   )
 

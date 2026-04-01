@@ -912,3 +912,107 @@ plotThumbnails <- function(se,
   grid::grid.draw(p)
   invisible(p)
 }
+
+
+# ---------------------------------------------------------------------------
+# mergeAnnotationCSV — merge a manual-annotation CSV into SE colData
+# ---------------------------------------------------------------------------
+
+#' Merge a manual annotation CSV into a SummarizedExperiment
+#'
+#' Reads a CSV produced by the \code{tinySEV} manual annotation module (or any
+#' CSV with columns \code{well}, \code{plate_id}, \code{img_class},
+#' \code{label}, \code{person}, \code{timestamp}) and stores the result as a
+#' nested \code{\link[S4Vectors]{DataFrame}} in
+#' \code{colData(se)[["manual_ann_<person>"]]}, matching the exact behaviour of
+#' the "Save to SE colData" button in the Shiny app.
+#'
+#' Deduplication keeps the \strong{most recent} annotation per
+#' (well, plate_id, img_class) combination, so calling the function again with
+#' an updated CSV safely overwrites previous calls.
+#'
+#' @param se A \code{SummarizedExperiment} (or \code{SingleCellExperiment})
+#'   object whose \code{colData} contains at least \code{Well} and
+#'   \code{Plate_ID} columns.
+#' @param csv Path to the annotation CSV file, \strong{or} a data frame already
+#'   read into R.
+#' @param person Annotator name used to build the colData column name
+#'   (\code{manual_ann_<person>}).  If \code{NULL} (default) the value is taken
+#'   from the \code{person} column of the CSV; if the CSV contains multiple
+#'   annotators the most frequent name is used.  Pass an explicit string to
+#'   override.
+#'
+#' @return The \code{se} object with a new (or updated) nested
+#'   \code{DataFrame} column in \code{colData} named
+#'   \code{manual_ann_<person>}.  The nested DataFrame contains all CSV columns
+#'   except \code{well} and \code{plate_id} (which were used as join keys).
+#'
+#' @examples
+#' \dontrun{
+#' se <- mergeAnnotationCSV(se, "annotations_DC.csv")
+#' # Access results:
+#' colData(se)[["manual_ann_DC"]]
+#' as.data.frame(colData(se)[["manual_ann_DC"]])$label
+#' }
+#'
+#' @importFrom dplyr left_join
+#' @importFrom S4Vectors DataFrame
+#' @importFrom SummarizedExperiment colData
+#' @export
+mergeAnnotationCSV <- function(se, csv, person = NULL) {
+
+  # ── 1. Load CSV ────────────────────────────────────────────────────────────
+  if (is.character(csv)) {
+    df <- read.csv(csv, stringsAsFactors = FALSE)
+  } else {
+    df <- as.data.frame(csv)
+  }
+
+  required <- c("well", "plate_id")
+  missing  <- setdiff(required, tolower(colnames(df)))
+  if (length(missing) > 0)
+    stop("CSV is missing required columns: ", paste(missing, collapse = ", "))
+
+  # Normalise column names to lower-case for robustness
+  colnames(df) <- tolower(colnames(df))
+
+  # ── 2. Deduplicate — keep most recent per (well, plate_id, img_class) ──────
+  if ("timestamp" %in% colnames(df)) {
+    df <- df[order(df$timestamp, decreasing = TRUE), , drop = FALSE]
+  }
+  key_cols <- intersect(c("well", "plate_id", "img_class"), colnames(df))
+  key      <- do.call(paste, c(df[key_cols], sep = "||"))
+  df       <- df[!duplicated(key), , drop = FALSE]
+
+  # ── 3. Resolve annotator name ──────────────────────────────────────────────
+  if (is.null(person)) {
+    if ("person" %in% colnames(df) && any(nzchar(df$person))) {
+      tbl    <- sort(table(df$person[nzchar(df$person)]), decreasing = TRUE)
+      person <- names(tbl)[1]
+    } else {
+      person <- ""
+    }
+  }
+  col_nm <- if (nzchar(trimws(person)))
+    paste0("manual_ann_", make.names(trimws(person)))
+  else
+    "manual_ann"
+
+  # ── 4. Join to SE colData on Well + Plate_ID ──────────────────────────────
+  names(df)[names(df) == "well"]     <- "Well"
+  names(df)[names(df) == "plate_id"] <- "Plate_ID"
+
+  cd     <- as.data.frame(SummarizedExperiment::colData(se))
+  joined <- dplyr::left_join(cd[, c("Well", "Plate_ID")], df,
+                             by = c("Well", "Plate_ID"))
+
+  # ── 5. Store as nested DataFrame ──────────────────────────────────────────
+  payload_cols <- setdiff(colnames(joined), c("Well", "Plate_ID"))
+  SummarizedExperiment::colData(se)[[col_nm]] <-
+    S4Vectors::DataFrame(joined[, payload_cols, drop = FALSE])
+
+  message("Annotations saved to colData column '", col_nm,
+          "' (", nrow(df), " annotated wells matched).")
+  se
+}
+

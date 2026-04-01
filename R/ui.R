@@ -126,6 +126,20 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                          ),
                          dashboardBody(
                            useShinyjs(),
+                           tags$head(tags$script(HTML("
+                             var _tinyWarnClose = false;
+
+                             window.addEventListener('beforeunload', function(e) {
+                               if (_tinyWarnClose) {
+                                 e.preventDefault();
+                                 e.returnValue = '';
+                               }
+                             });
+
+                             Shiny.addCustomMessageHandler('setWarnBeforeClose', function(val) {
+                               _tinyWarnClose = val;
+                             });
+                           "))),
 
                            # absolutePanel(id = "plate_viewer", class = "panel panel-default",
                            #               fixed = TRUE,
