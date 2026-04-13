@@ -49,153 +49,155 @@ checkAssay <- function(assayList, assayList.se){
   return(assayList)
 }
 
-#' Add column-wise aggregation such as mean of any given assay and store it into colData
-#' @param se SummarizedExperiment Object with the Ephys-Data
-#' @param assayNames list of assays to aggregate column-wise
-#' @param fun to be changed, function used to aggregate, for now only mean available
-#' @param sweeps which sweeps to take, tbd, default is all
-#' @return se with updated colData
+#' Add column-wise aggregation of assays and store results into colData
+#'
+#' Applies a summary function column-wise (i.e. across sweeps) for each
+#' requested assay and stores the result as a new \code{colData} column named
+#' \code{<Assay>_<fun>[suffix]}, e.g. \code{Minima_mean} or
+#' \code{Minima_mean.exp1}.
+#'
+#' @param se A \code{SummarizedExperiment} (or \code{SingleCellExperiment}).
+#' @param assayList Character vector of assay names to aggregate.
+#' @param fun Function to apply column-wise.  Must accept a numeric vector and
+#'   return a single value (e.g. \code{mean}, \code{median}, \code{sd},
+#'   \code{max}).  Default \code{mean}.  The function name is inferred
+#'   automatically and used in the column name.
+#' @param sweeps Row names (sweeps) to include before aggregating.  Default all
+#'   rows.
+#' @param suffix Optional string appended verbatim after the function name in
+#'   the column name, e.g. \code{".exp1"} produces \code{Minima_mean.exp1}.
+#'   Default \code{""} (no suffix).
+#' @param ... Additional arguments passed to \code{fun} (e.g. \code{trim = 0.1}
+#'   for \code{mean}).  Note: \code{NA} and non-finite values are already
+#'   removed before \code{fun} is called, so \code{na.rm = TRUE} is redundant
+#'   but harmless.
+#' @return The input \code{se} with new \code{colData} columns added.
+#' @examples
+#' \dontrun{
+#' se <- colAG(se, c("Minima", "Capacitance"))                        # -> Minima_mean, Capacitance_mean
+#' se <- colAG(se, "Minima", suffix = ".exp1")                        # -> Minima_mean.exp1
+#' se <- colAG(se, "Minima", fun = sd,     suffix = ".exp1")          # -> Minima_sd.exp1
+#' se <- colAG(se, "Minima", fun = median, suffix = ".baseline")      # -> Minima_median.baseline
+#' se <- colAG(se, "Minima", fun = mean,   trim = 0.1)                # -> Minima_mean (trimmed)
+#' }
 #' @export
-colAG <- function(se, assayList, fun=mean, sweeps=row.names(se)){
-  ## check whether assayList contains assays
+colAG <- function(se, assayList, fun = mean, sweeps = row.names(se), suffix = "", ...) {
+  fun_name  <- as.character(substitute(fun))
   assayList <- assayList[assayList %in% assayNames(se)]
 
   for (assayName in assayList) {
-    colName <- paste(assayName, "mean", sep = "_")
-    subse <- se[sweeps,]
-    se[[colName]] <- colMeans(assay(subse, assayName), na.rm = TRUE)
+    colName <- paste0(assayName, "_", fun_name, suffix)
+    subse   <- se[sweeps, ]
+    mat     <- assay(subse, assayName)
+    se[[colName]] <- apply(mat, 2, function(x) fun(x[is.finite(x)], ...))
   }
   return(se)
 }
-#' Perform cell-wise dimensionality reduction based on assays and colData.
-#' Results are stored in reducedDims
-#' @param se SummarizedExperiment Object with the Ephys-Data
-#' @param assayNames list of assays to include
-#' @param colNames list of columns from colData
-#' @param scaling option of which scaling to apply, within assay or all features together (scaling = "global"), default within assay
-#' @param byRow scaling by row instead of by column (after transforming), default FALSE
-#' @param method list of types of reductionality methods, default all (pca, tsne, umap)
-#' @param k_clusters number of clusters
-#' @return se with updated results
+#' Perform cell-wise dimensionality reduction based on assays and colData
+#'
+#' Computes PCA, t-SNE, and UMAP on a feature matrix built from assay matrices
+#' and/or flat \code{colData} columns, stores the results in
+#' \code{reducedDims(se)}, and adds k-means cluster assignments as new
+#' \code{colData} columns.
+#'
+#' @param se A \code{SummarizedExperiment} (or \code{SingleCellExperiment}).
+#' @param assayList Character vector of assay names to include as features.
+#'   Each assay is transposed (sweeps become features) before scaling.
+#' @param colNames Character vector of flat \code{colData} column names to
+#'   include as additional features.
+#' @param scaling Scaling strategy: \code{"within"} (default) scales each
+#'   assay/column independently using \code{sechm::safescale};
+#'   \code{"global"} scales the combined feature matrix; \code{"none"} skips
+#'   scaling.
+#' @param byRow Logical. Scale by row instead of by column after transposing.
+#'   Default \code{FALSE}.
+#' @param center Logical. Center the data during scaling. Default \code{FALSE}.
+#' @param method Character vector listing which reductions to compute.
+#'   Any subset of \code{c("pca", "tsne", "umap")}. All three are computed by
+#'   default.
+#' @param k_clusters Integer. Number of k-means clusters to assign for each
+#'   reduction. Default \code{3}.
+#' @return The input \code{se} with \code{reducedDims} populated (\code{PCA},
+#'   \code{TSNE}, \code{UMAP}) and three new \code{colData} columns:
+#'   \code{cluster.pca}, \code{cluster.tsne}, \code{cluster.umap}.
 #' @export
-reducedDim.Cellwise <- function(se, assayList=c(), colNames=c(), scaling = "within",
-                                byRow=FALSE,center = FALSE, method=c("pca", "tsne", "umap"),
-                                k_clusters=3){
+reducedDim.Cellwise <- function(se, assayList = c(), colNames = c(),
+                                scaling = "within", byRow = FALSE,
+                                center = FALSE,
+                                method = c("pca", "tsne", "umap"),
+                                k_clusters = 3) {
 
-  if(length(assayList) != 0){
-  assayList <- assayList[assayList %in% assayNames(se)]
-  pca_data <- lapply(assayList, function(x){
-    if(scaling == "within"){
-      #scale(t(assay(se, x)))
-      temp <- sechm::safescale(t(assay(se, x)),center = center, byRow = byRow)
-    }else{
-      temp <-t(assay(se, x))
-    }
-    temp <- as.data.frame(temp)
-    colnames(temp) <- paste(x, colnames(temp))
-    temp
-    }
-
-    )
-  names(pca_data) <- assayList
-  }else{pca_data <- list()}
-
-
-  if(length(colNames) != 0){
-  flattened.df <- as.data.frame(colData(se))
-  colNames <- colNames[colNames %in% colnames(flattened.df)]
-
-  col_Data <- lapply(colNames, function(x){
-                     if(scaling == "within"){
-
-                       temp <- sechm::safescale(flattened.df[[x]], center = F, byRow = byRow)
-                     }else{
-                       temp <-flattened.df[[x]]
-                     }
-    temp <- as.data.frame(temp)
-    colnames(temp) <- paste(x, colnames(temp))
-    temp
-                     })
-
-  names(col_Data) <- colNames
-  pca_data <- list(pca_data, col_Data)
+  if (length(assayList) != 0) {
+    assayList <- assayList[assayList %in% assayNames(se)]
+    pca_data <- lapply(assayList, function(x) {
+      if (scaling == "within") {
+        temp <- sechm::safescale(t(assay(se, x)), center = center, byRow = byRow)
+      } else {
+        temp <- t(assay(se, x))
+      }
+      temp <- as.data.frame(temp)
+      colnames(temp) <- paste(x, colnames(temp))
+      temp
+    })
+    names(pca_data) <- assayList
+  } else {
+    pca_data <- list()
   }
-  #names(pca_data) <- assayList
+
+  if (length(colNames) != 0) {
+    flattened.df <- as.data.frame(colData(se))
+    colNames <- colNames[colNames %in% colnames(flattened.df)]
+    col_Data <- lapply(colNames, function(x) {
+      if (scaling == "within") {
+        temp <- sechm::safescale(flattened.df[[x]], center = FALSE, byRow = byRow)
+      } else {
+        temp <- flattened.df[[x]]
+      }
+      temp <- as.data.frame(temp)
+      colnames(temp) <- paste(x, colnames(temp))
+      temp
+    })
+    names(col_Data) <- colNames
+    pca_data <- list(pca_data, col_Data)
+  }
+
   pca_data <- dplyr::bind_cols(pca_data)
-  #print(class(pca_data))
-  if(scaling == "global"){
-    print(pca_data)
+
+  if (scaling == "global") {
     pca_data <- sechm::safescale(as.matrix(pca_data), byRow = byRow)
   }
-  ## handling missing values
-  pca_data <-as.data.frame(pca_data)
-  #return(pca_data)
+
+  pca_data <- as.data.frame(pca_data)
   pca_data <- pca_data[, colSums(is.na(pca_data)) != nrow(pca_data)]
   pca_data[is.na(pca_data)] <- 0
 
-  pca_result <- prcomp(pca_data, rank=50)
-
-  tsne_data <- Rtsne::Rtsne(pca_data, pca = TRUE,  check_duplicates = FALSE)
-
-  tsne_data <- tsne_data$Y %>%
-    as.data.frame()%>%
-    dplyr::rename(tsne1="V1",
-           tsne2="V2")
+  pca_result <- prcomp(pca_data, rank = 50)
+  tsne_data  <- Rtsne::Rtsne(pca_data, pca = TRUE, check_duplicates = FALSE)
+  tsne_data  <- tsne_data$Y %>%
+    as.data.frame() %>%
+    dplyr::rename(tsne1 = "V1", tsne2 = "V2")
 
   umap_data <- umap::umap(pca_data)
-  umap_df <- umap_data$layout %>%
-    as.data.frame()%>%
-    dplyr::rename(UMAP1="V1",
-           UMAP2="V2")
+  umap_df   <- umap_data$layout %>%
+    as.data.frame() %>%
+    dplyr::rename(UMAP1 = "V1", UMAP2 = "V2")
 
-  SingleCellExperiment::reducedDims(se) <- list(PCA=pca_result$x, TSNE=S4Vectors::DataFrame(tsne_data), UMAP=S4Vectors::DataFrame(umap_df))
+  SingleCellExperiment::reducedDims(se) <- list(
+    PCA  = pca_result$x,
+    TSNE = S4Vectors::DataFrame(tsne_data),
+    UMAP = S4Vectors::DataFrame(umap_df)
+  )
 
-  se$cluster.umap <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "UMAP")[,1:2], k_clusters, iter.max = 100)$cluster)
-  se$cluster.tsne <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "TSNE")[,1:2], k_clusters, iter.max = 100)$cluster)
-  se$cluster.pca <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "PCA")[,1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.umap <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "UMAP")[, 1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.tsne <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "TSNE")[, 1:2], k_clusters, iter.max = 100)$cluster)
+  se$cluster.pca  <- as.factor(kmeans(SingleCellExperiment::reducedDim(se, "PCA")[,  1:2], k_clusters, iter.max = 100)$cluster)
 
   return(se)
 }
-#' Wrapper function for plotting dimensionality plots
-#' plot Dimensionality Reduction with ggplot
-#' @param se SummarizedExperiment Object with reducedDim data
-#' @param redDim.method a single character parameter, either, "UMAP", "TSNE", "PCA"
-#' @param colorColumns list of columns from colData adding colorings, every element with a different plot, default are clusters
-#' @return a ggplot
-#' @export
-plotDimRed <- function(se, redDim.method, colorColumns = character()) {
-  flattened.df <- as.data.frame(colData(se))
-  redDF <- as.data.frame(SingleCellExperiment::reducedDim(se, redDim.method))
 
-  clustername <- grep(tolower(redDim.method), colnames(flattened.df), value = TRUE)
-  if (length(clustername) == 0) clustername <- colorColumns[1]
+# reducedDim.Cellwise() above is the original simpler pipeline.
+# A more feature-rich replacement (reducedDimMultimodal) lives in R/clusteringTools.R.
 
-  p <- ggplot2::ggplot(redDF, aes(x = redDF[, 1], y = redDF[, 2], color = flattened.df[[clustername]])) +
-    ggplot2::geom_point() +
-    ggplot2::ggtitle(paste("Colored by", clustername))
-
-  colorColumns <- colorColumns[colorColumns %in% colnames(flattened.df)]
-
-  if (length(colorColumns) > 0) {
-    plots <- lapply(colorColumns, function(cols) {
-      if(is.numeric(flattened.df[[cols]])){
-      ggplot2::ggplot(redDF, aes(x = redDF[, 1], y = redDF[, 2], color = scale(flattened.df[[cols]], center=TRUE))) +
-        ggplot2::geom_point() +
-        ggplot2::ggtitle(cols)+
-       viridis::scale_colour_viridis()
-
-      } else{
-        ggplot2::ggplot(redDF, aes(x = redDF[, 1], y = redDF[, 2], color = flattened.df[[cols]])) +
-          ggplot2::geom_point() +
-          ggplot2::ggtitle(cols)
-    }
-
-    })
-    return(ggpubr::ggarrange(plotlist = c(list(p), plots)))
-  } else {
-    return(p)
-  }
-}
 #' Wrapper function for plotting assays vs sweeps curves
 #' @param se SummarizedExperiment Object with reducedDim data
 #' @param assayList assays to be plotted as y-value
@@ -548,6 +550,209 @@ fit_boltzmann_se <- function(
   colData(se)[[out_msg]]   <- as.character(res$msg[idx])
   colData(se)
   se
+}
+
+# ----------------------------------------------------------------------------
+# Internal helpers for aggregateSE
+# ----------------------------------------------------------------------------
+
+# Build a character group-key vector from one or more data.frame columns.
+.make_key <- function(df, cols, sep = ".") {
+  if (length(cols) == 1) return(as.character(df[[cols]]))
+  do.call(paste, c(lapply(cols, function(c) as.character(df[[c]])), list(sep = sep)))
+}
+
+# Summarise a single data.frame into one row per unique key.
+# - grouping columns  → taken from first occurrence (they are the key)
+# - numeric columns   → aggregated with agg_fun (NA/Inf removed first)
+# - character/factor  → kept if constant within group, otherwise dropped
+# - anything else     → dropped silently
+.summarise_metadata <- function(df, by_cols, agg_fun, key_vec, unique_keys) {
+
+  first_idx <- match(unique_keys, key_vec)
+
+  out <- df[first_idx, by_cols, drop = FALSE]
+  rownames(out) <- unique_keys
+
+  other_cols <- setdiff(colnames(df), by_cols)
+
+  keep_cols <- list()
+  for (col in other_cols) {
+    x <- df[[col]]
+
+    if (is.numeric(x)) {
+      vals <- sapply(unique_keys, function(k) {
+        v <- x[key_vec == k]
+        v <- v[is.finite(v)]
+        if (length(v) > 0) agg_fun(v) else NA_real_
+      })
+      keep_cols[[col]] <- vals
+
+    } else if (is.character(x) || is.factor(x)) {
+      vals <- sapply(unique_keys, function(k) {
+        v <- unique(as.character(x[key_vec == k]))
+        v <- v[!is.na(v)]
+        if (length(v) == 1) v else NA_character_
+      })
+      # drop if all NA (i.e. never constant within any group)
+      if (!all(is.na(vals))) keep_cols[[col]] <- vals
+    }
+    # other types silently dropped
+  }
+
+  if (length(keep_cols) > 0) {
+    out <- cbind(out, as.data.frame(keep_cols, stringsAsFactors = FALSE))
+  }
+  out
+}
+
+
+#' Aggregate a SummarizedExperiment by row and column grouping factors
+#'
+#' Produces a new \code{SingleCellExperiment} where:
+#' \itemize{
+#'   \item Each \strong{row} corresponds to a unique combination of
+#'     \code{row_by} columns in \code{rowData} (e.g. liquid period).
+#'   \item Each \strong{column} corresponds to a unique combination of
+#'     \code{col_by} columns in \code{colData} (e.g. Condition + Plate_ID).
+#'   \item Each \strong{assay} is a summary matrix named
+#'     \code{<Assay>_<funName>} (e.g. \code{Minima_mean}, \code{Minima_sd}).
+#'     All values in the input sub-matrix (row-group × col-group block) are
+#'     pooled and passed to the function after removing non-finite values.
+#'   \item \strong{rowData} retains the grouping columns plus any
+#'     \code{rowData} column that is numeric (aggregated with
+#'     \code{row_agg_fun}) or constant within each row group.
+#'   \item \strong{colData} retains the grouping columns plus any
+#'     \code{colData} column that is numeric (aggregated with
+#'     \code{col_agg_fun}) or constant within each column group.
+#'     Non-summarisable columns are silently dropped.
+#' }
+#'
+#' @param se A \code{SummarizedExperiment} or \code{SingleCellExperiment}.
+#' @param row_by Character vector of \code{rowData} column names to group rows
+#'   by (e.g. \code{"LP"}).  \code{NULL} collapses all sweeps into one row.
+#' @param col_by Character vector of \code{colData} column names to group
+#'   columns by (e.g. \code{c("Condition", "Plate_ID")}).
+#' @param assayList Character vector of assay names to aggregate.  Defaults to
+#'   all assays in \code{se}.
+#' @param funs Named list of functions.  Each function is applied to the
+#'   pooled numeric values of each row-group × col-group block.  Names become
+#'   part of the output assay names (e.g. \code{list(mean = mean, sd = sd)}).
+#' @param col_agg_fun Function used to summarise numeric \code{colData}
+#'   columns within each column group.  Default \code{mean}.
+#' @param row_agg_fun Function used to summarise numeric \code{rowData}
+#'   columns within each row group.  Default \code{mean}.
+#' @param sep Separator used to paste multi-column keys into row/column names.
+#'   Default \code{"."}.
+#' @param suffix Optional string appended to every output assay name after the
+#'   function name (e.g. \code{".exp1"} → \code{Minima_mean.exp1}).
+#'   Default \code{""}.
+#' @param ... Additional arguments forwarded to every function in \code{funs}.
+#'
+#' @return A new \code{SingleCellExperiment} with aggregated assays, rowData,
+#'   and colData.
+#'
+#' @examples
+#' \dontrun{
+#' # 3 liquid periods x (Condition x Plate_ID) columns, mean + sd assays
+#' se_agg <- aggregateSE(
+#'   se,
+#'   row_by   = "LP",
+#'   col_by   = c("Condition", "Plate_ID"),
+#'   funs     = list(mean = mean, sd = sd)
+#' )
+#' # assayNames(se_agg) -> "Minima_mean", "Minima_sd", "Maxima_mean", ...
+#' # nrow(se_agg)       -> 3   (one per LP)
+#' # ncol(se_agg)       -> n unique Condition.Plate_ID combinations
+#' }
+#' @importFrom SummarizedExperiment assay assayNames rowData colData
+#' @importFrom SingleCellExperiment SingleCellExperiment
+#' @importFrom S4Vectors DataFrame
+#' @export
+aggregateSE <- function(se,
+                        row_by       = NULL,
+                        col_by,
+                        assayList    = assayNames(se),
+                        funs         = list(mean = mean),
+                        col_agg_fun  = mean,
+                        row_agg_fun  = mean,
+                        sep          = ".",
+                        suffix       = "",
+                        ...) {
+
+  assayList <- assayList[assayList %in% assayNames(se)]
+  if (length(assayList) == 0) stop("No valid assays found in 'assayList'.")
+  if (length(funs) == 0)      stop("'funs' must be a non-empty named list.")
+  if (is.null(names(funs)) || any(names(funs) == ""))
+    stop("Every element of 'funs' must be named.")
+
+  cd <- as.data.frame(colData(se))
+  rd <- as.data.frame(rowData(se))
+
+  # --- column groups -------------------------------------------------------
+  col_by  <- col_by[col_by %in% colnames(cd)]
+  if (length(col_by) == 0) stop("None of 'col_by' columns found in colData.")
+  col_key  <- .make_key(cd, col_by, sep)
+  ucol_key <- unique(col_key)
+  n_cols   <- length(ucol_key)
+
+  # --- row groups ----------------------------------------------------------
+  if (!is.null(row_by)) {
+    row_by   <- row_by[row_by %in% colnames(rd)]
+    if (length(row_by) == 0) stop("None of 'row_by' columns found in rowData.")
+    row_key  <- .make_key(rd, row_by, sep)
+    urow_key <- unique(row_key)
+  } else {
+    row_key  <- rep("all", nrow(se))
+    urow_key <- "all"
+  }
+  n_rows <- length(urow_key)
+
+  # --- build aggregated assays ---------------------------------------------
+  new_assays <- list()
+
+  for (assayName in assayList) {
+    mat <- assay(se, assayName)
+
+    # pre-split columns and rows by group for efficiency
+    col_groups <- lapply(ucol_key, function(k) which(col_key == k))
+    row_groups <- lapply(urow_key, function(k) which(row_key == k))
+
+    for (fun_name in names(funs)) {
+      fun      <- funs[[fun_name]]
+      new_mat  <- matrix(NA_real_, nrow = n_rows, ncol = n_cols,
+                         dimnames = list(urow_key, ucol_key))
+
+      for (i in seq_len(n_rows)) {
+        for (j in seq_len(n_cols)) {
+          vals <- as.vector(mat[row_groups[[i]], col_groups[[j]], drop = FALSE])
+          vals <- vals[is.finite(vals)]
+          if (length(vals) > 0)
+            new_mat[i, j] <- fun(vals, ...)
+        }
+      }
+
+      out_name <- paste0(assayName, "_", fun_name, suffix)
+      new_assays[[out_name]] <- new_mat
+    }
+  }
+
+  # --- summarise rowData ---------------------------------------------------
+  new_rd <- if (!is.null(row_by) && nrow(rd) > 0) {
+    .summarise_metadata(rd, row_by, row_agg_fun, row_key, urow_key)
+  } else {
+    data.frame(row.names = urow_key)
+  }
+
+  # --- summarise colData ---------------------------------------------------
+  new_cd <- .summarise_metadata(cd, col_by, col_agg_fun, col_key, ucol_key)
+
+  # --- assemble new SCE ----------------------------------------------------
+  SingleCellExperiment::SingleCellExperiment(
+    assays  = new_assays,
+    rowData = S4Vectors::DataFrame(new_rd),
+    colData = S4Vectors::DataFrame(new_cd)
+  )
 }
 
 

@@ -2,22 +2,47 @@
 % Please edit documentation in R/utilityTools.R
 \name{colAG}
 \alias{colAG}
-\title{Add column-wise aggregation such as mean of any given assay and store it into colData}
+\title{Add column-wise aggregation of assays and store results into colData}
 \usage{
-colAG(se, assayList, fun = mean, sweeps = row.names(se))
+colAG(se, assayList, fun = mean, sweeps = row.names(se), suffix = "", ...)
 }
 \arguments{
-\item{se}{SummarizedExperiment Object with the Ephys-Data}
+\item{se}{A \code{SummarizedExperiment} (or \code{SingleCellExperiment}).}
 
-\item{fun}{to be changed, function used to aggregate, for now only mean available}
+\item{assayList}{Character vector of assay names to aggregate.}
 
-\item{sweeps}{which sweeps to take, tbd, default is all}
+\item{fun}{Function to apply column-wise.  Must accept a numeric vector and
+return a single value (e.g. \code{mean}, \code{median}, \code{sd},
+\code{max}).  Default \code{mean}.  The function name is inferred
+automatically and used in the column name.}
 
-\item{assayNames}{list of assays to aggregate column-wise}
+\item{sweeps}{Row names (sweeps) to include before aggregating.  Default all
+rows.}
+
+\item{suffix}{Optional string appended verbatim after the function name in
+the column name, e.g. \code{".exp1"} produces \code{Minima_mean.exp1}.
+Default \code{""} (no suffix).}
+
+\item{...}{Additional arguments passed to \code{fun} (e.g. \code{trim = 0.1}
+for \code{mean}).  Note: \code{NA} and non-finite values are already
+removed before \code{fun} is called, so \code{na.rm = TRUE} is redundant
+but harmless.}
 }
 \value{
-se with updated colData
+The input \code{se} with new \code{colData} columns added.
 }
 \description{
-Add column-wise aggregation such as mean of any given assay and store it into colData
+Applies a summary function column-wise (i.e. across sweeps) for each
+requested assay and stores the result as a new \code{colData} column named
+\code{<Assay>_<fun>[suffix]}, e.g. \code{Minima_mean} or
+\code{Minima_mean.exp1}.
+}
+\examples{
+\dontrun{
+se <- colAG(se, c("Minima", "Capacitance"))                        # -> Minima_mean, Capacitance_mean
+se <- colAG(se, "Minima", suffix = ".exp1")                        # -> Minima_mean.exp1
+se <- colAG(se, "Minima", fun = sd,     suffix = ".exp1")          # -> Minima_sd.exp1
+se <- colAG(se, "Minima", fun = median, suffix = ".baseline")      # -> Minima_median.baseline
+se <- colAG(se, "Minima", fun = mean,   trim = 0.1)                # -> Minima_mean (trimmed)
+}
 }

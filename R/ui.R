@@ -129,8 +129,14 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                            tags$head(tags$script(HTML("
                              var _tinyWarnClose = false;
 
+                             // RStudio's viewer pane runs inside Qt WebEngine.
+                             // It fires beforeunload but cannot show the native
+                             // confirmation dialog, so e.preventDefault() blocks
+                             // closing permanently. Skip the warning there.
+                             var _inRStudioViewer = /QtWebEngine/i.test(navigator.userAgent);
+
                              window.addEventListener('beforeunload', function(e) {
-                               if (_tinyWarnClose) {
+                               if (_tinyWarnClose && !_inRStudioViewer) {
                                  e.preventDefault();
                                  e.returnValue = '';
                                }

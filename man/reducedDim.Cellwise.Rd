@@ -2,8 +2,7 @@
 % Please edit documentation in R/utilityTools.R
 \name{reducedDim.Cellwise}
 \alias{reducedDim.Cellwise}
-\title{Perform cell-wise dimensionality reduction based on assays and colData.
-Results are stored in reducedDims}
+\title{Perform cell-wise dimensionality reduction based on assays and colData}
 \usage{
 reducedDim.Cellwise(
   se,
@@ -17,24 +16,39 @@ reducedDim.Cellwise(
 )
 }
 \arguments{
-\item{se}{SummarizedExperiment Object with the Ephys-Data}
+\item{se}{A \code{SummarizedExperiment} (or \code{SingleCellExperiment}).}
 
-\item{colNames}{list of columns from colData}
+\item{assayList}{Character vector of assay names to include as features.
+Each assay is transposed (sweeps become features) before scaling.}
 
-\item{scaling}{option of which scaling to apply, within assay or all features together (scaling = "global"), default within assay}
+\item{colNames}{Character vector of flat \code{colData} column names to
+include as additional features.}
 
-\item{byRow}{scaling by row instead of by column (after transforming), default FALSE}
+\item{scaling}{Scaling strategy: \code{"within"} (default) scales each
+assay/column independently using \code{sechm::safescale};
+\code{"global"} scales the combined feature matrix; \code{"none"} skips
+scaling.}
 
-\item{method}{list of types of reductionality methods, default all (pca, tsne, umap)}
+\item{byRow}{Logical. Scale by row instead of by column after transposing.
+Default \code{FALSE}.}
 
-\item{k_clusters}{number of clusters}
+\item{center}{Logical. Center the data during scaling. Default \code{FALSE}.}
 
-\item{assayNames}{list of assays to include}
+\item{method}{Character vector listing which reductions to compute.
+Any subset of \code{c("pca", "tsne", "umap")}. All three are computed by
+default.}
+
+\item{k_clusters}{Integer. Number of k-means clusters to assign for each
+reduction. Default \code{3}.}
 }
 \value{
-se with updated results
+The input \code{se} with \code{reducedDims} populated (\code{PCA},
+  \code{TSNE}, \code{UMAP}) and three new \code{colData} columns:
+  \code{cluster.pca}, \code{cluster.tsne}, \code{cluster.umap}.
 }
 \description{
-Perform cell-wise dimensionality reduction based on assays and colData.
-Results are stored in reducedDims
+Computes PCA, t-SNE, and UMAP on a feature matrix built from assay matrices
+and/or flat \code{colData} columns, stores the results in
+\code{reducedDims(se)}, and adds k-means cluster assignments as new
+\code{colData} columns.
 }
