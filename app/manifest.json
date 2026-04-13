@@ -979,7 +979,7 @@
         "biocViews": "Infrastructure, DataRepresentation",
         "URL": "https://bioconductor.org/packages/S4Vectors",
         "BugReports": "https://github.com/Bioconductor/S4Vectors/issues",
-        "Version": "0.48.0",
+        "Version": "0.48.1",
         "License": "Artistic-2.0",
         "Encoding": "UTF-8",
         "Authors@R": "c(\n\tperson(\"Hervé\", \"Pagès\", role=c(\"aut\", \"cre\"),\n\t\temail=\"hpages.on.github@gmail.com\"),\n\tperson(\"Michael\", \"Lawrence\", role=\"aut\"),\n\tperson(\"Patrick\", \"Aboyoun\", role=\"aut\"),\n\tperson(\"Aaron\", \"Lun\", role=\"ctb\"),\n\tperson(\"Beryl\", \"Kanali\", role=\"ctb\",\n\t\tcomment=\"Converted vignettes from Sweave to RMarkdown\"))",
@@ -988,15 +988,15 @@
         "VignetteBuilder": "knitr",
         "Collate": "S4-utils.R show-utils.R utils.R normarg-utils.R bindROWS.R\nLLint-class.R isSorted.R subsetting-utils.R vector-utils.R\ninteger-utils.R character-utils.R raw-utils.R eval-utils.R\nmap_ranges_to_runs.R RectangularData-class.R Annotated-class.R\nDataFrame_OR_NULL-class.R Vector-class.R Vector-comparison.R\nVector-setops.R Vector-merge.R Hits-class.R Hits-comparison.R\nHits-setops.R Rle-class.R Rle-utils.R Factor-class.R\nList-class.R List-comparison.R splitAsList.R List-utils.R\nSimpleList-class.R HitsList-class.R DataFrame-class.R\nDataFrame-combine.R DataFrame-comparison.R DataFrame-utils.R\nDataFrameFactor-class.R TransposedDataFrame-class.R\nPairs-class.R FilterRules-class.R stack-methods.R\nexpand-methods.R aggregate-methods.R shiftApply-methods.R zzz.R",
         "Repository": "https://bioc-release.r-universe.dev",
-        "Date/Publication": "2025-10-29 18:06:36 UTC",
+        "Date/Publication": "2026-04-04 20:30:21 UTC",
         "RemoteUrl": "https://github.com/bioc/S4Vectors",
         "RemoteRef": "RELEASE_3_22",
-        "RemoteSha": "c4f37f052d7c4ee8ff0d62a6adec355129258263",
+        "RemoteSha": "ae25d08aa5b02dca895179b5b6ac52656c4547f3",
         "NeedsCompilation": "yes",
-        "Packaged": "2026-03-04 08:20:29 UTC; root",
+        "Packaged": "2026-04-05 06:18:53 UTC; root",
         "Author": "Hervé Pagès [aut, cre],\n  Michael Lawrence [aut],\n  Patrick Aboyoun [aut],\n  Aaron Lun [ctb],\n  Beryl Kanali [ctb] (Converted vignettes from Sweave to RMarkdown)",
         "Maintainer": "Hervé Pagès <hpages.on.github@gmail.com>",
-        "Built": "R 4.5.2; x86_64-w64-mingw32; 2026-03-04 08:22:26 UTC; windows",
+        "Built": "R 4.5.3; x86_64-w64-mingw32; 2026-04-05 06:20:45 UTC; windows",
         "Archs": "x64"
       }
     },
@@ -2241,16 +2241,16 @@
         "RemoteRepo": "ephacRTools",
         "RemoteUsername": "dcolam",
         "RemoteRef": "HEAD",
-        "RemoteSha": "d89d1ddcaa9dea98af20d7d39e2a16535f5d3a9f",
+        "RemoteSha": "d7eb9ca609677bb822bfed6d180894dcc912a9a1",
         "GithubRepo": "ephacRTools",
         "GithubUsername": "dcolam",
         "GithubRef": "HEAD",
-        "GithubSHA1": "d89d1ddcaa9dea98af20d7d39e2a16535f5d3a9f",
+        "GithubSHA1": "d7eb9ca609677bb822bfed6d180894dcc912a9a1",
         "NeedsCompilation": "no",
-        "Packaged": "2026-04-13 10:22:01 UTC; DColameo",
+        "Packaged": "2026-04-13 10:32:21 UTC; DColameo",
         "Author": "David Colameo [aut, cre],\n  Athena Schumacher [aut],\n  Jiayi Wang [aut]",
         "Maintainer": "David Colameo <david.colameo@uzh.ch>",
-        "Built": "R 4.5.1; ; 2026-04-13 10:22:03 UTC; windows"
+        "Built": "R 4.5.1; ; 2026-04-13 10:32:23 UTC; windows"
       }
     },
     "evaluate": {
@@ -6023,7 +6023,7 @@
       "checksum": "fb36b0f87b21711cebb0858dbafd1f93"
     },
     "renv.lock": {
-      "checksum": "8449bb1e26a3e8182386c8710a4900c3"
+      "checksum": "0aaf38e1f0955e77faee42c8e33bbc54"
     }
   },
   "users": null
