@@ -2241,16 +2241,16 @@
         "RemoteRepo": "ephacRTools",
         "RemoteUsername": "dcolam",
         "RemoteRef": "HEAD",
-        "RemoteSha": "778daa1755a48236288e5649cbf00a1ce8687e52",
+        "RemoteSha": "d89d1ddcaa9dea98af20d7d39e2a16535f5d3a9f",
         "GithubRepo": "ephacRTools",
         "GithubUsername": "dcolam",
         "GithubRef": "HEAD",
-        "GithubSHA1": "778daa1755a48236288e5649cbf00a1ce8687e52",
+        "GithubSHA1": "d89d1ddcaa9dea98af20d7d39e2a16535f5d3a9f",
         "NeedsCompilation": "no",
-        "Packaged": "2026-04-13 09:55:58 UTC; DColameo",
+        "Packaged": "2026-04-13 10:22:01 UTC; DColameo",
         "Author": "David Colameo [aut, cre],\n  Athena Schumacher [aut],\n  Jiayi Wang [aut]",
         "Maintainer": "David Colameo <david.colameo@uzh.ch>",
-        "Built": "R 4.5.1; ; 2026-04-13 09:56:00 UTC; windows"
+        "Built": "R 4.5.1; ; 2026-04-13 10:22:03 UTC; windows"
       }
     },
     "evaluate": {
@@ -6023,7 +6023,7 @@
       "checksum": "fb36b0f87b21711cebb0858dbafd1f93"
     },
     "renv.lock": {
-      "checksum": "73b3f02c5f04a46d358af5dc7b695cdd"
+      "checksum": "8449bb1e26a3e8182386c8710a4900c3"
     }
   },
   "users": null
