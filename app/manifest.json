@@ -235,28 +235,26 @@
         "biocViews": "Infrastructure, DataRepresentation, Annotation,\nGenomeAnnotation",
         "URL": "https://bioconductor.org/packages/DelayedArray",
         "BugReports": "https://github.com/Bioconductor/DelayedArray/issues",
-        "Version": "0.36.0",
+        "Version": "0.36.1",
         "License": "Artistic-2.0",
         "Encoding": "UTF-8",
-        "Authors@R": "c(\n\tperson(\"Hervé\", \"Pagès\", role=c(\"aut\", \"cre\"),\n\t\temail=\"hpages.on.github@gmail.com\"),\n\tperson(\"Aaron\", \"Lun\", role=\"ctb\",\n\t\temail=\"infinite.monkeys.with.keyboards@gmail.com\"),\n\tperson(\"Peter\", \"Hickey\", role=\"ctb\",\n\t\temail=\"peter.hickey@gmail.com\"))",
+        "Authors@R": "c(\n\tperson(\"Hervé\", \"Pagès\", role=c(\"aut\", \"cre\"),\n\t\temail=\"hpages.on.github@gmail.com\",\n\t\tcomment=c(ORCID=\"0009-0002-8272-4522\")),\n\tperson(\"Aaron\", \"Lun\", role=\"ctb\",\n\t\temail=\"infinite.monkeys.with.keyboards@gmail.com\"),\n\tperson(\"Peter\", \"Hickey\", role=\"ctb\",\n\t\temail=\"peter.hickey@gmail.com\"))",
         "Maintainer": "Hervé Pagès <hpages.on.github@gmail.com>",
         "Depends": "R (>= 4.0.0), methods, stats4, Matrix, BiocGenerics (>=\n0.53.3), MatrixGenerics (>= 1.1.3), S4Vectors (>= 0.47.6),\nIRanges (>= 2.17.3), S4Arrays (>= 1.9.3), SparseArray (>=\n1.7.5)",
         "Imports": "stats",
-        "LinkingTo": "S4Vectors",
         "Suggests": "BiocParallel, HDF5Array (>= 1.17.12), genefilter,\nSummarizedExperiment, airway, lobstr, DelayedMatrixStats,\nknitr, rmarkdown, BiocStyle, RUnit",
         "VignetteBuilder": "knitr",
         "Collate": "compress_atomic_vector.R makeCappedVolumeBox.R\nAutoBlock-global-settings.R AutoGrid.R blockApply.R\nDelayedOp-class.R DelayedSubset-class.R DelayedAperm-class.R\nDelayedUnaryIsoOpStack-class.R\nDelayedUnaryIsoOpWithArgs-class.R DelayedSubassign-class.R\nDelayedSetDimnames-class.R DelayedNaryIsoOp-class.R\nDelayedAbind-class.R showtree.R simplify.R DelayedArray-class.R\nDelayedArray-subsetting.R chunkGrid.R RealizationSink-class.R\nrealize.R DelayedArray-utils.R DelayedArray-stats.R\nmatrixStats-methods.R DelayedMatrix-rowsum.R\nDelayedMatrix-mult.R ConstantArray-class.R RleArraySeed-class.R\nRleArray-class.R compat.R zzz.R",
         "Config/pak/sysreqs": "zlib1g-dev",
         "Repository": "https://bioc-release.r-universe.dev",
-        "Date/Publication": "2025-10-29 18:02:35 UTC",
+        "Date/Publication": "2026-03-31 14:08:43 UTC",
         "RemoteUrl": "https://github.com/bioc/DelayedArray",
         "RemoteRef": "RELEASE_3_22",
-        "RemoteSha": "adde054570e321b0f9b9f24e8c6f88a7e3ac6116",
-        "NeedsCompilation": "yes",
-        "Packaged": "2026-02-22 08:21:46 UTC; root",
-        "Author": "Hervé Pagès [aut, cre],\n  Aaron Lun [ctb],\n  Peter Hickey [ctb]",
-        "Built": "R 4.5.2; x86_64-w64-mingw32; 2026-02-22 08:23:49 UTC; windows",
-        "Archs": "x64"
+        "RemoteSha": "1f8a9cbf34a5e998eae016f3410bdfe2bee490e4",
+        "NeedsCompilation": "no",
+        "Packaged": "2026-04-01 06:36:32 UTC; root",
+        "Author": "Hervé Pagès [aut, cre] (ORCID: <https://orcid.org/0009-0002-8272-4522>),\n  Aaron Lun [ctb],\n  Peter Hickey [ctb]",
+        "Built": "R 4.5.3; ; 2026-04-01 06:38:44 UTC; windows"
       }
     },
     "Deriv": {
@@ -6024,7 +6022,7 @@
       "checksum": "fb36b0f87b21711cebb0858dbafd1f93"
     },
     "renv.lock": {
-      "checksum": "793e3eaa56b6e42d6e60db365538a782"
+      "checksum": "62e90d669ef5eedd99d40b4e78a33005"
     }
   },
   "users": null
