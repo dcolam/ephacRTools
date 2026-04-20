@@ -4,7 +4,7 @@
 \alias{mergeClassificationToSE}
 \title{Merge image classification results into a SummarizedExperiment}
 \usage{
-mergeClassificationToSE(se, classification, col_name = NULL)
+mergeClassificationToSE(se, classification, col_name = NULL, scores = NULL)
 }
 \arguments{
 \item{se}{A \code{SummarizedExperiment} whose \code{colData} contains
@@ -19,6 +19,14 @@ Must contain at least \code{Well}, \code{Plate_ID}, and
 \code{NULL} (default) to add all new columns flat into \code{colData}.
 If a string is supplied, all new columns are stored as a nested
 \code{DataFrame} under that name.}
+
+\item{scores}{Optional long-format data frame returned by
+\code{\link{scoreParticles}} (or the \code{$scores} element of
+\code{classifyImgParticles(..., return_scores = "both")}).  When
+supplied, the per-channel z-scored metrics (\code{Mean_z},
+\code{Area_z}, \code{normArea_z}) are pivoted to wide format and merged
+alongside the classification columns, producing columns such as
+\code{GFP_Mean_z}, \code{GFP_Area_z}, \code{GFP_normArea_z}.}
 }
 \value{
 The updated \code{se} object.
@@ -27,13 +35,21 @@ The updated \code{se} object.
 Joins the output of \code{\link{classifyImgParticles}} (or
 \code{\link{classifyWells}}) to the \code{colData} of a
 \code{SummarizedExperiment} by \code{Well} and \code{Plate_ID}.
+Optionally also embeds per-channel z-scored metrics from the long-format
+\code{\link{scoreParticles}} output.
 }
 \examples{
 \dontrun{
+# Classification only
 se <- mergeClassificationToSE(se, cls)
 colData(se)$Classification
 
-# Store as nested DataFrame
+# Classification + per-channel z-scored metrics
+res <- classifyImgParticles(df_raw, return_scores = "both")
+se  <- mergeClassificationToSE(se, res$classification, scores = res$scores)
+colData(se)$GFP_Mean_z
+
+# Store everything as a nested DataFrame
 se <- mergeClassificationToSE(se, cls, col_name = "img_classification")
 }
 

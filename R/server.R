@@ -361,31 +361,33 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
           PathFiles <- input$fileEphys$datapath
 
           print(PathFiles)
+          n_files <- length(PathFiles)
           withProgress(message = 'Loading Excel-Files into SE', value = 0, {
-            incProgress(0.5, detail = "This may take a while...")
+            file_callback <- function(i, total, name) {
+              incProgress(
+                amount = 0.8 / total,
+                detail  = paste0("Reading file ", i, "/", total, ": ", name)
+              )
+            }
             gc()
-            tryCatch({
-              x <- tryCatch({
-                prepareSE(PathFiles)
-              }, error = function(e) {
-                stop(paste("prepareSE failed:", conditionMessage(e)))
-              })
-              gc()
-              # rest of your logic
+            x <- tryCatch({
+              prepareSE(PathFiles, progress_callback = file_callback)
             }, error = function(e) {
               showModal(modalDialog("Error", tags$pre(conditionMessage(e))))
-            })  # this is probably where it fails
+              NULL
+            })
+            gc()
 
             print(x)
-            if (is(x, "SingleCellExperiment")) {
+            if (!is.null(x) && is(x, "SingleCellExperiment")) {
               SEname <- input$se_id
               SEs[[SEname]] <- x
               SEinit(SEs[[SEname]])
-              incProgress(0.75, detail = "Updating UI")
+              incProgress(0.1, detail = "Updating UI")
               updateSelectInput(session, "object", selected = SEname,
                                 choices = union(names(objects), names(SEs)))
             }
-            incProgress(1, detail = "SE loaded")
+            incProgress(0.1, detail = "Done")
           })
 
         } else {

@@ -94,13 +94,24 @@ prepareDF <- function(pathToDF) {
 #'
 #' @return A cleaned data.frame in long format
 #' @export
-prepareMultipleDFs <- function(pathList){
+prepareMultipleDFs <- function(pathList, progress_callback = NULL){
 
-  dfs <- lapply(pathList, function(x) {
+  n <- length(pathList)
+  if (is.null(progress_callback) && n > 1) {
+    pb <- utils::txtProgressBar(min = 0, max = n, style = 3)
+    progress_callback <- function(i, total, name) {
+      utils::setTxtProgressBar(pb, i)
+      if (i == total) close(pb)
+    }
+  }
+
+  dfs <- lapply(seq_along(pathList), function(i) {
+    x <- pathList[[i]]
     df <- prepareDF(as.character(x))
     if (is.null(df)) {
       warning(paste("Skipping file due to read error:", x))
     }
+    if (!is.null(progress_callback)) progress_callback(i, length(pathList), basename(x))
     return(df)
   })
   dfs <- dfs[!sapply(dfs, is.null)]
@@ -129,16 +140,13 @@ prepareMultipleDFs <- function(pathList){
 #'
 #' @return A SummarizedExperiment Object with OAs as assays
 #' @export
-prepareSE <- function(pathDF, conditionColumns= c("Compound")){
-
-#pathDF <- "data-raw/iNeurons/IV neurons_14.28.48_18T39265_LC_new_LC.xlsx"
-#pathDF <- l_files
-#length(pathDF)
+prepareSE <- function(pathDF, conditionColumns= c("Compound"), progress_callback = NULL){
 
 if(length(pathDF) > 1){
-    df <- prepareMultipleDFs(pathDF)
+    df <- prepareMultipleDFs(pathDF, progress_callback = progress_callback)
 }else{
-      df <- prepareDF(as.character(pathDF))
+    if (!is.null(progress_callback)) progress_callback(1L, 1L, basename(pathDF))
+    df <- prepareDF(as.character(pathDF))
 }
 
   df <- df %>% hablar::retype()

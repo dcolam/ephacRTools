@@ -29,6 +29,9 @@ A data frame with one row per well-plate containing:
     \item{Well, Plate_ID}{Well and plate identifiers.}
     \item{<channel>_score}{Per-channel composite score.}
     \item{<channel>_normArea}{Per-channel occupancy fraction.}
+    \item{<channel>_Mean_z, <channel>_Area_z, <channel>_normArea_z}{
+      Per-channel z-scored metrics (included automatically when present in
+      \code{score_df}, i.e. when called after \code{\link{scoreParticles}}).}
     \item{<channel>_positive}{Logical positivity flag per channel.}
     \item{max_score}{Maximum score across all channels for that well.}
     \item{Classification}{Combined label string.}

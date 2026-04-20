@@ -313,6 +313,9 @@ scoreParticles <- function(agg_df,
 #'     \item{Well, Plate_ID}{Well and plate identifiers.}
 #'     \item{<channel>_score}{Per-channel composite score.}
 #'     \item{<channel>_normArea}{Per-channel occupancy fraction.}
+#'     \item{<channel>_Mean_z, <channel>_Area_z, <channel>_normArea_z}{
+#'       Per-channel z-scored metrics (included automatically when present in
+#'       \code{score_df}, i.e. when called after \code{\link{scoreParticles}}).}
 #'     \item{<channel>_positive}{Logical positivity flag per channel.}
 #'     \item{max_score}{Maximum score across all channels for that well.}
 #'     \item{Classification}{Combined label string.}
@@ -326,7 +329,7 @@ scoreParticles <- function(agg_df,
 #'                      channel_labels = c(C1 = "GFP", C2 = "mScarlett"))
 #' }
 #'
-#' @importFrom dplyr select left_join all_of
+#' @importFrom dplyr select left_join all_of across any_of
 #' @importFrom tidyr pivot_wider
 #' @export
 classifyWells <- function(score_df,
@@ -364,6 +367,19 @@ classifyWells <- function(score_df,
   )
 
   wide <- dplyr::left_join(wide_score, wide_area, by = id_vars)
+
+  # Pivot z-scored metrics if present (produced by scoreParticles / aggregateParticles)
+  z_cols <- intersect(c("Mean_z", "Area_z", "normArea_z"), names(score_df))
+  if (length(z_cols) > 0) {
+    wide_z <- tidyr::pivot_wider(
+      dplyr::select(score_df,
+                    dplyr::all_of(c(id_vars, "Channel_Name", z_cols))),
+      names_from  = "Channel_Name",
+      values_from = dplyr::all_of(z_cols),
+      names_glue  = "{Channel_Name}_{.value}"
+    )
+    wide <- dplyr::left_join(wide, wide_z, by = id_vars)
+  }
 
   # Per-well maximum score across all channels
   score_cols <- intersect(paste0(channels, "_score"), names(wide))
@@ -434,15 +450,20 @@ classifyWells <- function(score_df,
 #' @param min_area Minimum occupancy threshold.  Default: \code{0.1}.
 #' @param channel_labels Optional named vector mapping raw channel names to
 #'   display labels, e.g. \code{c(C1 = "GFP", C2 = "mScarlett")}.
-#' @param return_scores If \code{TRUE}, return the scored long-format data
-#'   frame (output of \code{scoreParticles}) instead of the wide
-#'   classification table.  Default: \code{FALSE}.
+#' @param return_scores Controls what is returned.  \code{FALSE} (default)
+#'   returns the wide-format classification table.  \code{TRUE} returns the
+#'   long-format scored data frame (output of \code{\link{scoreParticles}}).
+#'   \code{"both"} returns a named list with elements \code{classification}
+#'   (wide) and \code{scores} (long), which can be passed directly to
+#'   \code{\link{mergeClassificationToSE}} to also embed z-scored metrics.
 #'
-#' @return A wide-format classification data frame (or scored long-format
-#'   data frame if \code{return_scores = TRUE}).
+#' @return A wide-format classification data frame; the long-format scored
+#'   data frame if \code{return_scores = TRUE}; or a named list
+#'   \code{list(classification, scores)} if \code{return_scores = "both"}.
 #'
 #' @examples
 #' \dontrun{
+#' # Standard usage
 #' cls <- classifyImgParticles(
 #'   df_raw,
 #'   filter_method  = "zscore",
@@ -451,6 +472,10 @@ classifyWells <- function(score_df,
 #'   channel_labels = c(C1 = "GFP", C2 = "mScarlett")
 #' )
 #' se <- mergeClassificationToSE(se, cls)
+#'
+#' # Also embed per-channel z-scored metrics into colData
+#' res <- classifyImgParticles(df_raw, return_scores = "both")
+#' se  <- mergeClassificationToSE(se, res$classification, scores = res$scores)
 #' }
 #'
 #' @export
@@ -486,12 +511,17 @@ classifyImgParticles <- function(df,
                                score_group_vars = score_group_vars,
                                center = center)
 
-  if (return_scores) return(df_scored)
+  if (isTRUE(return_scores)) return(df_scored)
 
-  classifyWells(df_scored,
-                delta          = delta,
-                min_area       = min_area,
-                channel_labels = channel_labels)
+  cls <- classifyWells(df_scored,
+                       delta          = delta,
+                       min_area       = min_area,
+                       channel_labels = channel_labels)
+
+  if (identical(return_scores, "both"))
+    return(list(classification = cls, scores = df_scored))
+
+  cls
 }
 
 
@@ -500,6 +530,8 @@ classifyImgParticles <- function(df,
 #' Joins the output of \code{\link{classifyImgParticles}} (or
 #' \code{\link{classifyWells}}) to the \code{colData} of a
 #' \code{SummarizedExperiment} by \code{Well} and \code{Plate_ID}.
+#' Optionally also embeds per-channel z-scored metrics from the long-format
+#' \code{\link{scoreParticles}} output.
 #'
 #' @param se A \code{SummarizedExperiment} whose \code{colData} contains
 #'   \code{Well} and \code{Plate_ID} columns.
@@ -511,26 +543,58 @@ classifyImgParticles <- function(df,
 #'   \code{NULL} (default) to add all new columns flat into \code{colData}.
 #'   If a string is supplied, all new columns are stored as a nested
 #'   \code{DataFrame} under that name.
+#' @param scores Optional long-format data frame returned by
+#'   \code{\link{scoreParticles}} (or the \code{$scores} element of
+#'   \code{classifyImgParticles(..., return_scores = "both")}).  When
+#'   supplied, the per-channel z-scored metrics (\code{Mean_z},
+#'   \code{Area_z}, \code{normArea_z}) are pivoted to wide format and merged
+#'   alongside the classification columns, producing columns such as
+#'   \code{GFP_Mean_z}, \code{GFP_Area_z}, \code{GFP_normArea_z}.
 #'
 #' @return The updated \code{se} object.
 #'
 #' @examples
 #' \dontrun{
+#' # Classification only
 #' se <- mergeClassificationToSE(se, cls)
 #' colData(se)$Classification
 #'
-#' # Store as nested DataFrame
+#' # Classification + per-channel z-scored metrics
+#' res <- classifyImgParticles(df_raw, return_scores = "both")
+#' se  <- mergeClassificationToSE(se, res$classification, scores = res$scores)
+#' colData(se)$GFP_Mean_z
+#'
+#' # Store everything as a nested DataFrame
 #' se <- mergeClassificationToSE(se, cls, col_name = "img_classification")
 #' }
 #'
 #' @importFrom SummarizedExperiment colData
 #' @importFrom S4Vectors DataFrame
-#' @importFrom dplyr left_join
+#' @importFrom dplyr left_join select all_of across any_of
+#' @importFrom tidyr pivot_wider
 #' @export
-mergeClassificationToSE <- function(se, classification, col_name = NULL) {
+mergeClassificationToSE <- function(se, classification, col_name = NULL,
+                                    scores = NULL) {
 
-  cd      <- as.data.frame(SummarizedExperiment::colData(se))
-  joined  <- dplyr::left_join(cd, classification, by = c("Well", "Plate_ID"))
+  cd     <- as.data.frame(SummarizedExperiment::colData(se))
+  joined <- dplyr::left_join(cd, classification, by = c("Well", "Plate_ID"))
+
+  # Optionally pivot z-scored metrics from the long-format scored data frame
+  if (!is.null(scores)) {
+    z_cols  <- intersect(c("Mean_z", "Area_z", "normArea_z"), names(scores))
+    id_vars <- intersect(c("Well", "Plate_ID"), names(scores))
+    if (length(z_cols) > 0 && "Channel_Name" %in% names(scores)) {
+      scores_wide <- tidyr::pivot_wider(
+        dplyr::select(scores,
+                      dplyr::all_of(c(id_vars, "Channel_Name", z_cols))),
+        names_from  = "Channel_Name",
+        values_from = dplyr::all_of(z_cols),
+        names_glue  = "{Channel_Name}_{.value}"
+      )
+      joined <- dplyr::left_join(joined, scores_wide, by = id_vars)
+    }
+  }
+
   new_cols <- setdiff(names(joined), names(cd))
 
   if (is.null(col_name)) {

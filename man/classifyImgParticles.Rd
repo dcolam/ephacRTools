@@ -55,13 +55,17 @@ Default: \code{0.5}.}
 \item{channel_labels}{Optional named vector mapping raw channel names to
 display labels, e.g. \code{c(C1 = "GFP", C2 = "mScarlett")}.}
 
-\item{return_scores}{If \code{TRUE}, return the scored long-format data
-frame (output of \code{scoreParticles}) instead of the wide
-classification table.  Default: \code{FALSE}.}
+\item{return_scores}{Controls what is returned.  \code{FALSE} (default)
+returns the wide-format classification table.  \code{TRUE} returns the
+long-format scored data frame (output of \code{\link{scoreParticles}}).
+\code{"both"} returns a named list with elements \code{classification}
+(wide) and \code{scores} (long), which can be passed directly to
+\code{\link{mergeClassificationToSE}} to also embed z-scored metrics.}
 }
 \value{
-A wide-format classification data frame (or scored long-format
-  data frame if \code{return_scores = TRUE}).
+A wide-format classification data frame; the long-format scored
+  data frame if \code{return_scores = TRUE}; or a named list
+  \code{list(classification, scores)} if \code{return_scores = "both"}.
 }
 \description{
 Convenience wrapper that runs
@@ -73,6 +77,7 @@ in sequence.
 }
 \examples{
 \dontrun{
+# Standard usage
 cls <- classifyImgParticles(
   df_raw,
   filter_method  = "zscore",
@@ -81,6 +86,10 @@ cls <- classifyImgParticles(
   channel_labels = c(C1 = "GFP", C2 = "mScarlett")
 )
 se <- mergeClassificationToSE(se, cls)
+
+# Also embed per-channel z-scored metrics into colData
+res <- classifyImgParticles(df_raw, return_scores = "both")
+se  <- mergeClassificationToSE(se, res$classification, scores = res$scores)
 }
 
 }
