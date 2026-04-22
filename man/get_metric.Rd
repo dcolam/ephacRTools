@@ -8,8 +8,8 @@ get_metric(se, assay = "Minima", inward = TRUE)
 }
 \arguments{
 \item{se}{A \code{SingleCellExperiment} (or \code{SummarizedExperiment}) with
-step-wise voltage clamp data. Must contain \code{V_Clamp} in
-\code{rowData} and \code{Well} / \code{Plate_ID} in \code{colData}.}
+step-wise voltage clamp data. Must contain \code{v_clamp_mV} in
+\code{rowData} and \code{well_id} / \code{plate_id} in \code{colData}.}
 
 \item{assay}{Name of the assay to analyze. Default \code{"Minima"} -- the
 per-sweep minimum current output by DataControl Online Analysis, which
@@ -26,7 +26,7 @@ The input \code{se} with three new \code{colData} columns:
 \description{
 Analyzes current-voltage (IV) curves from a step-wise voltage clamp recording
 stored in a \code{SingleCellExperiment} object. For each well (identified by
-\code{Well} + \code{Plate_ID}), the function extracts three metrics and stores
+\code{well_id} + \code{plate_id}), the function extracts three metrics and stores
 them as new columns in \code{colData}:
 }
 \details{
@@ -42,7 +42,7 @@ them as new columns in \code{colData}:
     equals \code{Imax / 2}. Returns \code{NA} when spline fitting fails.}
 }
 
-The assay matrix must have sweeps as rows and wells as columns. \code{V_Clamp}
+The assay matrix must have sweeps as rows and wells as columns. \code{v_clamp_mV}
 must be present in \code{rowData(se)} and contain the holding potential for
 each sweep, as produced by \code{prepareSE()}.
 }

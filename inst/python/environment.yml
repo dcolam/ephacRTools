@@ -1,0 +1,14 @@
+name: ephac_ap
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - pyarrow
+  - matplotlib
+  - pip
+  - pip:
+    - polars

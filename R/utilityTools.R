@@ -21,7 +21,7 @@ NULL
 #' @examples
 #' \dontrun{
 #' se <- subsetSE(se, Condition != "Empty" & Induction != "empty")
-#' se <- subsetSE(se, Plate_ID %in% c("P1", "P2") & QC == "Pass")
+#' se <- subsetSE(se, plate_id %in% c("P1", "P2") & qc == "Pass")
 #' }
 #'
 #' @importFrom SummarizedExperiment colData
@@ -214,7 +214,7 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
 
   melted.se <-reshape2::melt(melted.se, measure.vars = assayList)
   if(!grouped){
-  ggplot2::ggplot(melted.se, aes(x=melted.se[[rowCol]], y=value, color=Well)) +
+  ggplot2::ggplot(melted.se, aes(x=melted.se[[rowCol]], y=value, color=well_id)) +
       ggplot2::geom_point() +
       ggplot2::geom_line() +
       ggplot2::guides(color="none")
@@ -240,7 +240,7 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
 #'
 #' Analyzes current-voltage (IV) curves from a step-wise voltage clamp recording
 #' stored in a \code{SingleCellExperiment} object. For each well (identified by
-#' \code{Well} + \code{Plate_ID}), the function extracts three metrics and stores
+#' \code{well_id} + \code{plate_id}), the function extracts three metrics and stores
 #' them as new columns in \code{colData}:
 #'
 #' \describe{
@@ -255,13 +255,13 @@ plotAssayVSSweeps <- function(se, assayList, rowCol, colorGroup=c(), wrapFormula
 #'     equals \code{Imax / 2}. Returns \code{NA} when spline fitting fails.}
 #' }
 #'
-#' The assay matrix must have sweeps as rows and wells as columns. \code{V_Clamp}
+#' The assay matrix must have sweeps as rows and wells as columns. \code{v_clamp_mV}
 #' must be present in \code{rowData(se)} and contain the holding potential for
 #' each sweep, as produced by \code{prepareSE()}.
 #'
 #' @param se A \code{SingleCellExperiment} (or \code{SummarizedExperiment}) with
-#'   step-wise voltage clamp data. Must contain \code{V_Clamp} in
-#'   \code{rowData} and \code{Well} / \code{Plate_ID} in \code{colData}.
+#'   step-wise voltage clamp data. Must contain \code{v_clamp_mV} in
+#'   \code{rowData} and \code{well_id} / \code{plate_id} in \code{colData}.
 #' @param assay Name of the assay to analyze. Default \code{"Minima"} -- the
 #'   per-sweep minimum current output by DataControl Online Analysis, which
 #'   captures peak inward current for step protocols.
@@ -291,15 +291,15 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
     se,
     rownames(se),
     assayName = assay,
-    rowDat.columns = "V_Clamp"
+    rowDat.columns = "v_clamp_mV"
   )
 
-  # Split once by Well + Plate_ID
-  groups <- split(dat, interaction(dat$Well, dat$Plate_ID, drop = TRUE))
+  # Split once by well_id + plate_id
+  groups <- split(dat, interaction(dat$well_id, dat$plate_id, drop = TRUE))
 
   res <- lapply(groups, function(subdat) {
 
-    x_vals <- subdat$V_Clamp
+    x_vals <- subdat$v_clamp_mV
     y_vals <- subdat[[assay]]
 
     if (all(is.na(y_vals))) {
@@ -342,14 +342,14 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
   res <- as.data.frame(res)
 
   keys <- do.call(rbind, strsplit(names(groups), "\\."))
-  colnames(keys) <- c("Well", "Plate_ID")
+  colnames(keys) <- c("well_id", "plate_id")
 
-  res$Well <- keys[, 1]
-  res$Plate_ID <- keys[, 2]
+  res$well_id <- keys[, 1]
+  res$plate_id <- keys[, 2]
 
   idx <- match(
-    interaction(se$Well, se$Plate_ID),
-    interaction(res$Well, res$Plate_ID)
+    interaction(se$well_id, se$plate_id),
+    interaction(res$well_id, res$plate_id)
   )
 
   colData(se)[[imax_col]] <- res$Imax[idx]
@@ -362,8 +362,8 @@ get_metric <- function(se, assay = "Minima", inward = TRUE) {
 fit_boltzmann_se <- function(
     se,
     assay = "Gmin",
-    id_cols = c("Well", "Plate_ID"),
-    vclamp_col = "V_Clamp",
+    id_cols = c("well_id", "plate_id"),
+    vclamp_col = "v_clamp_mV",
     vmax_col = "Vmax.minima",              # if NULL, uses paste0("Vmax.", tolower(assay))
     use_activation_limb = TRUE,
     min_points = 8,
@@ -393,7 +393,7 @@ fit_boltzmann_se <- function(
     rowDat.columns = vclamp_col
   )
 
-  # Create the group key in the melted data (Well.Plate_ID)
+  # Create the group key in the melted data (well_id.plate_id)
   key <- interaction(dat[[id_cols[1]]], dat[[id_cols[2]]], drop = TRUE)
   dat$.key <- key
 
@@ -632,7 +632,7 @@ fit_boltzmann_se <- function(
 #' @param row_by Character vector of \code{rowData} column names to group rows
 #'   by (e.g. \code{"LP"}).  \code{NULL} collapses all sweeps into one row.
 #' @param col_by Character vector of \code{colData} column names to group
-#'   columns by (e.g. \code{c("Condition", "Plate_ID")}).
+#'   columns by (e.g. \code{c("Condition", "plate_id")}).
 #' @param assayList Character vector of assay names to aggregate.  Defaults to
 #'   all assays in \code{se}.
 #' @param funs Named list of functions.  Each function is applied to the
@@ -658,7 +658,7 @@ fit_boltzmann_se <- function(
 #' se_agg <- aggregateSE(
 #'   se,
 #'   row_by   = "LP",
-#'   col_by   = c("Condition", "Plate_ID"),
+#'   col_by   = c("Condition", "plate_id"),
 #'   funs     = list(mean = mean, sd = sd)
 #' )
 #' # assayNames(se_agg) -> "Minima_mean", "Minima_sd", "Maxima_mean", ...

@@ -13,7 +13,7 @@ addThumbnailPaths(
 }
 \arguments{
 \item{se}{A \code{SummarizedExperiment} (or subclass) object whose
-\code{colData} contains at least \code{Well} and \code{Plate_ID} columns.}
+\code{colData} contains at least \code{well_id} and \code{plate_id} columns.}
 
 \item{folder}{Path to the parent folder containing the JPG thumbnails
 (searched recursively).}

@@ -24,7 +24,7 @@ aggregateSE(
 by (e.g. \code{"LP"}).  \code{NULL} collapses all sweeps into one row.}
 
 \item{col_by}{Character vector of \code{colData} column names to group
-columns by (e.g. \code{c("Condition", "Plate_ID")}).}
+columns by (e.g. \code{c("Condition", "plate_id")}).}
 
 \item{assayList}{Character vector of assay names to aggregate.  Defaults to
 all assays in \code{se}.}
@@ -78,7 +78,7 @@ Produces a new \code{SingleCellExperiment} where:
 se_agg <- aggregateSE(
   se,
   row_by   = "LP",
-  col_by   = c("Condition", "Plate_ID"),
+  col_by   = c("Condition", "plate_id"),
   funs     = list(mean = mean, sd = sd)
 )
 # assayNames(se_agg) -> "Minima_mean", "Minima_sd", "Maxima_mean", ...

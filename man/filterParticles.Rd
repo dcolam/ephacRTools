@@ -8,7 +8,7 @@ filterParticles(
   df,
   method = c("zscore", "median_ratio"),
   threshold = NULL,
-  group_vars = c("Channel_Name", "Plate_ID"),
+  group_vars = c("Channel_Name", "plate_id"),
   num_cols = c("Area", "Mean", "IntDen", "Number_of_Particles")
 )
 }
@@ -26,7 +26,7 @@ the group mean); \code{"median_ratio"} rejects particles whose
 \item{threshold}{Cut-off value. \code{NULL} applies the method's default.}
 
 \item{group_vars}{Character vector of column names used to define groups
-for scaling.  Default: \code{c("Channel_Name", "Plate_ID")}.}
+for scaling.  Default: \code{c("Channel_Name", "plate_id")}.}
 
 \item{num_cols}{Numeric columns to set to \code{NA} for rejected
 particles.  Default: \code{c("Area", "Mean", "IntDen",

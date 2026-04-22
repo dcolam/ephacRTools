@@ -219,7 +219,7 @@ prepareSingleImgDF <- function(pathDB,
 
   # ── Rename user-specified columns to standard names ──────────────────────
   col_map <- setNames(c(plate_col, well_col, channel_col, selection_col),
-                      c("Plate_ID",  "Well",   "Channel_Name", "Selection"))
+                      c("plate_id", "well_id", "Channel_Name", "Selection"))
   for (std in names(col_map)) {
     src <- col_map[[std]]
     if (src != std && src %in% names(tbl))
@@ -227,7 +227,7 @@ prepareSingleImgDF <- function(pathDB,
   }
 
   # ── Select columns ────────────────────────────────────────────────────────
-  always  <- c("Plate_ID", "Well", "Channel_Name", "Selection",
+  always  <- c("plate_id", "well_id", "Channel_Name", "Selection",
                "Image_ID", "Selection_Area", "Number_of_Particles")
   meas_extra <- setdiff(meas_cols, c("Number_of_Particles", "Selection_Area"))
   keep    <- unique(c(always, extra_id_cols, meas_extra))
@@ -236,14 +236,14 @@ prepareSingleImgDF <- function(pathDB,
   # ── Well normalisation ────────────────────────────────────────────────────
   if (isTRUE(cleanNames)) {
     # Strip site suffix: "B10-1" → "B10"
-    tbl$Well <- vapply(tbl$Well,
+    tbl$well_id <- vapply(tbl$well_id,
       function(x) strsplit(x, "-")[[1]][1], character(1))
     # Normalise to "A01" format
-    row_ltr  <- substr(tbl$Well, 1, 1)
-    col_num  <- suppressWarnings(as.integer(substr(tbl$Well, 2, 3)))
-    tbl$Well <- paste0(row_ltr, sprintf("%02d", col_num))
-    # Plate_ID: strip \r / whitespace
-    tbl$Plate_ID <- vapply(tbl$Plate_ID,
+    row_ltr  <- substr(tbl$well_id, 1, 1)
+    col_num  <- suppressWarnings(as.integer(substr(tbl$well_id, 2, 3)))
+    tbl$well_id <- paste0(row_ltr, sprintf("%02d", col_num))
+    # plate_id: strip \r / whitespace
+    tbl$plate_id <- vapply(tbl$plate_id,
       function(x) trimws(strsplit(x, "\r")[[1]][1]), character(1))
   }
 
@@ -274,7 +274,7 @@ prepareSingleImgDF <- function(pathDB,
   # ── Image_ID rank within well ─────────────────────────────────────────────
   if ("Image_ID" %in% names(tbl) && !is.null(fluor_rank)) {
     tbl$Image_ID_num <- suppressWarnings(as.numeric(tbl$Image_ID))
-    tbl <- dplyr::group_by(tbl, Plate_ID, Well) %>%
+    tbl <- dplyr::group_by(tbl, plate_id, well_id) %>%
       dplyr::mutate(Image_rank = dplyr::dense_rank(Image_ID_num)) %>%
       dplyr::ungroup() %>%
       as.data.frame()
@@ -290,7 +290,7 @@ prepareSingleImgDF <- function(pathDB,
 
   # ── Aggregate (optional) ─────────────────────────────────────────────────
   if (isTRUE(aggregate)) {
-    grp <- intersect(c("Plate_ID", "Well", "Channel_Name", "Selection",
+    grp <- intersect(c("plate_id", "well_id", "Channel_Name", "Selection",
                        "Image_Type", "Image_rank", extra_id_cols), names(tbl))
     tbl <- ag(tbl, cols = grp, fun = mean)
   }
@@ -394,8 +394,8 @@ prepareImgDF <- function(pathDB,
     if (length(dfs) == 0) stop("All databases failed to import.")
     names(dfs) <- paste0("DB", seq_along(dfs))
     df <- dplyr::bind_rows(dfs, .id = "column_label")
-    if (!"Plate_ID" %in% names(df))
-      df$Plate_ID <- df$column_label
+    if (!"plate_id" %in% names(df))
+      df$plate_id <- df$column_label
   }
 
   df
@@ -408,19 +408,19 @@ prepareImgDF <- function(pathDB,
 #' @export
 df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
 
-  df$Well_clean <- sapply(df$Well, function(x){
+  df$Well_clean <- sapply(df$well_id, function(x){
 
     unlist(stringr::str_split(x, "-"))[1]
 
   })
 
-  df$Row <- sapply(df$Well_clean, function(x){
+  df$row <- sapply(df$Well_clean, function(x){
 
     stringr::str_sub(x, 1, 1)
 
   })
 
-  df$Column <- sapply(df$Well_clean, function(x){
+  df$col <- sapply(df$Well_clean, function(x){
 
     stringr::str_sub(x, 2, 3)
 
@@ -442,7 +442,7 @@ df_cleaned <- function(df, channels = c("Green", "Red", "ROMK")){
   df$Channel <- ifelse(df$Channel_Name == "BFP", channels[1],
                         ifelse(df$Channel_Name == "mCherry", channels[2],
                                ifelse(df$Channel_Name == "GFP", channels[3], NA)))
-  df$Well <- paste(df$Row, stringr::str_pad(df$Column, 2, pad = "0"), sep="")
+  df$well_id <- paste(df$row, stringr::str_pad(df$col, 2, pad = "0"), sep="")
 
   return(df)
 }
@@ -462,19 +462,22 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", selType = c("Hole_ROI", 
   #   df_img <- subset(df_img, Image_Type == "fluor" & CorrSel == "background_ROI")
   # }
 
+  if (!"Image_Type" %in% names(df_img)) df_img$Image_Type <- "fluor"
+  if (!"CorrSel"    %in% names(df_img)) df_img$CorrSel    <- selType[1]
   df_img <- subset(df_img, Image_Type == "fluor" & CorrSel %in% selType)
   cd <- as.data.frame(SummarizedExperiment::colData(se))
   # Loop through each channel
   if(tableType == "pa"){
     channels <- unique(df_img$Channel_Name)
     for (channel in channels) {
-      # Subset df_img for current channel
+      # Subset df_img for current channel, keeping one row per well
       df_channel <- df_img %>%
         dplyr::filter(Channel_Name == channel) %>%
-        dplyr::select(-Channel_Name)  # optional: remove the channel label
+        dplyr::select(-Channel_Name) %>%
+        dplyr::distinct(well_id, plate_id, .keep_all = TRUE)
       # Perform join
       joined <- cd %>%
-        dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+        dplyr::left_join(df_channel, by = c("well_id", "plate_id"))
       # Extract just the new columns (everything except original colData)
       new_cols <- dplyr::setdiff(names(joined), names(cd))
       # Create a DataFrame object from just the new data
@@ -488,13 +491,14 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", selType = c("Hole_ROI", 
     for (channel in channels) {
       second_channels <- unique(subset(df_img, Channel_Name == channel)$Second_Channel)
       for (second_channel in second_channels){
-      # Subset df_img for current channel
+      # Subset df_img for current channel, keeping one row per well
       df_channel <- df_img %>%
         dplyr::filter(Channel_Name == channel, Second_Channel == second_channel) %>%
-        dplyr::select(-Channel_Name, -Second_Channel)  # optional: remove the channel label
+        dplyr::select(-Channel_Name, -Second_Channel) %>%
+        dplyr::distinct(well_id, plate_id, .keep_all = TRUE)
       # Perform join
       joined <- cd %>%
-        dplyr::left_join(df_channel, by = c("Well", "Plate_ID"))
+        dplyr::left_join(df_channel, by = c("well_id", "plate_id"))
       # Extract just the new columns (everything except original colData)
       new_cols <- dplyr::setdiff(names(joined), names(cd))
       # Create a DataFrame object from just the new data
@@ -526,7 +530,7 @@ mergeSEandImg <- function(se, df_img, tableType = "pa", selType = c("Hole_ROI", 
 #' exists.
 #'
 #' @param se A \code{SummarizedExperiment} (or subclass) object whose
-#'   \code{colData} contains at least \code{Well} and \code{Plate_ID} columns.
+#'   \code{colData} contains at least \code{well_id} and \code{plate_id} columns.
 #' @param folder Path to the parent folder containing the JPG thumbnails
 #'   (searched recursively).
 #' @param col_name Name of the colData column to write the nested DataFrame
@@ -618,10 +622,10 @@ addThumbnailPaths <- function(se,
   }
 
   # ------------------------------------------------------------------
-  # 3. Resolve Plate_ID for each file via sub-directory names
+  # 3. Resolve plate_id for each file via sub-directory names
   # ------------------------------------------------------------------
   cd        <- as.data.frame(SummarizedExperiment::colData(se))
-  plate_ids <- unique(cd$Plate_ID)
+  plate_ids <- unique(cd$plate_id)
 
   subdirs    <- list.dirs(folder, full.names = TRUE, recursive = FALSE)
   subnames   <- basename(subdirs)
@@ -651,8 +655,8 @@ addThumbnailPaths <- function(se,
   meta          <- meta[!is.na(meta$plate_id), , drop = FALSE]
 
   if (nrow(meta) == 0) {
-    warning("No thumbnails could be matched to a Plate_ID in the SE. ",
-            "Ensure sub-folder names contain the Plate_ID as a substring.")
+    warning("No thumbnails could be matched to a plate_id in the SE. ",
+            "Ensure sub-folder names contain the plate_id as a substring.")
     return(se)
   }
 
@@ -678,7 +682,7 @@ addThumbnailPaths <- function(se,
 
   for (i in seq_len(nrow(meta_dd))) {
     r   <- meta_dd[i, ]
-    idx <- which(cd$Well == r$well & cd$Plate_ID == r$plate_id)
+    idx <- which(cd$well_id == r$well & cd$plate_id == r$plate_id)
     if (length(idx) == 0) next
     key <- paste(r$channel, r$img_class, sep = ".")
     thumb_mat[idx, key] <- r$file
@@ -707,14 +711,14 @@ addThumbnailPaths <- function(se,
 #' @param se A \code{SummarizedExperiment} with a nested thumbnail
 #'   \code{DataFrame} in \code{colData} (added by \code{addThumbnailPaths}).
 #' @param wells Character vector of well identifiers in
-#'   \code{"<Well><sep><Plate_ID>"} format,
+#'   \code{"<well_id><sep><plate_id>"} format,
 #'   e.g. \code{c("B10.18T39383", "C05.18T39383")}.
 #' @param img_class Class label to display, e.g. \code{"class1"}.
 #' @param show Which images to show: \code{"both"} (BF + fluoro side by side,
 #'   default), \code{"BF"}, or \code{"fluoro"}.
 #' @param col_name Name of the colData column holding the thumbnail paths.
 #'   Default: \code{"thumbnails"}.
-#' @param sep Separator between Well and Plate_ID in \code{wells}.
+#' @param sep Separator between well_id and plate_id in \code{wells}.
 #'   Default: \code{"."}.
 #' @param ncol Number of columns in the well grid. \code{NULL} (default) puts
 #'   all wells in a single row.
@@ -848,9 +852,9 @@ plotThumbnails <- function(se,
     w   <- substr(wid, 1, idx - 1)
     pid <- substr(wid, idx + nchar(sep), nchar(wid))
 
-    cd_idx <- which(cd$Well == w & cd$Plate_ID == pid)
+    cd_idx <- which(cd$well_id == w & cd$plate_id == pid)
     if (length(cd_idx) == 0) {
-      warning("Well '", w, "' / Plate_ID '", pid,
+      warning("Well '", w, "' / plate_id '", pid,
               "' not found in SE colData - skipped.")
       next
     }
@@ -932,8 +936,8 @@ plotThumbnails <- function(se,
 #' an updated CSV safely overwrites previous calls.
 #'
 #' @param se A \code{SummarizedExperiment} (or \code{SingleCellExperiment})
-#'   object whose \code{colData} contains at least \code{Well} and
-#'   \code{Plate_ID} columns.
+#'   object whose \code{colData} contains at least \code{well_id} and
+#'   \code{plate_id} columns.
 #' @param csv Path to the annotation CSV file, \strong{or} a data frame already
 #'   read into R.
 #' @param person Annotator name used to build the colData column name
@@ -999,15 +1003,14 @@ mergeAnnotationCSV <- function(se, csv, person = NULL) {
     "manual_ann"
 
   # ── 4. Join to SE colData on Well + Plate_ID ──────────────────────────────
-  names(df)[names(df) == "well"]     <- "Well"
-  names(df)[names(df) == "plate_id"] <- "Plate_ID"
+  names(df)[names(df) == "well"] <- "well_id"
 
   cd     <- as.data.frame(SummarizedExperiment::colData(se))
-  joined <- dplyr::left_join(cd[, c("Well", "Plate_ID")], df,
-                             by = c("Well", "Plate_ID"))
+  joined <- dplyr::left_join(cd[, c("well_id", "plate_id")], df,
+                             by = c("well_id", "plate_id"))
 
   # ── 5. Store as nested DataFrame ──────────────────────────────────────────
-  payload_cols <- setdiff(colnames(joined), c("Well", "Plate_ID"))
+  payload_cols <- setdiff(colnames(joined), c("well_id", "plate_id"))
   SummarizedExperiment::colData(se)[[col_nm]] <-
     S4Vectors::DataFrame(joined[, payload_cols, drop = FALSE])
 

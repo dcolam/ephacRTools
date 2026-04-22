@@ -4,7 +4,7 @@
 \alias{prepareSE}
 \title{Prepare SummarizedExperiment Object from DataControl Excel-file}
 \usage{
-prepareSE(pathDF, conditionColumns = c("Compound"))
+prepareSE(pathDF, conditionColumns = c("Compound"), progress_callback = NULL)
 }
 \arguments{
 \item{pathDF}{Path to DataControl Excel files}

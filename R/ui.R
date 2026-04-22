@@ -107,6 +107,8 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
                                                       hr(),
                                                       menuItem("Clustering", tabName = "tab_cluster"),
+                                                      menuItem("Current Clamp", tabName = "tab_cc",
+                                                               icon = icon("bolt")),
                                                       menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
                                                               tags$span(paste0("ephacRTools v",
@@ -1035,6 +1037,10 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
 
                              ),
+
+                          tabItem("tab_cc",
+                                  ccPreviewUI("cc_preview")
+                          ),
 
                           tabItem("tab_export",
 

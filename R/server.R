@@ -87,6 +87,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
   function(input, output, session) {
 
+    ccPreviewServer("cc_preview")
+
     previous_sel <- reactiveVal(value=NULL)
 
     if(!is.null(logins)){
@@ -157,22 +159,22 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         assayNames(x) <- paste0("assay",1:length(assays(x)))
       if(ncol(rowData(x))==0) rowData(x)$name <- row.names(x)
 
-      updateSelectInput(session, "plate_id", choices=unique(colData(x)$Plate_ID),
-                        selected=unique(colData(x)$Plate_ID)[1])
+      updateSelectInput(session, "plate_id", choices=unique(colData(x)$plate_id),
+                        selected=unique(colData(x)$plate_id)[1])
       updateSelectInput(session, "assay_id", choices=c(assayNames(x), colnames(as.data.frame(colData(x)))),
                         selected=assayNames(x)[1])
-      updateSelectInput(session, "sweep_id", choices=unique(rowData(x)$Sweep),
-                        selected=unique(rowData(x)$Sweep)[1])
+      updateSelectInput(session, "sweep_id", choices=unique(rowData(x)$sweep),
+                        selected=unique(rowData(x)$sweep)[1])
       updateSelectizeInput(session, "sweep_group",
-                               choices=unique(rowData(x)$Sweep))
+                               choices=unique(rowData(x)$sweep))
       updateSelectizeInput(session, "group_by_meta",
                            choices=colnames(rowData(x)))
-      updateSelectInput(session, "plate_id1", choices=unique(colData(x)$Plate_ID),
-                        selected=unique(colData(x)$Plate_ID)[1])
-      updateSelectInput(session, "plate_id3", choices=unique(colData(x)$Plate_ID),
-                        selected=unique(colData(x)$Plate_ID)[1])
-      updateSelectInput(session, "plate_id4", choices=unique(colData(x)$Plate_ID),
-                        selected=unique(colData(x)$Plate_ID)[1])
+      updateSelectInput(session, "plate_id1", choices=unique(colData(x)$plate_id),
+                        selected=unique(colData(x)$plate_id)[1])
+      updateSelectInput(session, "plate_id3", choices=unique(colData(x)$plate_id),
+                        selected=unique(colData(x)$plate_id)[1])
+      updateSelectInput(session, "plate_id4", choices=unique(colData(x)$plate_id),
+                        selected=unique(colData(x)$plate_id)[1])
       updateSelectInput(session, "assay_id1", choices=assayNames(x),
                         selected=assayNames(x)[1])
       updateSelectInput(session, "color_group1", choices=colnames(as.data.frame(colData(x))),
@@ -206,16 +208,16 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         updateSelectInput(session, "clustercolor3", choices = colnames(coldata), selected = "cluster.pca")
 
         allWells <- list()
-        for(plate in unique(coldata$Plate_ID)){
+        for(plate in unique(coldata$plate_id)){
 
-          allWells[[plate]] <- subset(coldata, Plate_ID == plate)$Well
+          allWells[[plate]] <- subset(coldata, plate_id == plate)$well_id
         }
 
         if (!initialized()) {
         if(is.null(unlist(selected_wells$data))){
           selwel <- character(0)
         }else{
-          selwel <- selected_wells$data[[unique(colData(x)$Plate_ID)[1]]]
+          selwel <- selected_wells$data[[unique(colData(x)$plate_id)[1]]]
           #selwel <- character(0)
         }
         updateSelectizeInput(session, "selected_well",
@@ -666,8 +668,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       tryCatch({
         l_files         <- input$img_fileDB$datapath
         ttype           <- input$img_tabletype[[1]] %||% "pa"
-        plate_col       <- input$img_col_plate     %||% "Plate_ID"
-        well_col        <- input$img_col_well      %||% "Well"
+        plate_col       <- input$img_col_plate     %||% "plate_id"
+        well_col        <- input$img_col_well      %||% "well_id"
         channel_col     <- input$img_col_channel   %||% "Channel_Name"
         selection_col   <- input$img_col_selection %||% "Selection"
         extra_cols      <- input$img_extra_cols    %||% character(0)
@@ -721,9 +723,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     output$img_import_status <- renderText({
       df <- cls_rv$particles
       if (is.null(df)) return("No data imported yet.")
-      n_w   <- length(unique(paste(df$Plate_ID, df$Well)))
+      n_w   <- length(unique(paste(df$plate_id, df$well_id)))
       n_ch  <- length(unique(df$Channel_Name))
-      n_pl  <- length(unique(df$Plate_ID))
+      n_pl  <- length(unique(df$plate_id))
       sels   <- if ("Selection"  %in% names(df)) paste(unique(df$Selection),  collapse=", ") else "\u2014"
       itype  <- if ("Image_Type" %in% names(df)) paste(unique(df$Image_Type), collapse=", ") else "not set"
       corrsl <- if ("CorrSel"    %in% names(df)) paste(unique(df$CorrSel),    collapse=", ") else "not applied"
@@ -757,9 +759,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       req(input$img_rds_file)
       df <- cls_rv$particles
       if (is.null(df)) return("Not loaded.")
-      n_w  <- length(unique(paste(df$Plate_ID %||% "?", df$Well %||% "?")))
+      n_w  <- length(unique(paste(df$plate_id %||% "?", df$well_id %||% "?")))
       n_ch <- if ("Channel_Name" %in% names(df)) length(unique(df$Channel_Name)) else "?"
-      n_pl <- if ("Plate_ID"    %in% names(df)) length(unique(df$Plate_ID))    else "?"
+      n_pl <- if ("plate_id"    %in% names(df)) length(unique(df$plate_id))    else "?"
       paste0(nrow(df), " rows | ", n_w, " wells | ",
              n_ch, " channel(s) | ", n_pl, " plate(s)")
     })
@@ -768,8 +770,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       req(input$img_seDataset, input$img_fileDB, input$img_tabletype)
       tryCatch({
         l_files       <- input$img_fileDB$datapath
-        plate_col     <- input$img_col_plate     %||% "Plate_ID"
-        well_col      <- input$img_col_well      %||% "Well"
+        plate_col     <- input$img_col_plate     %||% "plate_id"
+        well_col      <- input$img_col_well      %||% "well_id"
         channel_col   <- input$img_col_channel   %||% "Channel_Name"
         selection_col <- input$img_col_selection %||% "Selection"
         withProgress(message = "Connecting to SE", value = 0.3, {
@@ -869,10 +871,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             tagList(
               tags$p(
                 paste("A SummarizedExperiment with", ncol(SE()), "samples and",
-                      length(unique(SE()$Plate_ID)), "electrophysiology plates:")
+                      length(unique(SE()$plate_id)), "electrophysiology plates:")
               ),
               tags$ul(
-                lapply(unique(SE()$Plate_ID), function(pid) {
+                lapply(unique(SE()$plate_id), function(pid) {
                   tags$li(pid)
                 })
               )
@@ -942,14 +944,14 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
             }else{assayNameSham <-input$assay_id}
             assayName <- input$assay_id
 
-            melted.dat <- sechm::meltSE(SE()[,SE()$Plate_ID == input$plate_id],
+            melted.dat <- sechm::meltSE(SE()[,SE()$plate_id == input$plate_id],
                                           features = row.names(rowData(SE())),
                                           assayName = assayNameSham,
                                           rowDat.columns = c(input$sweep_id, input$group_by_meta))
 
             melted.dat <- melted.dat[melted.dat[[input$group_by_meta]] %in% input$sweep_id, ]
             letter2number <- function(x) {utf8ToInt(x) - utf8ToInt("A") + 1L}
-            melted.dat$RowNum <- sapply(melted.dat$Row, function(c){letter2number(c)})
+            melted.dat$RowNum <- sapply(melted.dat$row, function(c){letter2number(c)})
 
             if(is.numeric(melted.dat[[assayName]])){
               numID <- TRUE
@@ -975,21 +977,21 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
             if(length(get_wells(input$plate_id)) > 0){
-              melted.dat$is_selected <- ifelse(melted.dat$Well %in% get_wells(input$plate_id), TRUE, FALSE)
+              melted.dat$is_selected <- ifelse(melted.dat$well_id %in% get_wells(input$plate_id), TRUE, FALSE)
 
             }else{
               melted.dat$is_selected <- TRUE
 
             }
-            #melted.dat$is_selected <- ifelse(melted.dat$Well %in% input$selected_well, TRUE, FALSE)
+            #melted.dat$is_selected <- ifelse(melted.dat$well_id %in% input$selected_well, TRUE, FALSE)
 
-            melted.dat$key_combined <- paste(melted.dat$Well, melted.dat$Plate_ID, sep = ", ")
-            p <- ggplot(melted.dat, aes(x = as.numeric(Column), y = Row, key = key_combined, fill = .data[[assayName]])) +
+            melted.dat$key_combined <- paste(melted.dat$well_id, melted.dat$plate_id, sep = ", ")
+            p <- ggplot(melted.dat, aes(x = as.numeric(col), y = row, key = key_combined, fill = .data[[assayName]])) +
               geom_tile() +
               scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.2)) +
               scale_x_continuous(breaks = 1:24) +
               scale_y_discrete(limits = rev) +
-              geom_text(aes(label = paste(Row, Column, sep=""), alpha = is_selected), color = "white") +
+              geom_text(aes(label = paste(row, col, sep=""), alpha = is_selected), color = "white") +
               theme_minimal()
 
 
@@ -1140,7 +1142,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         if(!is.null(SE())){
 
           if(!input$all_plates){
-          se <- SE()[,SE()$Plate_ID == input$plate_id1]
+          se <- SE()[,SE()$plate_id == input$plate_id1]
           }else{se <- SE()}
 
 
@@ -1159,7 +1161,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
         if(length(get_wells(input$plate_id1)) > 0){
-            se <- se[,se$Well %in% get_wells(input$plate_id1)]
+            se <- se[,se$well_id %in% get_wells(input$plate_id1)]
 
         }
 
@@ -1250,7 +1252,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     req(SE())
 
     se <- SE()
-    print(unique(se$Plate_ID))
+    print(unique(se$plate_id))
     incProgress(0.5)
     se <- reducedDim.Cellwise(se, assayList = input$clusterAssay,
                               colNames = input$clusterColData,
@@ -1273,11 +1275,11 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     colnames(df)[1:2] <- c("X1", "X2")
 
     df$color_value <- df[[color_var]]
-    df$hover_text <- paste("Well: ", df$Well,
-                           "<br>Plate ID: ", df$Plate_ID,
+    df$hover_text <- paste("Well: ", df$well_id,
+                           "<br>Plate ID: ", df$plate_id,
                            "<br>", color_var, ": ", df$color_value)
 
-    df$key_combined <- paste(df$Well, df$Plate_ID, sep=", ")
+    df$key_combined <- paste(df$well_id, df$plate_id, sep=", ")
     p <- ggplot(df, aes(x = X1, y = X2, text = hover_text, key = key_combined)) +
       geom_point(aes(color = color_value)) +
       labs(x = xlab, y = ylab, color = color_var) +
@@ -1289,7 +1291,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     }
 
 
-    # if(length(get_wells(unique(df$Plate_ID))) > 0){
+    # if(length(get_wells(unique(df$plate_id))) > 0){
     #
     # highlighted_df <- df %>%
     #   dplyr::filter(Plate_ID %in% selected_wells$data$plate_id) %>%  # only plates with selected wells
@@ -1301,7 +1303,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     selected <- selected_wells$data
 
     if (!is.null(selected) && nrow(selected) > 0 && !is.null(df) && nrow(df) > 0) {
-    highlighted_df <- dplyr::semi_join(df, selected, by = c("Plate_ID" = "plate_id", "Well" = "well"))
+    highlighted_df <- dplyr::semi_join(df, selected, by = c("plate_id", "well_id" = "well"))
     print(highlighted_df)
 
       if (nrow(highlighted_df) > 0) {
@@ -1514,7 +1516,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
     # Melt and subset the data
     melted.dat <- sechm::meltSE(
-      SE()[, SE()$Plate_ID == input$plate_id],
+      SE()[, SE()$plate_id == input$plate_id],
       features = row.names(rowData(SE())),
       assayName = assayName,
       rowDat.columns = c(input$sweep_id, input$group_by_meta)
@@ -1525,7 +1527,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     slider_range <- input$selected_slider
 
     # Filter wells based on slider range
-    matching_wells <- unique(melted.dat$Well[slider_vals >= slider_range[1] & slider_vals <= slider_range[2]])
+    matching_wells <- unique(melted.dat$well_id[slider_vals >= slider_range[1] & slider_vals <= slider_range[2]])
 
     # Update selected_well input with matching wells
     #updateSelectInput(session, "selected_well", selected = matching_wells)
@@ -1537,21 +1539,21 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
   # ============================================================
 
   # Helper: make a plate grid plotly from colData
-  .make_plate_grid <- function(coldata_df, fill_col = "Well") {
+  .make_plate_grid <- function(coldata_df, fill_col = "well_id") {
     rows <- LETTERS[1:16]
     cols <- sprintf("%02d", 1:24)
     grid <- expand.grid(Row = rows, Col = cols, stringsAsFactors = FALSE)
-    grid$Well <- paste0(grid$Row, grid$Col)
+    grid$well_id <- paste0(grid$Row, grid$Col)
     grid$Col_num <- as.integer(grid$Col)
     if (!is.null(coldata_df) && fill_col %in% colnames(coldata_df)) {
-      grid <- merge(grid, coldata_df[, unique(c("Well", fill_col))], by = "Well", all.x = TRUE)
+      grid <- merge(grid, coldata_df[, unique(c("well_id", fill_col))], by = "well_id", all.x = TRUE)
       fill_vals <- grid[[fill_col]]
     } else {
       fill_vals <- NA_character_
     }
     grid$fill_val <- as.character(fill_vals)
     p <- ggplot(grid, aes(x = Col_num, y = Row, fill = fill_val,
-                          text = paste0(Well, ": ", fill_val))) +
+                          text = paste0(well_id, ": ", fill_val))) +
       geom_tile(color = "grey70") +
       scale_x_continuous(breaks = 1:24, expand = c(0, 0)) +
       scale_y_discrete(limits = rev, expand = c(0, 0)) +
@@ -1583,7 +1585,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     se <- SE()
     rules <- cond_rules()
     if (length(rules) == 0) return(helpText("Click 'Add Rule' to define a mapping."))
-    plate_ids <- if (!is.null(se)) unique(as.character(colData(se)$Plate_ID)) else character(0)
+    plate_ids <- if (!is.null(se)) unique(as.character(colData(se)$plate_id)) else character(0)
     tagList(lapply(seq_along(rules), function(i) {
       r <- rules[[i]]
       rid <- as.character(r$id)
@@ -1638,9 +1640,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     se <- SE()
     req(se, input$plate_id4)
     cd <- as.data.frame(colData(se))
-    cd <- cd[cd$Plate_ID %in% input$plate_id4, , drop = FALSE]
+    cd <- cd[cd$plate_id %in% input$plate_id4, , drop = FALSE]
     fill_col <- if (!is.null(input$cond_preview_col) && input$cond_preview_col %in% colnames(cd))
-      input$cond_preview_col else "Well"
+      input$cond_preview_col else "well_id"
     .make_plate_grid(cd, fill_col)
   })
 
@@ -1649,7 +1651,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     req(se)
     cd <- as.data.frame(colData(se))
     if (!is.null(input$plate_id4) && nchar(input$plate_id4[1]) > 0)
-      cd <- cd[cd$Plate_ID %in% input$plate_id4, , drop = FALSE]
+      cd <- cd[cd$plate_id %in% input$plate_id4, , drop = FALSE]
     datatable(cd, options = list(pageLength = 8, scrollX = TRUE), rownames = FALSE)
   })
 
@@ -1678,12 +1680,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       new_col <- trimws(input$cond_new_col)
       cd[[new_col]] <- NA_character_
       for (r in rules) {
-        plates  <- if (is.null(r$plates) || length(r$plates) == 0) unique(cd$Plate_ID) else r$plates
+        plates  <- if (is.null(r$plates) || length(r$plates) == 0) unique(cd$plate_id) else r$plates
         col_min <- as.integer(r$col_min %||% 1L)
         col_max <- as.integer(r$col_max %||% 24L)
         label   <- r$label
-        well_col <- as.integer(sub("^[A-Za-z]+", "", cd$Well))
-        idx <- cd$Plate_ID %in% plates & !is.na(well_col) & well_col >= col_min & well_col <= col_max
+        well_col <- as.integer(sub("^[A-Za-z]+", "", cd$well_id))
+        idx <- cd$plate_id %in% plates & !is.na(well_col) & well_col >= col_min & well_col <= col_max
         cd[[new_col]][idx] <- label
       }
       colData(se)[[new_col]] <- cd[[new_col]]
@@ -1848,7 +1850,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     cd <- as.data.frame(colData(se))
     mean_cols <- grep("_mean$", colnames(cd), value = TRUE)
     if (length(mean_cols) == 0) return(datatable(data.frame(message = "No _mean columns yet.")))
-    datatable(cd[, c("Well", "Plate_ID", mean_cols), drop = FALSE],
+    datatable(cd[, c("well_id", "plate_id", mean_cols), drop = FALSE],
               options = list(pageLength = 8, scrollX = TRUE), rownames = FALSE)
   })
 
@@ -1883,10 +1885,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     }, error = function(e) NA_real_)
     df_plot <- data.frame(
       Before = x_raw, After = x_new,
-      Well = cd$Well, Plate_ID = cd$Plate_ID
+      well_id = cd$well_id, plate_id = cd$plate_id
     )
     plot_ly(df_plot, x = ~Before, y = ~After, type = "scatter", mode = "markers",
-            text = ~paste0(Well, " (", Plate_ID, ")"),
+            text = ~paste0(well_id, " (", plate_id, ")"),
             hoverinfo = "text+x+y", marker = list(size = 6, opacity = 0.7)) %>%
       layout(xaxis = list(title = paste("Before:", col)),
              yaxis = list(title = "After transform"))
@@ -1964,13 +1966,13 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     pca <- as.data.frame(rds[["PCA"]])
     req(ncol(pca) >= 2)
     cd <- as.data.frame(colData(se))
-    df <- cbind(pca[, 1:2], cd[, intersect(colnames(cd), c("Well","Plate_ID", input$dr_color_col)), drop=FALSE])
+    df <- cbind(pca[, 1:2], cd[, intersect(colnames(cd), c("well_id","plate_id", input$dr_color_col)), drop=FALSE])
     colnames(df)[1:2] <- c("PC1", "PC2")
     color_col <- input$dr_color_col
     if (!is.null(color_col) && color_col %in% colnames(df)) {
       plot_ly(df, x = ~PC1, y = ~PC2, color = ~get(color_col),
               type = "scatter", mode = "markers",
-              text = if ("Well" %in% colnames(df)) ~Well else NULL,
+              text = if ("well_id" %in% colnames(df)) ~well_id else NULL,
               marker = list(size = 7)) %>%
         layout(title = "PCA (PC1 vs PC2)", coloraxis = list(colorbar = list(title = color_col)))
     } else {
@@ -2062,8 +2064,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     cd <- as.data.frame(colData(se))
     keep <- fw_wells_keep()
     cd$Keep <- ifelse(keep, "Keep", "Remove")
-    plates <- unique(cd$Plate_ID)
-    cd <- cd[cd$Plate_ID == plates[1], , drop = FALSE]
+    plates <- unique(cd$plate_id)
+    cd <- cd[cd$plate_id == plates[1], , drop = FALSE]
     .make_plate_grid(cd, "Keep")
   })
 
@@ -2073,7 +2075,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     cd <- as.data.frame(colData(se))
     keep <- fw_wells_keep()
     cd$Keep <- ifelse(keep, "Keep", "Remove")
-    datatable(cd[, c("Well","Plate_ID","Keep"), drop=FALSE],
+    datatable(cd[, c("well_id","plate_id","Keep"), drop=FALSE],
               options = list(pageLength = 8, scrollX = TRUE), rownames = FALSE)
   })
 
@@ -2212,7 +2214,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       se     <- SE()
       req(!is.null(parent), !is.null(se))
 
-      plate_ids  <- unique(colData(se)$Plate_ID)
+      plate_ids  <- unique(colData(se)$plate_id)
       subdirs    <- list.dirs(parent, full.names = TRUE, recursive = FALSE)
       subnames   <- basename(subdirs)
 
@@ -2247,7 +2249,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
       # Filter to only plates that exist in the active SE
       se <- tryCatch(SE(), error = function(e) NULL)
-      se_plates <- if (!is.null(se)) unique(colData(se)$Plate_ID) else character(0)
+      se_plates <- if (!is.null(se)) unique(colData(se)$plate_id) else character(0)
 
       plates <- if (length(se_plates) > 0 && !identical(all_plates, "(all)")) {
         # Keep subdirs whose name contains a SE Plate_ID as a substring
@@ -2363,9 +2365,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       pid <- input$plate_img_id
       if (is.null(se) || is.null(var) || var == "None" || is.null(pid)) return(NULL)
       cd <- as.data.frame(colData(se))
-      cd <- cd[cd$Plate_ID == pid, , drop = FALSE]
+      cd <- cd[cd$plate_id == pid, , drop = FALSE]
       if (nrow(cd) == 0 || !var %in% colnames(cd)) return(NULL)
-      setNames(cd[[var]], cd$Well)
+      setNames(cd[[var]], cd$well_id)
     })
 
     # Filtered values — NAs mark excluded wells
@@ -2529,7 +2531,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       extra_vars <- input$img_hover_vars
       if (!is.null(se) && !is.null(pid)) {
         cd  <- as.data.frame(colData(se))
-        row <- cd[cd$Well == well & cd$Plate_ID == pid, , drop = FALSE]
+        row <- cd[cd$well_id == well & cd$plate_id == pid, , drop = FALSE]
         if (nrow(row) > 0) {
           col_var <- if (!is.null(var) && var != "None" && var %in% colnames(row)) var else "QC"
           txt <- paste0(well, "  ", col_var, ": ", row[[col_var]][1])
@@ -2596,7 +2598,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       extra_vars <- input$img_hover_vars
       if (!is.null(se) && !is.null(pid)) {
         cd  <- as.data.frame(colData(se))
-        row <- cd[cd$Well == well & cd$Plate_ID == pid, , drop = FALSE]
+        row <- cd[cd$well_id == well & cd$plate_id == pid, , drop = FALSE]
         if (nrow(row) > 0) {
           col_var <- if (!is.null(var) && var != "None" && var %in% colnames(row)) var else "QC"
           hover_txt <- paste0(well, "  \u2022  ", col_var, ": ", row[[col_var]][1])
@@ -2923,7 +2925,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     # Helper: try to infer plate ID from the file path using SE plate IDs
     .extract_plate_from_path <- function(fp, se) {
       if (is.null(se)) return(NULL)
-      pids <- unique(colData(se)$Plate_ID)
+      pids <- unique(colData(se)$plate_id)
       matched <- pids[sapply(pids, function(p) grepl(p, fp, fixed = TRUE))]
       if (length(matched) > 0) matched[1] else NULL
     }
@@ -3139,7 +3141,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       classified = NULL
     )
 
-    output$cls_load_status  <- renderText({ req(cls_rv$particles);  paste0("Loaded: ", nrow(cls_rv$particles), " rows, ", length(unique(cls_rv$particles$Channel_Name)), " channel(s), ", length(unique(cls_rv$particles$Plate_ID)), " plate(s).") })
+    output$cls_load_status  <- renderText({ req(cls_rv$particles);  paste0("Loaded: ", nrow(cls_rv$particles), " rows, ", length(unique(cls_rv$particles$Channel_Name)), " channel(s), ", length(unique(cls_rv$particles$plate_id)), " plate(s).") })
     output$cls_filter_status <- renderText({ req(cls_rv$filtered);  n_na <- sum(is.na(cls_rv$filtered$Mean)); paste0("After filter: ", nrow(cls_rv$filtered)," rows, ", n_na, " particles blanked (", round(100*n_na/nrow(cls_rv$filtered)),"%).") })
     output$cls_agg_status    <- renderText({ req(cls_rv$aggregated); paste0("Aggregated: ", nrow(cls_rv$aggregated), " well-channel rows.") })
     output$cls_score_status  <- renderText({ req(cls_rv$scored);     paste0("Scored: ", nrow(cls_rv$scored), " rows. Score range: [", round(min(cls_rv$scored$channel_score, na.rm=TRUE),3), ", ", round(max(cls_rv$scored$channel_score, na.rm=TRUE),3), "].") })
@@ -3148,9 +3150,9 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     # Resolve scale group input → actual column names
     cls_scale_group_vars <- reactive({
       switch(input$cls_scale_groups %||% "channel_plate",
-        channel_plate = c("Channel_Name", "Plate_ID"),
+        channel_plate = c("Channel_Name", "plate_id"),
         channel       = "Channel_Name",
-        channel_well  = c("Channel_Name", "Well")
+        channel_well  = c("Channel_Name", "well_id")
       )
     })
 
@@ -3255,8 +3257,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     output$cls_diag_load_hist <- renderPlotly({
       req(cls_rv$particles)
       df <- cls_rv$particles
-      req("Well" %in% names(df), "Channel_Name" %in% names(df))
-      cnt <- as.data.frame(table(Well=df$Well, Channel_Name=df$Channel_Name))
+      req("well_id" %in% names(df), "Channel_Name" %in% names(df))
+      cnt <- as.data.frame(table(well_id=df$well_id, Channel_Name=df$Channel_Name))
       cnt <- cnt[cnt$Freq > 0, ]
       p <- ggplot(cnt, aes(x=Freq, fill=Channel_Name)) +
         geom_histogram(bins=30, alpha=0.7, position="identity") +
@@ -3388,8 +3390,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       }
       req(col_name %in% names(df), "Channel_Name" %in% names(df))
       df$`.m`     <- df[[col_name]]
-      df$`.hover` <- paste0("Well: ",   df$Well     %||% "?",
-                            "<br>Plate: ", df$Plate_ID %||% "?",
+      df$`.hover` <- paste0("Well: ",   df$well_id     %||% "?",
+                            "<br>Plate: ", df$plate_id %||% "?",
                             "<br>",  col_name, ": ", round(df[[col_name]], 4))
       meta      <- input$cls_meta_col %||% ""
       use_facet <- nzchar(meta) && meta %in% names(df)
@@ -3425,7 +3427,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       df <- cls_rv$scored
       req("Mean_z" %in% names(df), "normArea_z" %in% names(df), "channel_score" %in% names(df))
       p <- ggplot(df, aes(x=Mean_z, y=normArea_z, color=channel_score, shape=Channel_Name,
-                          text=paste0("Well: ", Well,
+                          text=paste0("Well: ", well_id,
                                       "<br>Channel: ", Channel_Name,
                                       "<br>Score: ",   round(channel_score, 3),
                                       "<br>Mean_z: ",  round(Mean_z, 3),
@@ -3460,7 +3462,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       cd <- tryCatch(as.data.frame(SummarizedExperiment::colData(SEs[[se_name]])),
                      error = function(e) NULL)
       if (is.null(cd)) return(df)
-      join_by  <- intersect(c("Well", "Plate_ID"), intersect(names(cd), names(df)))
+      join_by  <- intersect(c("well_id", "plate_id"), intersect(names(cd), names(df)))
       new_cols <- setdiff(names(cd), names(df))
       if (length(join_by) == 0 || length(new_cols) == 0) return(df)
       dplyr::left_join(df, cd[, c(join_by, new_cols), drop=FALSE], by=join_by)
@@ -3492,19 +3494,19 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
                         "Load particles first. SE metadata is joined at load time."))
       }
       # Per-particle identifiers that should never be used as facet variables
-      never_facet <- c("Well", "Channel_Name", "Image_Type", "CorrSel",
+      never_facet <- c("well_id", "Channel_Name", "Image_Type", "CorrSel",
                        "Selection", "Image_ID", "Mean", "Area", "IntDen",
                        "Number_of_Particles", "Selection_Area",
-                       "Mean_scaled", "Area_scaled", "Row", "Column", "QC")
+                       "Mean_scaled", "Area_scaled", "row", "col", "qc")
       char_cols <- names(df)[vapply(df, function(x) is.character(x) || is.factor(x), logical(1))]
       char_cols <- setdiff(char_cols, never_facet)
-      # Plate_ID is per-well and always a useful facet option — ensure it's included
-      if ("Plate_ID" %in% names(df)) char_cols <- union("Plate_ID", char_cols)
+      # plate_id is per-well and always a useful facet option — ensure it's included
+      if ("plate_id" %in% names(df)) char_cols <- union("plate_id", char_cols)
       if (length(char_cols) == 0) {
         return(helpText(style="font-size:10px; color:#888;",
                         "No grouping columns found. Select an SE before loading to join metadata."))
       }
-      default_col <- if ("Plate_ID" %in% char_cols) "Plate_ID" else char_cols[1]
+      default_col <- if ("plate_id" %in% char_cols) "plate_id" else char_cols[1]
       selectInput("cls_meta_col", "Facet / group by:",
                   choices = c("(none)" = "", char_cols), selected = default_col)
     })
@@ -3579,7 +3581,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       score_cols <- grep("_score$|_normArea$", names(cls_rv$classified), value=TRUE)
       if (length(score_cols) < 1) return(helpText("Score columns not available."))
       # Color options: classification + plate + any char SE columns in the joined df
-      base_color <- intersect(c("Classification", "Plate_ID"), names(df))
+      base_color <- intersect(c("Classification", "plate_id"), names(df))
       se_cols    <- if (!is.null(input$cls_meta_col) && nzchar(input$cls_meta_col) &&
                         input$cls_meta_col %in% names(df))
                      input$cls_meta_col else character(0)
@@ -3606,8 +3608,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       df$`.x`     <- df[[x_col]]
       df$`.y`     <- df[[y_col]]
       df$`.color` <- df[[col_col]]
-      df$`.hover` <- paste0("Well: ", df$Well,
-                            "<br>Plate: ", df$Plate_ID,
+      df$`.hover` <- paste0("Well: ", df$well_id,
+                            "<br>Plate: ", df$plate_id,
                             "<br>Class: ", df$Classification)
       p <- ggplot(df, aes(x=.x, y=.y, color=.color, text=.hover)) +
         geom_point(alpha=0.75, size=2.5) +
@@ -3651,8 +3653,8 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       req(all(c(x_col, y_col, z_col) %in% names(df)), col_col %in% names(df))
       color_vec <- df[[col_col]]
       is_numeric_color <- is.numeric(color_vec)
-      hover_txt <- paste0("Well: ",   df$Well,
-                          "<br>Plate: ", df$Plate_ID,
+      hover_txt <- paste0("Well: ",   df$well_id,
+                          "<br>Plate: ", df$plate_id,
                           "<br>Class: ", df$Classification,
                           "<br>", x_col, ": ", round(df[[x_col]], 3),
                           "<br>", y_col, ": ", round(df[[y_col]], 3),
@@ -3756,7 +3758,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         scale_choice <- input$cls_agg_scale_within %||% "channel"
         scale_within <- switch(scale_choice,
           channel       = "Channel_Name",
-          channel_plate = c("Channel_Name", "Plate_ID"),
+          channel_plate = c("Channel_Name", "plate_id"),
           none          = NULL)
         scale_center <- isTRUE(input$cls_agg_scale_center)
         cls_rv$aggregated <- aggregateParticles(src,
@@ -3864,11 +3866,10 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
       col_nm  <- if (nzchar(person)) paste0("manual_ann_", make.names(person)) else "manual_ann"
 
       cd      <- as.data.frame(SummarizedExperiment::colData(se))
-      names(df)[names(df)=="well"]    <- "Well"
-      names(df)[names(df)=="plate_id"]<- "Plate_ID"
-      joined  <- dplyr::left_join(cd[,c("Well","Plate_ID")], df,
-                                  by=c("Well","Plate_ID"))
-      new_cols <- setdiff(names(joined), c("Well","Plate_ID"))
+      names(df)[names(df)=="well"] <- "well_id"
+      joined  <- dplyr::left_join(cd[, c("well_id","plate_id")], df,
+                                  by = c("well_id","plate_id"))
+      new_cols <- setdiff(names(joined), c("well_id","plate_id"))
       SummarizedExperiment::colData(se)[[col_nm]] <-
         S4Vectors::DataFrame(joined[, new_cols, drop=FALSE])
       SEs[[se_name]] <- se

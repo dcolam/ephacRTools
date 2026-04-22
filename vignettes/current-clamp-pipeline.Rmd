@@ -1,0 +1,192 @@
+---
+title: "Current-Clamp Pipeline"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Current-Clamp Pipeline}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+## Overview
+
+The current-clamp (CC) pipeline processes raw DataControl CSV traces into a
+`SingleCellExperiment` object in three explicit steps:
+
+```
+csvToParquet()  →  runAPAnalysis()  →  prepareCCSE()
+```
+
+Raw per-well CSVs are first combined into a single Parquet file, then the
+Python AP-analysis pipeline detects action potentials and computes per-sweep
+metrics, and finally the results are assembled into an SCE compatible with
+`buildMAE()`.
+
+## Python Setup
+
+The pipeline requires Python with the following packages:
+
+```
+numpy  pandas  polars  pyarrow  scipy
+```
+
+A conda environment file is provided at `inst/python/environment.yml`.
+
+### 1. Create the conda environment (run once in a terminal)
+
+```bash
+conda env create -f inst/python/environment.yml
+# or with the full path:
+conda env create -f C:/Users/<you>/path/to/ephacRTools/inst/python/environment.yml
+```
+
+### 2. Set global miniconda base in R (run once)
+
+```r
+usethis::edit_r_environ(scope = "user")
+```
+
+Add these two lines, save and close:
+
+```
+RETICULATE_PYTHON=C:/Users/<you>/miniconda3/python.exe
+RETICULATE_MINICONDA_PATH=C:/Users/<you>/miniconda3
+```
+
+### 3. Set the ephac_ap environment for this project (run once)
+
+```r
+usethis::edit_r_environ(scope = "project")
+```
+
+Add this line, save and close:
+
+```
+RETICULATE_PYTHON=C:/Users/<you>/miniconda3/envs/ephac_ap/python.exe
+```
+
+### 4. Restart R and verify
+
+```r
+.rs.restartR()
+
+reticulate::py_config()
+# Should show: .../miniconda3/envs/ephac_ap/python.exe
+
+reticulate::py_run_string("import numpy, pandas, polars, pyarrow, scipy; print('OK')")
+```
+
+From this point on, every time you open this RStudio project the correct Python
+environment is activated automatically.
+
+---
+
+## Folder Structure
+
+DataControl exports one CSV per well, organised as:
+
+```
+csv/
+  <date>/
+    <plate_id>/
+      <optional_protocol_subfolder>/
+        <date>_<protocol>_<time>_<well>__.csv
+```
+
+The pipeline expects the **plate_id** to be the second-level folder below the
+CSV root (e.g. `18T39255`, `22W16255`).  Two filename conventions are supported:
+
+| Example | plate in filename |
+|---|---|
+| `250702_VI 10pA_15.31.04_A01__.csv` | no — taken from parent folder |
+| `TR_22W16255_VI 10pA_16.30.19_A01.csv` | yes — parsed automatically |
+
+---
+
+## Running the Pipeline
+
+```r
+devtools::load_all()   # or library(ephacRTools)
+
+csv_root <- "path/to/csv"
+out_root <- "path/to/parquet"
+
+# ── Step 1: CSV → Parquet ─────────────────────────────────────────────────────
+# Find all leaf dirs containing CSVs
+all_dirs <- list.dirs(csv_root, recursive = TRUE, full.names = TRUE)
+csv_dirs <- all_dirs[sapply(all_dirs, function(d) {
+  length(list.files(d, pattern = "\\.csv$")) > 0
+})]
+
+for (d in csv_dirs) {
+  rel      <- strsplit(sub(normalizePath(csv_root), "", normalizePath(d), fixed = TRUE), "[/\\\\]")[[1]]
+  rel      <- rel[nzchar(rel)]
+  plate_id <- rel[2]                        # always the plate barcode folder
+  out_name <- paste(rel, collapse = "_")    # e.g. "250702_18T39255_260304"
+
+  csvToParquet(
+    input_dir      = d,
+    output_parquet = file.path(out_root, "raw", paste0(out_name, ".parquet")),
+    plate_id       = plate_id
+  )
+}
+
+# ── Step 2: AP analysis ───────────────────────────────────────────────────────
+cfg <- cc_config(dvdt_thr_mV_per_ms = 30, min_height_mV = 30, smooth_ms = 0.2)
+
+raw_parquets <- list.files(file.path(out_root, "raw"), pattern = "\\.parquet$", full.names = TRUE)
+
+for (p in raw_parquets) {
+  runAPAnalysis(
+    raw_parquet_path = p,
+    out_dir          = file.path(out_root, "results"),
+    cfg              = cfg
+  )
+}
+
+# ── Step 3: Build SCE ─────────────────────────────────────────────────────────
+sweep_files <- list.files(file.path(out_root, "results"), pattern = "_sweep\\.parquet$", full.names = TRUE)
+ap_files    <- list.files(file.path(out_root, "results"), pattern = "_ap\\.parquet$",    full.names = TRUE)
+
+se_cc <- prepareCCSE(sweep_files, ap_parquet_path = ap_files)
+```
+
+Steps 1 and 2 only need to be run **once** — the intermediate Parquets are
+saved to disk.  On subsequent sessions you can start directly from step 3.
+
+---
+
+## Tuning the AP Detector
+
+`cc_config()` exposes all spike-detection parameters:
+
+```r
+cfg <- cc_config(
+  dvdt_thr_mV_per_ms   = 30,    # dV/dt threshold for spike onset (mV/ms)
+  min_height_mV        = 30,    # minimum spike height above baseline
+  refractory_ms        = 2,     # minimum inter-spike interval
+  smooth_ms            = 0.2,   # smoothing window before dV/dt
+  min_peak_voltage_mV  = -20    # discard peaks below this voltage
+)
+```
+
+See `?cc_config` for the full parameter list.
+
+---
+
+## Combining with Voltage-Clamp Data
+
+If you also have voltage-clamp data for the same plates, use `buildMAE()` to
+combine both SCEs into a `MultiAssayExperiment`:
+
+```r
+se_vc <- prepareSE(list.files("path/to/xlsx", pattern = "\\.xlsx$", full.names = TRUE))
+
+mae <- buildMAE(list(
+  voltage_clamp   = se_vc,
+  current_clamp   = se_cc
+))
+```

@@ -26,7 +26,7 @@ names directly, and \code{NA}s in the result are automatically treated as
 \examples{
 \dontrun{
 se <- subsetSE(se, Condition != "Empty" & Induction != "empty")
-se <- subsetSE(se, Plate_ID \%in\% c("P1", "P2") & QC == "Pass")
+se <- subsetSE(se, plate_id \%in\% c("P1", "P2") & qc == "Pass")
 }
 
 }

@@ -18,12 +18,12 @@ test_that("se_hAG is a SingleCellExperiment", {
 test_that("required colData columns are present", {
   data(se_iN)
   cd <- colnames(colData(se_iN))
-  expect_true("Well"     %in% cd)
-  expect_true("Plate_ID" %in% cd)
-  expect_true("QC"       %in% cd)
+  expect_true("well_id"  %in% cd)
+  expect_true("plate_id" %in% cd)
+  expect_true("qc"       %in% cd)
 })
 
-test_that("column names are unique well.plate_id composites", {
+test_that("column names are unique well_id.plate_id composites", {
   data(se_iN)
   ids <- colnames(se_iN)
   expect_equal(length(ids), length(unique(ids)))
@@ -31,10 +31,10 @@ test_that("column names are unique well.plate_id composites", {
   expect_true(all(grepl("\\.", ids)))
 })
 
-test_that("column names match interaction(Well, Plate_ID)", {
+test_that("column names match interaction(well_id, plate_id)", {
   data(se_iN)
   cd       <- as.data.frame(colData(se_iN))
-  expected <- as.character(interaction(cd$Well, cd$Plate_ID))
+  expected <- as.character(interaction(cd$well_id, cd$plate_id))
   expect_equal(colnames(se_iN), expected)
 })
 
@@ -49,9 +49,9 @@ test_that("assay matrices have consistent dimensions", {
   }
 })
 
-test_that("rowData contains V_Clamp for step-wise protocols", {
+test_that("rowData contains v_clamp_mV for step-wise protocols", {
   data(se_iN)
-  expect_true("V_Clamp" %in% colnames(rowData(se_iN)))
+  expect_true("v_clamp_mV" %in% colnames(rowData(se_iN)))
 })
 
 test_that("se_hAG has multiple assays", {
@@ -59,9 +59,9 @@ test_that("se_hAG has multiple assays", {
   expect_gte(length(assayNames(se_hAG)), 2L)
 })
 
-test_that("Well values follow plate-well format (letter + two digits)", {
+test_that("well_id values follow plate-well format (letter + two digits)", {
   data(se_iN)
-  wells <- colData(se_iN)$Well
+  wells <- colData(se_iN)$well_id
   expect_true(all(grepl("^[A-P][0-9]{2}$", wells)))
 })
 

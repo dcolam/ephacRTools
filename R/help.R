@@ -50,13 +50,13 @@
                           tags$li(tags$b("Prepare SE object"),
                                   "In R, you can use the", tags$code("prepareSE"), " function to load an Excel file
                                   created by DataControl. The Excel-file should contain Online Analyses outpu values per sweep.
-                                  We additionally recommend to add the Nanion Barcode ID (which becomes Plate_ID), the QC as well as
+                                  We additionally recommend to add the Nanion Barcode ID (which becomes plate_id), the qc as well as
                                   QC metrices such as Series, Seal and Capacitance.",
                                   tags$code("prepareSE"), " will detect the single sweeps and all numeric columns which are then
                                   automatically transformed into", tags$code("rowData(se)"), " and ", tags$code("assays(se)"), ". On
-                                  the other hand, Plate_ID, QC and Well information will be loaded into ", tags$code("colData(se)"),".
+                                  the other hand, plate_id, qc and well_id information will be loaded into ", tags$code("colData(se)"),".
                                   You can add and manipulate whichever table asociated with the se",
-                                  tags$pre("se <- prepare('path/to/excel')\nrowData(se)$LiquidPeriod <- paste('LP',rep(1:nrow(se)), sep='')\ncolData(se)$Condition <- ifelse(as.numeric(se$Column) %% 2 == 0,
+                                  tags$pre("se <- prepare('path/to/excel')\nrowData(se)$LiquidPeriod <- paste('LP',rep(1:nrow(se)), sep='')\ncolData(se)$Condition <- ifelse(as.numeric(se$col) %% 2 == 0,
                                            'WT',
                                            'KO')\nassays(se)$CurrenDensity <- assays(se)$Current / assays(se)$Capacitance")
                                   ),
@@ -67,7 +67,7 @@
                           as well as the segmentation of the patching pore. To connect the two datasets you can follow these steps: ",
                           tags$pre("df_img <- prepareImgDF('path/to/database.db', scale_num = TRUE)\nse <- mergeSEandImg(se, df_img)"),
                           "You can import both single channels and colocalized channels.
-                          In order for the function to work, you will need a column with Well information of the image and ideally a Plate_ID.
+                          In order for the function to work, you will need a column with well information of the image and ideally a plate_id.
                           If your database does not have that, you can also add it after importing the .db into a dataframe with ", tags$code("prepareImgDF"),
                           ". Your se object is now ready for saving and importing into this ShinyApp.",
                           tags$pre("saveRDS(se, 'path/to/save/se.rds)'\nephacRTools::tinySEV(list('My SE' = se)")

@@ -8,13 +8,13 @@ classifyImgParticles(
   df,
   filter_method = c("zscore", "median_ratio"),
   filter_threshold = NULL,
-  filter_group_vars = c("Channel_Name", "Plate_ID"),
-  agg_group_vars = c("Channel_Name", "Plate_ID", "Well"),
+  filter_group_vars = c("Channel_Name", "plate_id"),
+  agg_group_vars = c("Channel_Name", "plate_id", "well_id"),
   agg_fun = c("mean", "median", "sum"),
   scale_within = "Channel_Name",
   scale_center = FALSE,
   weights = c(Mean = 1, Area = 1, normArea = 1),
-  score_group_vars = c("Channel_Name", "Plate_ID"),
+  score_group_vars = c("Channel_Name", "plate_id"),
   center = FALSE,
   delta = 0.5,
   min_area = 0.1,
@@ -35,17 +35,17 @@ ROI).  Typically the output of \code{\link{prepareImgDF}} with
 \code{\link{filterParticles}}.  \code{NULL} uses the method default.}
 
 \item{filter_group_vars}{Grouping columns for intensity scaling.
-Default: \code{c("Channel_Name", "Plate_ID")}.}
+Default: \code{c("Channel_Name", "plate_id")}.}
 
 \item{agg_group_vars}{Grouping columns for aggregation.
-Default: \code{c("Channel_Name", "Plate_ID", "Well")}.}
+Default: \code{c("Channel_Name", "plate_id", "well_id")}.}
 
 \item{weights}{Named weight vector for scoring.
 Default: equal weights for \code{Mean}, \code{Area}, \code{normArea}.}
 
 \item{score_group_vars}{Columns used as independent scaling groups in
 \code{\link{scoreParticles}}.
-Default: \code{c("Channel_Name", "Plate_ID")}.}
+Default: \code{c("Channel_Name", "plate_id")}.}
 
 \item{delta}{Dominance tolerance for \code{\link{classifyWells}}.
 Default: \code{0.5}.}

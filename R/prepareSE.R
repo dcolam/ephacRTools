@@ -17,14 +17,15 @@ prepareDF <- function(pathToDF) {
   # Read file
   sheets <- readxl::excel_sheets(pathToDF)
   sheets <- sheets[grepl("Export", sheets)]
+  sheets <- sheets[length(sheets)]  # prefer last Export sheet (main data, not header)
   df <- readxl::read_excel(pathToDF, sheet = sheets, col_types = "text")
   df <- as.data.frame(df)
   # Clean up unwanted column
   if ("\r" %in% colnames(df)) df$`\r` <- NULL
 
   # Standardize columns
-  names(df)[1:2] <- c("Well", "QC")
-  df$Well <- sapply(df$Well, function(x) unlist(stringr::str_split(x, "\\r"))[1])
+  names(df)[1:2] <- c("well_id", "qc")
+  df$well_id <- sapply(df$well_id, function(x) unlist(stringr::str_split(x, "\\r"))[1])
 
   # Ensure barcode column exists
   if (!("Nanion Chip Barcode" %in% colnames(df))) {
@@ -33,9 +34,9 @@ prepareDF <- function(pathToDF) {
 
   # Handle voltage sweep info
   volt_steps <- FALSE
-  if ("Sweep Voltage" %in% df$Well | "Abs" %in% df$Well) {
-    volt <- df[grepl("Sweep Voltage", df$Well), ]
-    df <- df[!grepl("Sweep Voltage", df$Well), ]
+  if ("Sweep Voltage" %in% df$well_id | "Abs" %in% df$well_id) {
+    volt <- df[grepl("Sweep Voltage", df$well_id), ]
+    df <- df[!grepl("Sweep Voltage", df$well_id), ]
     volt <- volt[, grep("Compound", names(volt))]
     volt_steps <- TRUE
   } else {
@@ -46,7 +47,7 @@ prepareDF <- function(pathToDF) {
 
   # Filter to acceptable wells
   acceptable_wells <- as.vector(outer(LETTERS[1:16], sprintf("%02d", 1:24), paste0))
-  df <- df[df$Well %in% acceptable_wells,]
+  df <- df[df$well_id %in% acceptable_wells,]
 
   # Sweep parsing
   sweeps <- grep("Sweep \\d", colnames(df), value = TRUE)
@@ -55,28 +56,28 @@ prepareDF <- function(pathToDF) {
   new.cols <- sapply(grep(no.sweeps[1], sweeps, value = TRUE), function(x) {
     unlist(stringr::str_split(x, " "))[3]
   })
-  new.cols <- c("Well", "QC", "Plate_ID", new.cols, "Sweep", "V_Clamp")
+  new.cols <- c("well_id", "qc", "plate_id", new.cols, "sweep", "v_clamp_mV")
   new.df <- data.frame(matrix(ncol = length(new.cols), nrow = 0, dimnames = list(NULL, new.cols)))
 
   # Rebuild the long-format dataframe
   for (s in no.sweeps) {
-    cols <- c("Well", "QC", "Nanion Chip Barcode", grep(s, sweeps, value = TRUE))
+    cols <- c("well_id", "qc", "Nanion Chip Barcode", grep(s, sweeps, value = TRUE))
     tempdf <- df[, cols]
     try({
-    tempdf$Sweep <- s
-    tempdf$V_Clamp <- volt[, grep(s, names(volt), value = TRUE)]
+    tempdf$sweep <- s
+    tempdf$v_clamp_mV <- volt[, grep(s, names(volt), value = TRUE)]
     colnames(tempdf) <- colnames(new.df)
     new.df <- rbind(new.df, tempdf)
     })
   }
 
-  # Optional numeric conversion for V_Clamp
+  # Optional numeric conversion for v_clamp_mV
   if (volt_steps) {
-    new.df$V_Clamp <- as.numeric(gsub("m", "", new.df$V_Clamp))
+    new.df$v_clamp_mV <- as.numeric(gsub("m", "", new.df$v_clamp_mV))
   }
 
-  # Standardize Plate_ID column
-  new.df$Plate_ID <- sapply(new.df$Plate_ID, function(x) unlist(stringr::str_split(x, "\\r"))[1])
+  # Standardize plate_id column
+  new.df$plate_id <- sapply(new.df$plate_id, function(x) unlist(stringr::str_split(x, "\\r"))[1])
 
   # Re-type using hablar
   new.df <- new.df %>% hablar::retype()
@@ -122,10 +123,10 @@ prepareMultipleDFs <- function(pathList, progress_callback = NULL){
   names(dfs) <- safe_names
 
   df <- dplyr::bind_rows(dfs, .id = "column_label")
-  if (!"Plate_ID" %in% colnames(df)) {
-    df$Plate_ID <- df$column_label
-  }else{
-    df$Plate_ID <- sapply(df$Plate_ID, function(x){
+  if (!"plate_id" %in% colnames(df)) {
+    df$plate_id <- df$column_label
+  } else {
+    df$plate_id <- sapply(df$plate_id, function(x){
       unlist(stringr::str_split(x, "\\r"))[1]
     })
   }
@@ -152,75 +153,62 @@ if(length(pathDF) > 1){
   df <- df %>% hablar::retype()
 
   numeric_cols <- names(df)[sapply(df, is.numeric)]
-  numeric_cols <- numeric_cols[!(numeric_cols %in% c("Sweep", "V_Clamp"))]
-  description_cols <- colnames (df)[!(colnames (df) %in% numeric_cols)]
-  description_cols <- description_cols[description_cols != "Sweep"]
+  numeric_cols <- numeric_cols[!(numeric_cols %in% c("sweep", "v_clamp_mV"))]
+  description_cols <- colnames(df)[!(colnames(df) %in% numeric_cols)]
+  description_cols <- description_cols[description_cols != "sweep"]
 
   assays <- lapply(numeric_cols, \(cols) {
-    x <- reshape2::dcast(df, Well*Plate_ID ~Sweep, value.var = cols)
-    m <- x[ , !(names(x) %in% c("Well", "Plate_ID"))] |> as.matrix()
-    #names(m) <-interaction(x$Well, x$Plate_ID)
+    x <- reshape2::dcast(df, well_id*plate_id ~sweep, value.var = cols)
+    m <- x[, !(names(x) %in% c("well_id", "plate_id"))] |> as.matrix()
     t(m)
-    #colnames(m) <- x$Well
-    #m
   })
 
-  cols <- reshape2::dcast(df, Well*Plate_ID ~Sweep, value.var = "Well")
-  cols <- interaction(cols$Well, cols$Plate_ID)
+  cols <- reshape2::dcast(df, well_id*plate_id ~sweep, value.var = "well_id")
+  cols <- interaction(cols$well_id, cols$plate_id)
   names(assays) <- numeric_cols
 
   df <- data.table::as.data.table(df)
 
-  cd <- S4Vectors::DataFrame(unique(df[, .(Well, QC, Plate_ID)]))
-  rownames(cd) <- interaction(cd$Well, cd$Plate_ID)
+  cd <- S4Vectors::DataFrame(unique(df[, .(well_id, qc, plate_id)]))
+  rownames(cd) <- interaction(cd$well_id, cd$plate_id)
   cd <- cd[cols,]
 
-  cd$Row <- sapply(cd$Well, function(x){
-
+  cd$row <- sapply(cd$well_id, function(x) {
     stringr::str_sub(x, 1, 1)
-
   })
 
-  cd$Column <- sapply(cd$Well, function(x){
-
+  cd$col <- sapply(cd$well_id, function(x) {
     stringr::str_sub(x, 2, 3)
-
   })
 
-  rd <- S4Vectors::DataFrame(unique(df[, .(Sweep)]))
+  rd <- S4Vectors::DataFrame(unique(df[, .(sweep)]))
   se <- SummarizedExperiment::SummarizedExperiment(assays = assays,
                                                    rowData = rd,
                                                    colData = cd)
 
-  colnames(se) <- as.character(interaction(cd$Well, cd$Plate_ID))
-
+  colnames(se) <- as.character(interaction(cd$well_id, cd$plate_id))
 
   description_cols <- description_cols[!(description_cols %in% names(cd))]
 
-  descr <-lapply(description_cols, function(var) {
-    x<- reshape2::dcast(df, Sweep ~ Well+Plate_ID, value.var = var)
-    x[, !(names(x) %in% c("Sweep"))]
+  descr <- lapply(description_cols, function(var) {
+    x <- reshape2::dcast(df, sweep ~ well_id+plate_id, value.var = var)
+    x[, !(names(x) %in% c("sweep"))]
   })
 
   names(descr) <- description_cols
 
-
   for (colname in names(descr)){
 
-
-    mat <- descr[[colname]]  # descr[[colname]] is a DataFrame or matrix-like
+    mat <- descr[[colname]]
 
     # Check if all rows have the same values across columns
     same_across <- apply(mat, 1, function(x) length(unique(x)) == 1)
 
     if (all(same_across)) {
-      # Collapse to a single column with unique values per row
       collapsed <- apply(mat, 1, function(x) unique(x))
       SummarizedExperiment::rowData(se)[[colname]] <- collapsed
     } else {
-      # Retain the full DataFrame if values vary
       SummarizedExperiment::rowData(se)[[colname]] <- mat
-
     }
   }
 
@@ -230,10 +218,4 @@ if(length(pathDF) > 1){
     rowData= rowData(se)
   )
   return(se)
-
-
 }
-
-
-
-

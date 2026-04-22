@@ -22,7 +22,7 @@ NULL
 #'   (default threshold \code{1/3}).
 #' @param threshold Cut-off value. \code{NULL} applies the method's default.
 #' @param group_vars Character vector of column names used to define groups
-#'   for scaling.  Default: \code{c("Channel_Name", "Plate_ID")}.
+#'   for scaling.  Default: \code{c("Channel_Name", "plate_id")}.
 #' @param num_cols Numeric columns to set to \code{NA} for rejected
 #'   particles.  Default: \code{c("Area", "Mean", "IntDen",
 #'   "Number_of_Particles")}.
@@ -40,7 +40,7 @@ NULL
 filterParticles <- function(df,
                             method     = c("zscore", "median_ratio"),
                             threshold  = NULL,
-                            group_vars = c("Channel_Name", "Plate_ID"),
+                            group_vars = c("Channel_Name", "plate_id"),
                             num_cols   = c("Area", "Mean", "IntDen",
                                            "Number_of_Particles")) {
 
@@ -96,7 +96,7 @@ filterParticles <- function(df,
 #'   columns, plus all columns listed in \code{group_vars}.  If a
 #'   \code{CorrSel} column is present, only \code{"Hole_ROI"} rows are used.
 #' @param group_vars Columns defining the aggregation groups.
-#'   Default: \code{c("Channel_Name", "Plate_ID", "Well")}.
+#'   Default: \code{c("Channel_Name", "plate_id", "well_id")}.
 #'
 #' @return A data frame with one row per group containing:
 #'   \describe{
@@ -115,7 +115,7 @@ filterParticles <- function(df,
 #' @importFrom dplyr filter group_by summarise across any_of distinct left_join
 #' @export
 aggregateParticles <- function(df,
-                               group_vars   = c("Channel_Name", "Plate_ID", "Well"),
+                               group_vars   = c("Channel_Name", "plate_id", "well_id"),
                                agg_fun      = c("mean", "median", "sum"),
                                scale_within = "Channel_Name",
                                scale_center = FALSE) {
@@ -210,7 +210,7 @@ aggregateParticles <- function(df,
 #' @param score_group_vars Columns that define independent scaling groups.
 #'   Each channel (and plate, if present) is scaled against its own
 #'   distribution of wells.
-#'   Default: \code{c("Channel_Name", "Plate_ID")}.
+#'   Default: \code{c("Channel_Name", "plate_id")}.
 #'
 #' @return \code{agg_df} with additional columns \code{Mean_z},
 #'   \code{Area_z}, \code{normArea_z}, and \code{channel_score}.
@@ -224,7 +224,7 @@ aggregateParticles <- function(df,
 #' @export
 scoreParticles <- function(agg_df,
                            weights          = c(Mean = 1, Area = 1, normArea = 1),
-                           score_group_vars = c("Channel_Name", "Plate_ID"),
+                           score_group_vars = c("Channel_Name", "plate_id"),
                            center           = FALSE) {
 
   if (isTRUE(center)) {
@@ -347,7 +347,7 @@ classifyWells <- function(score_df,
   }
 
   channels <- unique(score_df$Channel_Name)
-  id_vars  <- intersect(c("Well", "Plate_ID"), names(score_df))
+  id_vars  <- intersect(c("well_id", "plate_id"), names(score_df))
 
   # Pivot scores and normAreas to wide
   wide_score <- tidyr::pivot_wider(
@@ -437,14 +437,14 @@ classifyWells <- function(score_df,
 #' @param filter_threshold Intensity cut-off passed to
 #'   \code{\link{filterParticles}}.  \code{NULL} uses the method default.
 #' @param filter_group_vars Grouping columns for intensity scaling.
-#'   Default: \code{c("Channel_Name", "Plate_ID")}.
+#'   Default: \code{c("Channel_Name", "plate_id")}.
 #' @param agg_group_vars Grouping columns for aggregation.
-#'   Default: \code{c("Channel_Name", "Plate_ID", "Well")}.
+#'   Default: \code{c("Channel_Name", "plate_id", "well_id")}.
 #' @param weights Named weight vector for scoring.
 #'   Default: equal weights for \code{Mean}, \code{Area}, \code{normArea}.
 #' @param score_group_vars Columns used as independent scaling groups in
 #'   \code{\link{scoreParticles}}.
-#'   Default: \code{c("Channel_Name", "Plate_ID")}.
+#'   Default: \code{c("Channel_Name", "plate_id")}.
 #' @param delta Dominance tolerance for \code{\link{classifyWells}}.
 #'   Default: \code{0.5}.
 #' @param min_area Minimum occupancy threshold.  Default: \code{0.1}.
@@ -482,13 +482,13 @@ classifyWells <- function(score_df,
 classifyImgParticles <- function(df,
                                  filter_method     = c("zscore", "median_ratio"),
                                  filter_threshold  = NULL,
-                                 filter_group_vars = c("Channel_Name", "Plate_ID"),
-                                 agg_group_vars    = c("Channel_Name", "Plate_ID", "Well"),
+                                 filter_group_vars = c("Channel_Name", "plate_id"),
+                                 agg_group_vars    = c("Channel_Name", "plate_id", "well_id"),
                                  agg_fun           = c("mean", "median", "sum"),
                                  scale_within      = "Channel_Name",
                                  scale_center      = FALSE,
                                  weights           = c(Mean = 1, Area = 1, normArea = 1),
-                                 score_group_vars  = c("Channel_Name", "Plate_ID"),
+                                 score_group_vars  = c("Channel_Name", "plate_id"),
                                  center            = FALSE,
                                  delta             = 0.5,
                                  min_area          = 0.1,
@@ -577,12 +577,12 @@ mergeClassificationToSE <- function(se, classification, col_name = NULL,
                                     scores = NULL) {
 
   cd     <- as.data.frame(SummarizedExperiment::colData(se))
-  joined <- dplyr::left_join(cd, classification, by = c("Well", "Plate_ID"))
+  joined <- dplyr::left_join(cd, classification, by = c("well_id", "plate_id"))
 
   # Optionally pivot z-scored metrics from the long-format scored data frame
   if (!is.null(scores)) {
     z_cols  <- intersect(c("Mean_z", "Area_z", "normArea_z"), names(scores))
-    id_vars <- intersect(c("Well", "Plate_ID"), names(scores))
+    id_vars <- intersect(c("well_id", "plate_id"), names(scores))
     if (length(z_cols) > 0 && "Channel_Name" %in% names(scores)) {
       scores_wide <- tidyr::pivot_wider(
         dplyr::select(scores,

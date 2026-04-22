@@ -23,7 +23,7 @@ plotThumbnails(
 \code{DataFrame} in \code{colData} (added by \code{addThumbnailPaths}).}
 
 \item{wells}{Character vector of well identifiers in
-\code{"<Well><sep><Plate_ID>"} format,
+\code{"<well_id><sep><plate_id>"} format,
 e.g. \code{c("B10.18T39383", "C05.18T39383")}.}
 
 \item{img_class}{Class label to display, e.g. \code{"class1"}.}
@@ -34,7 +34,7 @@ default), \code{"BF"}, or \code{"fluoro"}.}
 \item{col_name}{Name of the colData column holding the thumbnail paths.
 Default: \code{"thumbnails"}.}
 
-\item{sep}{Separator between Well and Plate_ID in \code{wells}.
+\item{sep}{Separator between well_id and plate_id in \code{wells}.
 Default: \code{"."}.}
 
 \item{ncol}{Number of columns in the well grid. \code{NULL} (default) puts

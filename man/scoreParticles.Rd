@@ -7,7 +7,7 @@
 scoreParticles(
   agg_df,
   weights = c(Mean = 1, Area = 1, normArea = 1),
-  score_group_vars = c("Channel_Name", "Plate_ID"),
+  score_group_vars = c("Channel_Name", "plate_id"),
   center = FALSE
 )
 }
@@ -23,7 +23,7 @@ Default: equal weights \code{c(Mean = 1, Area = 1, normArea = 1)}.}
 \item{score_group_vars}{Columns that define independent scaling groups.
 Each channel (and plate, if present) is scaled against its own
 distribution of wells.
-Default: \code{c("Channel_Name", "Plate_ID")}.}
+Default: \code{c("Channel_Name", "plate_id")}.}
 }
 \value{
 \code{agg_df} with additional columns \code{Mean_z},

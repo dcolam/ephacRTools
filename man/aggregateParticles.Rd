@@ -6,7 +6,7 @@
 \usage{
 aggregateParticles(
   df,
-  group_vars = c("Channel_Name", "Plate_ID", "Well"),
+  group_vars = c("Channel_Name", "plate_id", "well_id"),
   agg_fun = c("mean", "median", "sum"),
   scale_within = "Channel_Name",
   scale_center = FALSE
@@ -19,7 +19,7 @@ columns, plus all columns listed in \code{group_vars}.  If a
 \code{CorrSel} column is present, only \code{"Hole_ROI"} rows are used.}
 
 \item{group_vars}{Columns defining the aggregation groups.
-Default: \code{c("Channel_Name", "Plate_ID", "Well")}.}
+Default: \code{c("Channel_Name", "plate_id", "well_id")}.}
 }
 \value{
 A data frame with one row per group containing:

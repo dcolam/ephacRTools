@@ -1,55 +1,52 @@
 ## code to prepare `DATASET` dataset goes here
 
 devtools::load_all()
+
 ## Human Adrenal Gland Dataset SE with imaging data
 l_files <- list.files(path = "data-raw/hAG/Ephys/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_hAG <- prepareSE(l_files)
 
-
-
 l_files <- list.files(path = "data-raw/hAG/Imaging/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc", aggregate = TRUE)
 se_hAG <- mergeSEandImg(se_hAG, df_img, tableType = "coloc")
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa", aggregate = TRUE)
 se_hAG <- mergeSEandImg(se_hAG, df_img, tableType = "pa")
 colData(se_hAG)
 usethis::use_data(se_hAG, overwrite = TRUE)
-
 
 ## iNeurons dataset with imaging data
 l_files <- list.files(path = "data-raw/iNeurons/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_iN <- prepareSE(l_files)
 
-
 l_files <- list.files(path = "data-raw/iNeurons/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc", aggregate = TRUE)
 se_iN <- mergeSEandImg(se_iN, df_img, tableType = "coloc")
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa", aggregate = TRUE)
 se_iN <- mergeSEandImg(se_iN, df_img, tableType = "pa")
 colData(se_iN)
 rowData(se_iN)
 usethis::use_data(se_iN, overwrite = TRUE)
-## ROMK
 
+## ROMK
 l_files <- list.files(path = "data-raw/ROMK/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_romk <- prepareSE(l_files)
 
 l_files <- list.files(path = "data-raw/ROMK" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
-se_romk <- mergeSEandImg(se_romk, df_img, tableType = "coloc", Selection = "Hole_ROI")
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
-se_romk <- mergeSEandImg(se_romk, df_img, tableType = "pa", Selection = "Hole_ROI")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc", aggregate = TRUE)
+se_romk <- mergeSEandImg(se_romk, df_img, tableType = "coloc", selType = "Hole_ROI")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa", aggregate = TRUE)
+se_romk <- mergeSEandImg(se_romk, df_img, tableType = "pa", selType = "Hole_ROI")
 usethis::use_data(se_romk, overwrite = TRUE)
 
 ## Primary neurons dataset with imaging data
 l_files <- list.files(path = "data-raw/PrimaryNeurons/" ,pattern = "*.xlsx$", recursive = TRUE, full.names = TRUE)
 se_pn <- prepareSE(l_files)
-se_pn$Plate_ID <- "18T05487"
+se_pn$plate_id <- "18T05487"
 
 l_files <- list.files(path = "data-raw/PrimaryNeurons/" ,pattern = "*.db$", recursive = TRUE, full.names = TRUE)
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "coloc", aggregate = TRUE)
 se_pn <- mergeSEandImg(se_pn, df_img, tableType = "coloc")
-df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa")
+df_img <- prepareImgDF(l_files, scale_num = TRUE, analysis = "pa", aggregate = TRUE)
 se_pn <- mergeSEandImg(se_pn, df_img, tableType = "pa")
 usethis::use_data(se_pn, overwrite = TRUE)
 
