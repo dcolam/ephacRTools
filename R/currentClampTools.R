@@ -567,6 +567,109 @@ runAPAnalysis <- function(raw_parquet_path,
 #' @importFrom SummarizedExperiment colData rowData
 #' @importFrom SingleCellExperiment SingleCellExperiment
 #' @export
+prepareCCSE <- function(sweep_parquet_path,
+                        ap_parquet_path   = NULL,
+                        progress_callback = NULL) {
+
+  if (!requireNamespace("arrow", quietly = TRUE))
+    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
+
+  # ── 1. Read and combine sweep parquets ──────────────────────────────────────
+  n <- length(sweep_parquet_path)
+  dfs <- lapply(seq_along(sweep_parquet_path), function(i) {
+    p  <- sweep_parquet_path[[i]]
+    df <- tryCatch(
+      arrow::read_parquet(p),
+      error = function(e) {
+        warning("Failed to read '", basename(p), "': ", e$message)
+        NULL
+      }
+    )
+    if (!is.null(progress_callback)) progress_callback(i, n, basename(p))
+    df
+  })
+  dfs <- Filter(Negate(is.null), dfs)
+  if (length(dfs) == 0) stop("No sweep parquet files could be read.")
+  df <- dplyr::bind_rows(dfs)
+
+  # ── 2. Identify column roles ─────────────────────────────────────────────────
+  non_assay <- c(.CC_WELL_COLS, .CC_SWEEP_META, .CC_DROP)
+  assay_cols <- setdiff(
+    names(df)[vapply(df, is.numeric, logical(1))],
+    non_assay
+  )
+  if (length(assay_cols) == 0)
+    stop("No numeric assay columns found in sweep parquet.")
+
+  # ── 3. Primary column key ────────────────────────────────────────────────────
+  df$`.col_key` <- paste(df$well_id, df$plate_id, sep = ".")
+
+  # ── 4. Build assay matrices [sweeps × wells] ─────────────────────────────────
+  assay_list <- lapply(assay_cols, function(col) {
+    wide <- reshape2::dcast(df, sweep ~ `.col_key`, value.var = col,
+                            fun.aggregate = mean)
+    sweep_order <- unname(wide$sweep)
+    mat <- as.matrix(wide[, -1, drop = FALSE])
+    rownames(mat) <- as.character(sweep_order)
+    colnames(mat) <- unname(colnames(mat))
+    mat
+  })
+  names(assay_list) <- assay_cols
+
+  col_names <- unname(colnames(assay_list[[1]]))
+
+  # ── 5. rowData ────────────────────────────────────────────────────────────────
+  rd_cols <- intersect(.CC_SWEEP_META, colnames(df))
+  rd_raw  <- unique(as.data.frame(df[, rd_cols, drop = FALSE]))
+  rd_raw  <- rd_raw[order(rd_raw$sweep), , drop = FALSE]
+  rd_raw  <- rd_raw[!duplicated(rd_raw$sweep), , drop = FALSE]
+  rownames(rd_raw) <- as.character(unname(rd_raw$sweep))
+  rd <- S4Vectors::DataFrame(rd_raw)
+
+  # ── 6. colData ────────────────────────────────────────────────────────────────
+  cd_cols <- intersect(.CC_WELL_COLS, colnames(df))
+  cd_raw  <- as.data.frame(df[!duplicated(df$`.col_key`), c(".col_key", cd_cols), drop = FALSE])
+  cd_raw  <- cd_raw[match(col_names, cd_raw$`.col_key`), , drop = FALSE]
+  rownames(cd_raw) <- unname(col_names)
+  cd_raw$`.col_key` <- NULL
+  if ("well_id" %in% names(cd_raw)) {
+    cd_raw$Well   <- cd_raw$well_id
+    cd_raw$Row    <- substr(cd_raw$well_id, 1, 1)
+    cd_raw$Column <- as.integer(substr(cd_raw$well_id, 2, 3))
+  }
+  if ("plate_id" %in% names(cd_raw)) cd_raw$Plate_ID <- cd_raw$plate_id
+  cd_raw$QC <- "OK"
+  cd <- S4Vectors::DataFrame(cd_raw)
+
+  # ── 7. Assemble SCE ───────────────────────────────────────────────────────────
+  se <- SingleCellExperiment::SingleCellExperiment(
+    assays  = assay_list,
+    rowData = rd,
+    colData = cd
+  )
+  colnames(se) <- unname(col_names)
+
+  # ── 8. Attach per-spike data as metadata (optional) ──────────────────────────
+  if (!is.null(ap_parquet_path)) {
+    ap_dfs <- lapply(seq_along(ap_parquet_path), function(i) {
+      p  <- ap_parquet_path[[i]]
+      tryCatch(
+        arrow::read_parquet(p),
+        error = function(e) {
+          warning("Failed to read AP parquet '", basename(p), "': ", e$message)
+          NULL
+        }
+      )
+    })
+    ap_dfs <- Filter(Negate(is.null), ap_dfs)
+    if (length(ap_dfs) > 0)
+      S4Vectors::metadata(se)$ap_data <- dplyr::bind_rows(ap_dfs)
+  }
+
+  se
+}
+
+
 #' Extract per-well current-clamp features from a CC SingleCellExperiment
 #'
 #' Derives a summary feature table from a \code{SingleCellExperiment} produced
@@ -835,100 +938,6 @@ extractCCFeatures <- function(se_cc, ap_parquet_path = NULL) {
 }
 
 
-prepareCCSE <- function(sweep_parquet_path,
-                        ap_parquet_path   = NULL,
-                        progress_callback = NULL) {
-
-  if (!requireNamespace("arrow", quietly = TRUE))
-    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
-
-  # ── 1. Read and combine sweep parquets ──────────────────────────────────────
-  n <- length(sweep_parquet_path)
-  dfs <- lapply(seq_along(sweep_parquet_path), function(i) {
-    p  <- sweep_parquet_path[[i]]
-    df <- tryCatch(
-      arrow::read_parquet(p),
-      error = function(e) {
-        warning("Failed to read '", basename(p), "': ", e$message)
-        NULL
-      }
-    )
-    if (!is.null(progress_callback)) progress_callback(i, n, basename(p))
-    df
-  })
-  dfs <- Filter(Negate(is.null), dfs)
-  if (length(dfs) == 0) stop("No sweep parquet files could be read.")
-  df <- dplyr::bind_rows(dfs)
-
-  # ── 2. Identify column roles ─────────────────────────────────────────────────
-  non_assay <- c(.CC_WELL_COLS, .CC_SWEEP_META, .CC_DROP)
-  assay_cols <- setdiff(
-    names(df)[vapply(df, is.numeric, logical(1))],
-    non_assay
-  )
-  if (length(assay_cols) == 0)
-    stop("No numeric assay columns found in sweep parquet.")
-
-  # ── 3. Primary column key ────────────────────────────────────────────────────
-  df$`.col_key` <- paste(df$well_id, df$plate_id, sep = ".")
-
-  # ── 4. Build assay matrices [sweeps × wells] ─────────────────────────────────
-  assay_list <- lapply(assay_cols, function(col) {
-    wide <- reshape2::dcast(df, sweep ~ `.col_key`, value.var = col,
-                            fun.aggregate = mean)
-    sweep_order <- wide$sweep
-    mat <- as.matrix(wide[, -1, drop = FALSE])
-    rownames(mat) <- paste0("Sweep", sweep_order)
-    mat
-  })
-  names(assay_list) <- assay_cols
-
-  col_names <- colnames(assay_list[[1]])
-
-  # ── 5. rowData ────────────────────────────────────────────────────────────────
-  rd_cols <- intersect(.CC_SWEEP_META, colnames(df))
-  rd_raw  <- unique(as.data.frame(df[, rd_cols, drop = FALSE]))
-  rd_raw  <- rd_raw[order(rd_raw$sweep), , drop = FALSE]
-  rownames(rd_raw) <- paste0("Sweep", rd_raw$sweep)
-  rd <- S4Vectors::DataFrame(rd_raw)
-
-  # ── 6. colData ────────────────────────────────────────────────────────────────
-  cd_cols <- intersect(.CC_WELL_COLS, colnames(df))
-  cd_raw  <- as.data.frame(df[!duplicated(df$`.col_key`), c(".col_key", cd_cols), drop = FALSE])
-  cd_raw  <- cd_raw[match(col_names, cd_raw$`.col_key`), , drop = FALSE]
-  rownames(cd_raw) <- col_names
-  cd_raw$`.col_key` <- NULL
-  cd <- S4Vectors::DataFrame(cd_raw)
-
-  # ── 7. Assemble SCE ───────────────────────────────────────────────────────────
-  se <- SingleCellExperiment::SingleCellExperiment(
-    assays  = assay_list,
-    rowData = rd,
-    colData = cd
-  )
-  colnames(se) <- col_names
-
-  # ── 8. Attach per-spike data as metadata (optional) ──────────────────────────
-  if (!is.null(ap_parquet_path)) {
-    ap_dfs <- lapply(seq_along(ap_parquet_path), function(i) {
-      p  <- ap_parquet_path[[i]]
-      tryCatch(
-        arrow::read_parquet(p),
-        error = function(e) {
-          warning("Failed to read AP parquet '", basename(p), "': ", e$message)
-          NULL
-        }
-      )
-    })
-    ap_dfs <- Filter(Negate(is.null), ap_dfs)
-    if (length(ap_dfs) > 0) {
-      ap_combined <- dplyr::bind_rows(ap_dfs)
-      S4Vectors::metadata(se)$ap_data <- ap_combined
-    }
-  }
-
-  se
-}
 
 
 #' Run AP detection on a single well for interactive preview

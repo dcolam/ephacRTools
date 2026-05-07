@@ -56,9 +56,30 @@ ui <- page_sidebar(
   sidebar = sidebar(
     width = 340,
 
-    # ── File browser ─────────────────────────────────────────────────────────
-    h6("Raw Trace Parquets"),
-    helpText("Select .parquet files from csvToParquet()."),
+    # ── Step 1: CSV → Parquet ─────────────────────────────────────────────────
+    accordion(
+      id = "acc_csv",
+      open = FALSE,
+      accordion_panel(
+        "Step 1 — CSV → Parquet",
+        helpText("Convert DataControl CSVs (one file per well) to a single Parquet."),
+        shinyDirButton("csv_in_dir",  "Input folder (CSVs)",
+                       title = "Folder containing per-well CSV files",
+                       buttonType = "default btn-sm w-100"),
+        verbatimTextOutput("csv_in_label", placeholder = TRUE),
+        shinyDirButton("csv_out_dir", "Output folder",
+                       title = "Where to save the output Parquet",
+                       buttonType = "default btn-sm w-100"),
+        verbatimTextOutput("csv_out_label", placeholder = TRUE),
+        textInput("csv_plate_id", "Plate ID (optional)", placeholder = "e.g. Plate1"),
+        actionButton("csv_convert_btn", "Convert & add to queue",
+                     icon = icon("exchange-alt"), class = "btn-primary btn-sm w-100")
+      )
+    ),
+    hr(),
+
+    # ── Step 2: File browser ──────────────────────────────────────────────────
+    h6("Step 2 — Load Parquets"),
     layout_columns(
       shinyFilesButton("add_files",  "Add files",
                        title = "Select raw trace Parquets", multiple = TRUE,
@@ -72,8 +93,8 @@ ui <- page_sidebar(
     actionButton("clear_files", "Clear", class = "btn-outline-secondary btn-sm"),
     hr(),
 
-    # ── Pre-scan settings ─────────────────────────────────────────────────────
-    h6("Pre-scan Settings"),
+    # ── Step 3: Pre-scan ──────────────────────────────────────────────────────
+    h6("Step 3 — Scan & Preview"),
     layout_columns(
       numericInput("scan_threshold", "AP threshold (mV)", 0, step = 5),
       checkboxInput("v_is_volts", "V → mV", TRUE),
@@ -81,12 +102,12 @@ ui <- page_sidebar(
     ),
     textInput("scan_sweeps", "Sweeps to scan",
               placeholder = "e.g.  8, 9, 10, 11  — blank = all"),
-    helpText("Tip: APs appear in the last (highest-current) sweeps."),
-    actionButton("scan_btn", "Scan wells", icon = icon("search"),
+    helpText("Scans voltage max AND pre-detects APs on likely wells with default config."),
+    actionButton("scan_btn", "Scan & pre-detect", icon = icon("search"),
                  class = "btn-primary btn-sm w-100"),
     hr(),
 
-    # ── Plate grid (replaces selectInput) ─────────────────────────────────────
+    # ── Plate grid ────────────────────────────────────────────────────────────
     uiOutput("plate_selector_ui"),
     div(style = "position:relative;",
       plotOutput("plate_grid", height = "180px", click = "plate_click",
@@ -105,54 +126,8 @@ ui <- page_sidebar(
     ),
     hr(),
 
-    # ── Detection config + tools ───────────────────────────────────────────────
-    accordion(
-      open = FALSE,
-
-      accordion_panel(
-        "Detection Config",
-        sliderInput("dvdt_thr",      "dV/dt threshold (mV/ms)", 5,  100, 25,  step = 1),
-        sliderInput("smooth_ms",     "Smoothing (ms)",           0,    2,  0.2, step = 0.05),
-        sliderInput("refractory_ms", "Refractory (ms)",        0.5,   10,  2,   step = 0.5),
-        sliderInput("min_peak_v",    "Min peak voltage (mV)",  -60,   20, -20,  step = 5),
-        layout_columns(
-          numericInput("min_height", "Min height (mV)", NA, step = 1),
-          numericInput("prominence", "Prominence (mV)", NA, step = 1),
-          col_widths = c(6, 6)
-        ),
-        helpText("Leave height / prominence blank for adaptive threshold."),
-        tags$hr(style = "margin: 6px 0;"),
-        layout_columns(
-          downloadButton("export_cfg", "Export",
-                         icon = icon("download"), class = "btn-sm btn-outline-secondary w-100"),
-          actionButton("reset_cfg", "Defaults",
-                       icon = icon("undo"), class = "btn-sm btn-outline-secondary w-100"),
-          col_widths = c(6, 6)
-        ),
-        fileInput("import_cfg", NULL, accept = ".json",
-                  buttonLabel = "Load config", placeholder = "No file selected")
-      ),
-
-      accordion_panel(
-        "CSV → Parquet",
-        helpText("Convert DataControl CSV exports (one file per well) to a single Parquet."),
-        shinyDirButton("csv_in_dir",  "Input folder (CSVs)",
-                       title = "Folder containing per-well CSV files",
-                       buttonType = "default btn-sm w-100"),
-        verbatimTextOutput("csv_in_label", placeholder = TRUE),
-        shinyDirButton("csv_out_dir", "Output folder",
-                       title = "Where to save the output Parquet",
-                       buttonType = "default btn-sm w-100"),
-        verbatimTextOutput("csv_out_label", placeholder = TRUE),
-        textInput("csv_plate_id", "Plate ID (optional)", placeholder = "e.g. Plate1"),
-        actionButton("csv_convert_btn", "Convert & add to queue",
-                     icon = icon("exchange-alt"), class = "btn-primary btn-sm w-100")
-      )
-    ),
-    hr(),
-
     # ── Run full analysis ─────────────────────────────────────────────────────
-    h6("Run Full Analysis"),
+    h6("Step 4 — Run Full Analysis"),
     shinyDirButton("out_dir_btn", "Choose output folder",
                    title = "Output for sweep + AP parquets",
                    buttonType = "default btn-sm w-100"),
@@ -183,6 +158,39 @@ ui <- page_sidebar(
       )
     ),
     col_widths = c(8, 4)
+  ),
+
+  # ── Detection config (below plots) ────────────────────────────────────────────
+  accordion(
+    id = "acc_cfg",
+    open = FALSE,
+    accordion_panel(
+      "Detection Config",
+      layout_columns(
+        sliderInput("dvdt_thr",      "dV/dt threshold (mV/ms)", 5,  100, 25,  step = 1),
+        sliderInput("smooth_ms",     "Smoothing (ms)",           0,    2,  0.2, step = 0.05),
+        sliderInput("refractory_ms", "Refractory (ms)",        0.5,   10,  2,   step = 0.5),
+        sliderInput("min_peak_v",    "Min peak voltage (mV)",  -60,   20, -20,  step = 5),
+        col_widths = c(3, 3, 3, 3)
+      ),
+      layout_columns(
+        numericInput("min_height", "Min height (mV)", NA, step = 1),
+        numericInput("prominence", "Prominence (mV)", NA, step = 1),
+        helpText(style = "margin-top:1.8em;",
+                 "Leave height / prominence blank for adaptive threshold."),
+        layout_columns(
+          downloadButton("export_cfg", "Export config",
+                         icon = icon("download"), class = "btn-sm btn-outline-secondary w-100"),
+          actionButton("reset_cfg", "Defaults",
+                       icon = icon("undo"), class = "btn-sm btn-outline-secondary w-100"),
+          col_widths = c(6, 6)
+        ),
+        col_widths = c(2, 2, 4, 4)
+      ),
+      fileInput("import_cfg", NULL, accept = ".json",
+                buttonLabel = "Load config", placeholder = "No file selected",
+                width = "300px")
+    )
   )
 )
 
@@ -192,6 +200,8 @@ server <- function(input, output, session) {
 
   parquet_paths     <- reactiveVal(character(0))
   scan_results      <- reactiveVal(NULL)
+  scan_ap_cache     <- reactiveVal(NULL)   # well_key → previewAPDetection() result
+  cfg_dirty         <- reactiveVal(FALSE)  # TRUE once user edits any config slider
   out_dir_path      <- reactiveVal(NULL)
   selected_well_key <- reactiveVal(NULL)
   csv_in_path       <- reactiveVal(NULL)
@@ -241,19 +251,27 @@ server <- function(input, output, session) {
     d <- out_dir_path(); if (is.null(d)) "(none selected)" else d
   })
 
-  # ── Scan ────────────────────────────────────────────────────────────────────
+  # Mark config dirty when user touches any slider
+  observeEvent(
+    list(input$dvdt_thr, input$smooth_ms, input$refractory_ms,
+         input$min_peak_v, input$min_height, input$prominence),
+    { cfg_dirty(TRUE) },
+    ignoreInit = TRUE
+  )
+
+  # ── Scan + pre-detect ────────────────────────────────────────────────────────
   observeEvent(input$scan_btn, {
     paths <- parquet_paths()
     if (!length(paths)) {
       showNotification("Add at least one raw trace Parquet first.", type = "error"); return()
     }
-    withProgress(message = "Scanning wells…", {
-      scan_sw <- if (nzchar(trimws(input$scan_sweeps %||% ""))) {
-        as.integer(na.omit(suppressWarnings(
-          as.integer(trimws(strsplit(input$scan_sweeps, "[,;\\s]+",
-                                    perl = TRUE)[[1]])))))
-      } else NULL
 
+    scan_sw <- if (nzchar(trimws(input$scan_sweeps %||% ""))) {
+      as.integer(na.omit(suppressWarnings(
+        as.integer(trimws(strsplit(input$scan_sweeps, "[,;\\s]+", perl = TRUE)[[1]])))))
+    } else NULL
+
+    withProgress(message = "Scanning wells…", value = 0.1, {
       result <- tryCatch(
         scanParquetForAPs(paths,
                           v_is_volts   = isTRUE(input$v_is_volts),
@@ -263,16 +281,46 @@ server <- function(input, output, session) {
           showNotification(paste("Scan failed:", e$message), type = "error"); NULL
         }
       )
-      if (!is.null(result)) {
-        showNotification(
-          sprintf("%d wells — %d AP-likely.", nrow(result), sum(result$ap_likely)),
-          type = "message"
-        )
-        # Auto-select the well with the highest max voltage
-        best <- result[which.max(result$max_v_mV), ]
-        selected_well_key(.make_well_key(best$well_id, best$plate_id, best$parquet_path))
-      }
+      if (is.null(result)) return()
+
+      n_likely <- sum(result$ap_likely)
+      showNotification(
+        sprintf("%d wells — %d AP-likely. Pre-detecting…", nrow(result), n_likely),
+        type = "message", duration = 3
+      )
       scan_results(result)
+
+      # Auto-select best well immediately so plate renders
+      best <- result[which.max(result$n_ap_sweeps), ]
+      best_key <- .make_well_key(best$well_id, best$plate_id, best$parquet_path)
+      selected_well_key(best_key)
+
+      # Pre-run AP detection on all AP-likely wells with default config
+      if (n_likely > 0) {
+        likely_rows <- result[result$ap_likely, , drop = FALSE]
+        cache <- list()
+        default_cfg <- cc_config(v_is_volts = isTRUE(input$v_is_volts))
+
+        incProgress(0.1)
+        for (i in seq_len(nrow(likely_rows))) {
+          incProgress(0.8 / nrow(likely_rows),
+                      detail = likely_rows$well_id[i],
+                      message = sprintf("Pre-detecting AP (%d/%d)…", i, nrow(likely_rows)))
+          w   <- likely_rows[i, ]
+          key <- .make_well_key(w$well_id, w$plate_id, w$parquet_path)
+          cache[[key]] <- tryCatch(
+            previewAPDetection(w$parquet_path, w$well_id, w$plate_id,
+                               sweeps = scan_sw, cfg = default_cfg),
+            error = function(e) NULL
+          )
+        }
+        scan_ap_cache(cache)
+        cfg_dirty(FALSE)   # cache matches current (default) config
+        showNotification(
+          sprintf("Done. %d AP-likely wells pre-detected.", n_likely),
+          type = "message", duration = 4
+        )
+      }
     })
   })
 
@@ -438,20 +486,22 @@ server <- function(input, output, session) {
     cfg  <- cfg_inputs()
     req(info, cfg)
 
-    # Quick mode: detect on the currently displayed sweep only.
-    # If sweep selection was used for scanning, fall back to those sweeps
-    # when not in quick mode (so the table covers the same sweeps as the scan).
+    key   <- .make_well_key(info$well_id, info$plate_id, info$path)
+    cache <- scan_ap_cache()
+
+    # Return cached result instantly when config is still at scan defaults
+    if (!isTRUE(cfg_dirty()) && !is.null(cache) && !is.null(cache[[key]])) {
+      return(cache[[key]])
+    }
+
     scan_sw_str <- trimws(input$scan_sweeps %||% "")
-    scan_sw <- if (nzchar(scan_sw_str)) {
+    scan_sw <- if (nzchar(scan_sw_str))
       as.integer(na.omit(suppressWarnings(
         as.integer(trimws(strsplit(scan_sw_str, "[,;\\s]+", perl = TRUE)[[1]])))))
-    } else NULL
+    else NULL
 
-    sweeps_arg <- if (isTRUE(cfg$quick) && !is.null(cfg$sweep)) {
-      as.integer(cfg$sweep)
-    } else {
-      scan_sw   # NULL = all sweeps; or the pre-scan subset
-    }
+    sweeps_arg <- if (isTRUE(cfg$quick) && !is.null(cfg$sweep))
+      as.integer(cfg$sweep) else scan_sw
 
     tryCatch(
       previewAPDetection(

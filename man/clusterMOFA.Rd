@@ -2,7 +2,7 @@
 % Please edit documentation in R/clusteringTools.R
 \name{clusterMOFA}
 \alias{clusterMOFA}
-\title{Multi-modal factor analysis using MOFA2}
+\title{Multi-modal factor analysis using MOFA2 (deprecated wrapper)}
 \usage{
 clusterMOFA(
   se,
@@ -12,54 +12,50 @@ clusterMOFA(
   n_factors = 5,
   scale_views = TRUE,
   seed = 42,
-  use_basilisk = TRUE,
+  use_basilisk = FALSE,
   condaenv = NULL,
+  out_prefix = "mofa",
   ...
 )
 }
 \arguments{
-\item{se}{A \code{SingleCellExperiment}.}
+\item{se}{A \code{SummarizedExperiment} or \code{SingleCellExperiment}.}
 
-\item{ephys_cols}{colData columns for the ephys view (one row per well).}
+\item{ephys_cols}{Character vector of numeric \code{colData} columns for the
+ephys view.  \code{NULL} skips this view.}
 
-\item{morpho_cols}{colData columns for the morphology view.}
+\item{morpho_cols}{Character vector of numeric \code{colData} columns for
+the morphology view.  \code{NULL} skips this view.}
 
-\item{assay_names}{Assay names to add as additional views (features ×
-wells).  Each assay becomes its own view.  \code{NULL} (default) skips.}
+\item{assay_names}{Assay names to include as individual views (one view per
+assay, features = sweeps).  \code{NULL} (default) skips.}
 
-\item{n_factors}{Number of latent factors to learn.  Default \code{5}.}
+\item{n_factors}{Number of latent factors requested.  ARD priors will
+shrink inactive factors toward zero; the actual number retained may be
+lower.  Default \code{5}.}
 
-\item{scale_views}{Logical.  Scale views to equal total variance before
-fitting.  Default \code{TRUE}.}
+\item{scale_views}{Logical.  Rescale views to equal total variance before
+fitting (MOFA's cross-view balancing, applied on top of the per-view
+scaling done in \code{\link{seMOFAFeatures}}).  Default \code{TRUE}.}
 
-\item{seed}{Random seed.  Default \code{42}.}
+\item{seed}{Integer random seed.  Default \code{42}.}
 
-\item{use_basilisk}{Logical.  Whether to use \code{basilisk} to manage the
-Python environment automatically.  Default \code{TRUE}.  Set to
-\code{FALSE} when using a conda environment (via \code{condaenv}) or when
-configuring Python manually with \code{reticulate::use_python()}.}
+\item{use_basilisk}{Logical.  Use \pkg{basilisk} for Python management.
+Default \code{FALSE}.}
 
-\item{condaenv}{Character.  Name of a conda environment that has
-\code{mofapy2} installed (e.g. \code{"mofa_env"}).  When provided,
-automatically sets \code{use_basilisk = FALSE} and activates the
-environment via \code{reticulate::use_condaenv()}.  Default \code{NULL}.}
+\item{condaenv}{Name of a conda environment with \code{mofapy2} installed.
+When provided, \code{use_basilisk} is forced to \code{FALSE}.}
+
+\item{out_prefix}{Prefix for colData factor columns.  Default \code{"mofa"}.}
 
 \item{...}{Additional arguments passed to \code{MOFA2::run_mofa()}.}
 }
 \value{
-\code{se} with MOFA factor scores in
-  \code{reducedDims(se)[["MOFA"]]} and the model in
-  \code{S4Vectors::metadata(se)[["MOFA_model"]]}.
+\code{se} updated by \code{\link{predictMOFASE}}.
 }
 \description{
-Fits a MOFA2 model with separate ephys and morphology views to learn
-latent factors that are either shared across modalities (indicating a
-genuine cell-type signature) or modality-specific.  Factor scores are
-stored in \code{reducedDims(se)[["MOFA"]]} and the trained model object
-in \code{S4Vectors::metadata(se)[["MOFA_model"]]}.
-}
-\details{
-Requires the \pkg{MOFA2} Bioconductor package and a working Python
-environment (managed by \pkg{basilisk}).  Install with:
-\code{BiocManager::install("MOFA2")}.
+Calls the modular \code{\link{seMOFAFeatures}} →
+\code{\link{fitMOFASE}} → \code{\link{predictMOFASE}} pipeline.
+For new code, use those functions directly for full control over scaling,
+NA handling, and output prefix.
 }

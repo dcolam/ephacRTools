@@ -79,23 +79,32 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                          dashboardSidebar(collapsed=hasLogin, disable=hasLogin,
                                           sidebarMenu(id="main_tabs", aboutMenu,
                                                       .modify_stop_propagation(
-                                                        menuItem("Prepare Object", startExpanded=TRUE,
-                                                                 menuSubItem("Overview", tabName="tab_object"),
-                                                                 menuItemOutput("uploadMenu"),
-                                                                 menuSubItem("Column Data", tabName="tab_samples"),
-                                                                 menuSubItem("Sweeps", tabName="tab_features")
+                                                        menuItem("Import", startExpanded=TRUE,
+                                                                 menuSubItem("Overview",           tabName="tab_object"),
+                                                                 menuSubItem("Load SE",            tabName="tab_load_se"),
+                                                                 menuSubItem("Voltage Clamp → SE", tabName="tab_vc_import"),
+                                                                 menuSubItem("Combine → MAE", tabName="tab_mae")
                                                                  )),
                                                       .modify_stop_propagation(
-                                                        menuItem("Customize Object Groups", startExpanded=TRUE,
-                                                                 menuSubItem("Define Conditions", tabName="tab_coldata"),
-                                                                 menuSubItem("Define Sweeps", tabName="tab_rowdata"),
-                                                                 menuSubItem("Change Assays", tabName="tab_assays"),
-                                                                 menuSubItem("Filter Wells", tabName="tab_filter_wells")
+                                                        menuItem("Current Clamp → SE",
+                                                                 icon = icon("bolt"), startExpanded=TRUE,
+                                                                 menuSubItem("1 — CSV → Parquet",    tabName="tab_cc_csv"),
+                                                                 menuSubItem("2 — Detection & Preview",   tabName="tab_cc_detect"),
+                                                                 menuSubItem("3 — Build SE",             tabName="tab_cc_build")
                                                         )),
                                                       .modify_stop_propagation(
-                                                        menuItem("Plotting", startExpanded=TRUE,
+                                                        menuItem("Inspect & Edit", startExpanded=TRUE,
+                                                                 menuSubItem("Column Data",       tabName="tab_samples"),
+                                                                 menuSubItem("Sweep Data",        tabName="tab_features"),
+                                                                 menuSubItem("Define Conditions", tabName="tab_coldata"),
+                                                                 menuSubItem("Define Sweeps",     tabName="tab_rowdata"),
+                                                                 menuSubItem("Change Assays",     tabName="tab_assays"),
+                                                                 menuSubItem("Filter Wells",      tabName="tab_filter_wells")
+                                                        )),
+                                                      .modify_stop_propagation(
+                                                        menuItem("Visualize", startExpanded=TRUE,
                                                                  menuSubItem("Plate Overview", tabName="tab_plate"),
-                                                                 menuSubItem("Plot Sweeps", tabName="tab_sweeps")
+                                                                 menuSubItem("Plot Sweeps",    tabName="tab_sweeps")
                                                         )),
                                                       .modify_stop_propagation(
                                                         menuItem("Image Analysis", startExpanded=TRUE,
@@ -107,8 +116,6 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
 
                                                       hr(),
                                                       menuItem("Clustering", tabName = "tab_cluster"),
-                                                      menuItem("Current Clamp", tabName = "tab_cc",
-                                                               icon = icon("bolt")),
                                                       menuItem("Export", tabName="tab_export"),
                                                       tags$li(class="shinydashboard-menu-output pkgversion",
                                                               tags$span(paste0("ephacRTools v",
@@ -183,44 +190,43 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                            use_waiter(), useShinyjs(), waiterContent,
                            tabItems(
                              tabItem("tab_object", withSpinner(uiOutput("objOverview"))),
-                             tabItem("tab_fileinput",
+                             tabItem("tab_load_se",
                                      fluidRow(
-                                     box(width=6,title = "Load RDS",
-                                         tags$p("You may upload your own SummarizedExperiment (SE) object
-                     saved as a R .rds file. Once uploaded, it will be added to
-                     the list of available objects (in the dropdown list on the
-                     top left). For instructions on how to optimally prepare
-                     the object, ", actionLink("help_SE", "click here"), "."),
+                                       box(width=6, title = "Load SE from File",
+                                         tags$p("Upload a SummarizedExperiment (SE) object saved as an .rds file.
+                                                 Once uploaded it will appear in the dataset selector at the top.
+                                                 For preparation instructions, ", actionLink("help_SE", "click here"), "."),
                                          fileInput("file", "Choose SE .rds file", multiple=FALSE,
-                                                   accept=c(".rds",".RDS", ".rda"))
-                                         ),
-                                     box(width=6,title = "Load Prebundlet Dataset",
-                                         tags$p("Load one or more of the sample Datasets bundled with the ephacRTools package. For a description of the single datasets ", actionLink("help_SE", "click here"), "."),
-                                         selectInput("datasets", label= "Choose a pre-bundled Dataset:",
-                                                      choices = list("Human Adrenal Glands" = "se_hAG",
-                                                                     "Primary Neurons"  = "se_pn",
-                                                                     "iPSC-Tricultures" = "se_iN",
-                                                                     "ROMK" = "se_romk"), multiple = T),
-                                         actionButton("dataset_button", label = "Load pre-bundled datasets")
-                                         )
-                                     ),
-
-
-                                      fluidRow(
-                                     box(
-                                       width = 6,title = "Load Excel-File",
-                                       tags$p("You may upload one or more Excel files generated directly by DataControl. Make sure to follow the guidelines."),
-                                       fluidRow(
-                                         column(width = 6,
-                                                textInput("se_id", "Name your Dataset:", value = "Custom Dataset")),
-                                         column(width = 6,
-                                                fileInput("fileEphys", "Ephys Excel File (.xlsx)", multiple = TRUE, accept = ".xlsx"))
+                                                   accept=c(".rds",".RDS",".rda"))
                                        ),
-                                       tableOutput("importXl")
+                                       box(width=6, title = "Load Pre-bundled Dataset",
+                                         tags$p("Load one of the sample datasets bundled with ephacRTools.
+                                                 For dataset descriptions, ", actionLink("help_SE2", "click here"), "."),
+                                         selectInput("datasets", label = "Choose a pre-bundled dataset:",
+                                                     choices = list("Human Adrenal Glands" = "se_hAG",
+                                                                    "Primary Neurons"       = "se_pn",
+                                                                    "iPSC-Tricultures"      = "se_iN",
+                                                                    "ROMK"                  = "se_romk"),
+                                                     multiple = TRUE),
+                                         actionButton("dataset_button", label = "Load pre-bundled datasets")
+                                       )
                                      )
-                                      )
-
-
+                             ),
+                             tabItem("tab_vc_import",
+                                     fluidRow(
+                                       box(width=8, title = "Voltage Clamp → SE (DataControl Excel)",
+                                         tags$p("Upload one or more DataControl Excel files to build a
+                                                 SingleCellExperiment. Make sure to follow the formatting guidelines."),
+                                         fluidRow(
+                                           column(width=6,
+                                                  textInput("se_id", "Name your dataset:", value = "Custom Dataset")),
+                                           column(width=6,
+                                                  fileInput("fileEphys", "DataControl Excel (.xlsx)",
+                                                            multiple = TRUE, accept = ".xlsx"))
+                                         ),
+                                         tableOutput("importXl")
+                                       )
+                                     )
                              ),
                              tabItem("tab_samples",
                                      box(width=12, tags$div(style="width: 100%; overflow-x: scroll;",
@@ -1016,30 +1022,181 @@ tinySEV.ui <- function(title="tinySEV", waiterContent=NULL, about=NULL,
                                      ),
 
                                       box(width=12,
-
                                           fluidRow(
                                             column(width=4,
-                                                   selectInput("plate_id3", "Select Plate:",
-                                                               choices = c()),
-                                                selectizeInput("clusteredwells", "Selected Wells:",
-                                                               choices = c(),
-                                                               multiple =T),
-                                                # Add spacing between selectInput and button
-                                                div(style = "margin-top: 10px;"),
-                                                actionButton("reset_well", "Reset Well Selection"),
-                                                div(style = "margin-top: 50px;")
-
+                                                   selectInput("plate_id3", "Select Plate:", choices = c()),
+                                                   selectizeInput("clusteredwells", "Selected Wells:",
+                                                                  choices = c(), multiple = TRUE),
+                                                   div(style = "margin-top: 10px;"),
+                                                   actionButton("reset_well", "Reset Well Selection"),
+                                                   div(style = "margin-top: 50px;")
                                                    )
                                           )
+                                      ),
 
-                                          )
+                                     # ── Supervised LDA ──────────────────────────────────────────────────
+                                     box(width = 12,
+                                       title = "Supervised Classification (LDA)",
+                                       collapsible = TRUE, collapsed = TRUE,
+                                       tabsetPanel(type = "tabs",
 
+                                         # ── Setup tab ──────────────────────────────────────────────────
+                                         tabPanel("Setup",
+                                           br(),
+                                           fluidRow(
+                                             column(4,
+                                               tags$strong("Features"),
+                                               selectizeInput("lda_assays", "Assays:",
+                                                 choices = c(), multiple = TRUE,
+                                                 options = list(placeholder = "Select assays…")),
+                                               radioButtons("lda_assay_agg", "Assay aggregation:",
+                                                 choices = c("All sweeps (IV curve)" = "all",
+                                                             "Mean across sweeps"    = "mean",
+                                                             "SD across sweeps"      = "sd"),
+                                                 selected = "all", inline = FALSE),
+                                               selectizeInput("lda_coldata_feats", "colData columns:",
+                                                 choices = c(), multiple = TRUE,
+                                                 options = list(placeholder = "Optional numeric columns…")),
+                                               tags$strong("Scaling pipeline"),
+                                               checkboxGroupInput("lda_scale_steps",
+                                                 label = NULL,
+                                                 choices = c(
+                                                   "Assay-type normalisation (preserves IV shape)" = "assay",
+                                                   "Within-plate centering (removes batch drift)"  = "plate",
+                                                   "Per-feature z-score (LDA stability)"           = "feature"),
+                                                 selected = c("assay", "plate", "feature"))
+                                             ),
+                                             column(4,
+                                               tags$strong("Training"),
+                                               selectInput("lda_label_col", "Class label column:",
+                                                 choices = c()),
+                                               selectInput("lda_method", "LDA method:",
+                                                 choices = c(
+                                                   "Global (one model)" = "global",
+                                                   "Per-plate"          = "per_plate",
+                                                   "PCA → LDA"          = "pca"),
+                                                 selected = "global"),
+                                               conditionalPanel("input.lda_method == 'pca'",
+                                                 sliderInput("lda_pca_var", "PCA variance to retain:",
+                                                   min = 0.5, max = 0.999, value = 0.95, step = 0.01)
+                                               ),
+                                               br(),
+                                               actionButton("lda_fit_btn", "Fit LDA",
+                                                 icon = icon("play"), class = "btn-primary btn-block"),
+                                               br(),
+                                               verbatimTextOutput("lda_fit_status")
+                                             ),
+                                             column(4,
+                                               tags$strong("Predict & write to SE"),
+                                               textInput("lda_out_prefix", "Output column prefix:",
+                                                 value = "lda"),
+                                               actionButton("lda_predict_btn", "Predict all wells",
+                                                 icon = icon("wand-magic-sparkles"),
+                                                 class = "btn-success btn-block"),
+                                               br(),
+                                               actionButton("lda_cv_btn", "Run LOPO cross-validation",
+                                                 icon = icon("rotate"), class = "btn-default btn-block"),
+                                               br(),
+                                               uiOutput("lda_cv_status_ui")
+                                             )
+                                           )
+                                         ),
+
+                                         # ── Results tab ────────────────────────────────────────────────
+                                         tabPanel("Results",
+                                           br(),
+                                           fluidRow(
+                                             column(7,
+                                               tags$strong("LD Projection"),
+                                               fluidRow(
+                                                 column(5, selectInput("lda_ld_x", "X axis:", choices = c())),
+                                                 column(5, selectInput("lda_ld_y", "Y axis:", choices = c())),
+                                                 column(2, br(),
+                                                   actionButton("lda_scatter_refresh", icon("refresh"),
+                                                     class = "btn-xs btn-default"))
+                                               ),
+                                               withSpinner(plotlyOutput("lda_scatter_plot", height = "360px"))
+                                             ),
+                                             column(5,
+                                               tags$strong("Feature importance"),
+                                               fluidRow(
+                                                 column(7, selectInput("lda_imp_ld", "LD axis:",
+                                                   choices = c(), multiple = FALSE)),
+                                                 column(5, numericInput("lda_imp_top", "Top N:",
+                                                   value = 20, min = 5, max = 100, step = 5))
+                                               ),
+                                               withSpinner(plotlyOutput("lda_importance_plot", height = "360px"))
+                                             )
+                                           ),
+                                           fluidRow(
+                                             column(12,
+                                               tags$strong("Confusion matrix"),
+                                               fluidRow(
+                                                 column(4, selectInput("lda_conf_label", "True label column:",
+                                                   choices = c())),
+                                                 column(8, verbatimTextOutput("lda_confusion_out"))
+                                               )
+                                             )
+                                           )
+                                         ),
+
+                                         # ── Validation tab ──────────────────────────────────────────────
+                                         tabPanel("Validation",
+                                           br(),
+                                           helpText(style = "color:#666;",
+                                             "Leave-one-plate-out cross-validation. ",
+                                             "Click 'Run LOPO cross-validation' in the Setup tab first."),
+                                           fluidRow(
+                                             column(6, withSpinner(plotlyOutput("lda_cv_plot", height = "300px"))),
+                                             column(6, withSpinner(tableOutput("lda_cv_table")))
+                                           ),
+                                           conditionalPanel("input.lda_method == 'pca'",
+                                             hr(),
+                                             tags$strong("PCA scree (retained PCs highlighted)"),
+                                             withSpinner(plotlyOutput("lda_pca_scree", height = "240px"))
+                                           )
+                                         )
+                                       )
+                                     )
 
 
                              ),
 
-                          tabItem("tab_cc",
-                                  ccPreviewUI("cc_preview")
+                          tabItem("tab_cc_csv",
+                                  ccPreviewUI_csv("cc_preview")
+                          ),
+                          tabItem("tab_cc_detect",
+                                  ccPreviewUI_detect("cc_preview")
+                          ),
+                          tabItem("tab_cc_build",
+                                  ccPreviewUI_build("cc_preview")
+                          ),
+                          tabItem("tab_mae",
+                            fluidRow(
+                              box(width=8, title = "Combine SEs into MultiAssayExperiment",
+                                tags$p(style="color:#666;",
+                                  "Select SingleCellExperiment objects to combine into a MultiAssayExperiment. ",
+                                  "Each must have ", tags$code("well_id"), " and ", tags$code("plate_id"),
+                                  " in its colData. Current Clamp SEs built in this app already have these. ",
+                                  "For Voltage Clamp SEs, ", tags$code("Well"), " / ", tags$code("Plate_ID"),
+                                  " are used automatically if the lowercase versions are absent."),
+                                uiOutput("mae_se_list_ui"),
+                                hr(),
+                                textInput("mae_name", "MAE object name:",
+                                          placeholder = "e.g. CC_VC_combined"),
+                                actionButton("build_mae_btn", "Build MAE",
+                                             icon  = icon("layer-group"),
+                                             class = "btn-primary btn-block"),
+                                uiOutput("mae_status_ui")
+                              ),
+                              box(width=4, title = "About MultiAssayExperiment",
+                                helpText(style="font-size:11px; color:#666;",
+                                  "A MultiAssayExperiment (MAE) holds multiple assay types ",
+                                  "(e.g., voltage clamp + current clamp) linked by well identity. ",
+                                  "Once built, the MAE appears in the dataset selector at the top. ",
+                                  "Use downstream packages (MOFA2, etc.) for multi-modal analysis.")
+                              )
+                            )
                           ),
 
                           tabItem("tab_export",

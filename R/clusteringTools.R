@@ -13,7 +13,12 @@ NULL
 #   plotDimRed()               — plot reducedDims with colData colouring
 #   clusterHeatmap()           — ComplexHeatmap: features × wells, split by cluster
 #   clusterSummary()           — per-cluster boxplots + summary table
-#   clusterMOFA()              — MOFA2 multi-modal factor analysis (optional)
+#   seMOFAFeatures()           — build scaled view matrices for MOFA2
+#   fitMOFASE()                — fit MOFA2 model, return mofa_fit_se object
+#   predictMOFASE()            — write factor scores to colData / reducedDims
+#   mofaWeights()              — feature weights per view/factor (→ ldaLoadings)
+#   mofaVariance()             — R² per view per factor  (→ ldaPCAVariance)
+#   clusterMOFA()              — deprecated one-shot wrapper (back-compat)
 #   clusterPipeline()          — all-in-one wrapper
 
 # ----------------------------------------------------------------------------
@@ -1039,47 +1044,507 @@ clusterSummary <- function(se,
 
 
 # ============================================================================
-# clusterMOFA  (optional — requires MOFA2 from Bioconductor)
+# MOFA2 multi-modal factor analysis — SE-level API
+#
+# Mirrors the ldaTools.R pattern:
+#   seMOFAFeatures()  →  fitMOFASE()  →  predictMOFASE()
+#                                     →  mofaWeights()
+#                                     →  mofaVariance()
+#
+# Key differences vs the LDA pipeline:
+#   • Views stay separate (features × wells per modality) rather than being
+#     concatenated, so MOFA can handle cells missing from one view.
+#   • "assay" scaling is omitted — MOFA's scale_views handles cross-view
+#     variance; plate + feature steps handle batch drift and unit differences.
+#   • NA values are kept by default ("pass") so MOFA fills them via the
+#     generative model — the main advantage over LDA for partially-imaged data.
+#   • predictMOFASE extracts already-fitted factor scores rather than
+#     projecting new data (MOFA does not support out-of-sample projection).
 # ============================================================================
 
-#' Multi-modal factor analysis using MOFA2
+#' MOFA2-based multi-modal factor analysis for SummarizedExperiment objects
 #'
-#' Fits a MOFA2 model with separate ephys and morphology views to learn
-#' latent factors that are either shared across modalities (indicating a
-#' genuine cell-type signature) or modality-specific.  Factor scores are
-#' stored in \code{reducedDims(se)[["MOFA"]]} and the trained model object
-#' in \code{S4Vectors::metadata(se)[["MOFA_model"]]}.
+#' A modular pipeline for multi-modal factor analysis using MOFA2.  Mirrors
+#' the \code{\link{ldaTools}} API:
+#' \enumerate{
+#'   \item \code{\link{seMOFAFeatures}} — build scaled view matrices
+#'   \item \code{\link{fitMOFASE}} — fit the MOFA2 model
+#'   \item \code{\link{predictMOFASE}} — write factor scores to \code{colData}
+#'   \item \code{\link{mofaWeights}} — feature weights per view/factor
+#'   \item \code{\link{mofaVariance}} — R² per view per factor
+#' }
 #'
-#' Requires the \pkg{MOFA2} Bioconductor package and a working Python
-#' environment (managed by \pkg{basilisk}).  Install with:
-#' \code{BiocManager::install("MOFA2")}.
+#' @name mofaTools
+NULL
+
+.mofa_check <- function() {
+  if (!requireNamespace("MOFA2", quietly = TRUE))
+    stop("Package 'MOFA2' is required. ",
+         "Install with: BiocManager::install('MOFA2')")
+}
+
+.scale_mofa_block <- function(mat, scale, plates) {
+  # mat: wells × features
+  plate_centers <- NULL
+  if ("plate" %in% scale && !is.null(plates)) {
+    upl <- unique(as.character(plates))
+    plate_centers <- matrix(NA_real_, length(upl), ncol(mat),
+                             dimnames = list(upl, colnames(mat)))
+    for (p in upl) {
+      idx <- which(as.character(plates) == p)
+      plate_centers[p, ] <- colMeans(mat[idx, , drop = FALSE], na.rm = TRUE)
+      mat[idx, ] <- sweep(mat[idx, , drop = FALSE], 2, plate_centers[p, ], "-")
+    }
+  }
+  feat_center <- feat_scale <- NULL
+  if ("feature" %in% scale) {
+    feat_center <- colMeans(mat, na.rm = TRUE)
+    feat_scale  <- apply(mat, 2, sd, na.rm = TRUE)
+    feat_scale[is.na(feat_scale) | feat_scale == 0] <- 1
+    mat <- sweep(sweep(mat, 2, feat_center, "-"), 2, feat_scale, "/")
+  }
+  list(mat = mat, plate_centers = plate_centers,
+       feat_center = feat_center, feat_scale = feat_scale)
+}
+
+.impute_mofa_block <- function(mat, action) {
+  if (action == "impute_zero") {
+    mat[is.na(mat)] <- 0
+  } else if (action == "impute_median") {
+    for (j in seq_len(ncol(mat))) {
+      na_j <- is.na(mat[, j])
+      if (any(na_j)) {
+        med <- median(mat[!na_j, j], na.rm = TRUE)
+        mat[na_j, j] <- if (is.na(med)) 0 else med
+      }
+    }
+  }
+  mat  # "pass" returns as-is; MOFA handles the NAs
+}
+
+# ── seMOFAFeatures ────────────────────────────────────────────────────────────
+
+#' Build MOFA2 view matrices from a SummarizedExperiment
 #'
-#' @param se A \code{SingleCellExperiment}.
-#' @param ephys_cols colData columns for the ephys view (one row per well).
-#' @param morpho_cols colData columns for the morphology view.
-#' @param assay_names Assay names to add as additional views (features ×
-#'   wells).  Each assay becomes its own view.  \code{NULL} (default) skips.
-#' @param n_factors Number of latent factors to learn.  Default \code{5}.
-#' @param scale_views Logical.  Scale views to equal total variance before
-#'   fitting.  Default \code{TRUE}.
-#' @param seed Random seed.  Default \code{42}.
-#' @param use_basilisk Logical.  Whether to use \code{basilisk} to manage the
-#'   Python environment automatically.  Default \code{TRUE}.  Set to
-#'   \code{FALSE} when using a conda environment (via \code{condaenv}) or when
-#'   configuring Python manually with \code{reticulate::use_python()}.
-#' @param condaenv Character.  Name of a conda environment that has
-#'   \code{mofapy2} installed (e.g. \code{"mofa_env"}).  When provided,
-#'   automatically sets \code{use_basilisk = FALSE} and activates the
-#'   environment via \code{reticulate::use_condaenv()}.  Default \code{NULL}.
-#' @param ... Additional arguments passed to \code{MOFA2::run_mofa()}.
+#' Constructs separate \emph{ephys} and \emph{morphology} view matrices for
+#' \code{MOFA2}, applying the same plate-centering and feature z-scoring as
+#' \code{\link{seLDAFeatures}}.  Unlike the LDA pipeline, \code{NA} values
+#' are preserved by default so MOFA2 can handle them natively — cells that
+#' are missing from one view (e.g. border wells without imaging) still receive
+#' factor scores driven by the other view.
 #'
-#' @return \code{se} with MOFA factor scores in
-#'   \code{reducedDims(se)[["MOFA"]]} and the model in
-#'   \code{S4Vectors::metadata(se)[["MOFA_model"]]}.
+#' @param se A \code{SummarizedExperiment} or \code{SingleCellExperiment}.
+#' @param ephys_cols Character vector of numeric \code{colData} columns for the
+#'   ephys view.  \code{NULL} skips this view.
+#' @param morpho_cols Character vector of numeric \code{colData} columns for
+#'   the morphology view.  \code{NULL} skips this view.
+#' @param assay_names Assay names to include as individual views (one view per
+#'   assay, features = sweeps).  \code{NULL} (default) skips.
+#' @param scale Character vector of scaling steps to apply \emph{within each
+#'   view}: \code{"plate"} (subtract per-plate means, removes batch drift) and
+#'   \code{"feature"} (z-score per feature, normalises units).  Default both.
+#'   Cross-view variance balancing is handled by \code{scale_views} in
+#'   \code{\link{fitMOFASE}}, not here.
+#' @param plate_col \code{colData} column for plate IDs.  Default
+#'   \code{"Plate_ID"}.  Matched to the default used by \code{\link{seLDAFeatures}}.
+#' @param na_action \code{"pass"} (default — preserve \code{NA}s for MOFA),
+#'   \code{"impute_median"}, or \code{"impute_zero"}.
+#' @param ephys_na_action Override NA strategy for the ephys block.
+#'   \code{NULL} falls back to \code{na_action}.
+#' @param morpho_na_action Override NA strategy for the morphology block.
+#'   \code{NULL} falls back to \code{na_action}.  Typical choice:
+#'   \code{"impute_zero"} when missing particles mean zero signal, though
+#'   \code{"pass"} lets MOFA learn this from context.
+#' @param wells Optional subset of well names (\code{colnames(se)}).
+#'   \code{NULL} uses all wells.
+#'
+#' @return A list with:
+#' \describe{
+#'   \item{\code{views}}{Named list of \code{[features × wells]} matrices
+#'     suitable for \code{MOFA2::create_mofa()}.}
+#'   \item{\code{scale_params}}{Per-view scaling parameters (plate centers,
+#'     feature means/SDs) for diagnostics.}
+#'   \item{\code{well_names}}{Character vector of well IDs.}
+#'   \item{\code{ephys_cols}, \code{morpho_cols}, \code{assay_names}}{Feature
+#'     specification forwarded to the fit object and \code{mofaWeights()}.}
+#' }
+#'
+#' @seealso \code{\link{fitMOFASE}}, \code{\link{predictMOFASE}},
+#'   \code{\link{mofaWeights}}, \code{\link{mofaVariance}}
 #'
 #' @importFrom SummarizedExperiment colData assay assayNames
+#' @export
+seMOFAFeatures <- function(se,
+                             ephys_cols       = NULL,
+                             morpho_cols      = NULL,
+                             assay_names      = NULL,
+                             scale            = c("plate", "feature"),
+                             plate_col        = "Plate_ID",
+                             na_action        = c("pass", "impute_median",
+                                                   "impute_zero"),
+                             ephys_na_action  = NULL,
+                             morpho_na_action = NULL,
+                             wells            = NULL) {
+  na_action <- match.arg(na_action)
+  valid_na  <- c("pass", "impute_median", "impute_zero")
+  if (!is.null(ephys_na_action))
+    ephys_na_action  <- match.arg(ephys_na_action,  valid_na)
+  if (!is.null(morpho_na_action))
+    morpho_na_action <- match.arg(morpho_na_action, valid_na)
+  eff_ephys_na  <- if (!is.null(ephys_na_action))  ephys_na_action  else na_action
+  eff_morpho_na <- if (!is.null(morpho_na_action)) morpho_na_action else na_action
+
+  if (is.null(ephys_cols) && is.null(morpho_cols) && is.null(assay_names))
+    stop("Provide at least one of 'ephys_cols', 'morpho_cols', or 'assay_names'.")
+
+  if (!is.null(wells)) {
+    wells <- intersect(wells, colnames(se))
+    if (!length(wells)) stop("No matching wells found.")
+    se <- se[, wells, drop = FALSE]
+  }
+
+  cd          <- as.data.frame(SummarizedExperiment::colData(se))
+  atomic_cols <- names(cd)[vapply(cd, function(x) is.atomic(x) || is.factor(x),
+                                   logical(1))]
+  plates      <- cd[[plate_col]]
+  if (is.null(plates))
+    warning("plate_col '", plate_col, "' not found in colData; skipping plate centering.")
+  well_names  <- colnames(se)
+
+  views     <- list()
+  scale_lst <- list()
+
+  .build_view <- function(cols, na_act, view_nm) {
+    valid <- intersect(cols, atomic_cols)
+    miss  <- setdiff(cols, atomic_cols)
+    if (length(miss))
+      warning("seMOFAFeatures: skipping ", view_nm, "_cols not found or nested: ",
+              paste(miss, collapse = ", "))
+    if (!length(valid)) return(invisible(NULL))
+    mat <- matrix(as.numeric(as.matrix(cd[, valid, drop = FALSE])),
+                  nrow = nrow(cd), ncol = length(valid),
+                  dimnames = list(well_names, valid))
+    if (na_act != "pass") mat <- .impute_mofa_block(mat, na_act)
+    res <- .scale_mofa_block(mat, scale, plates)
+    views[[view_nm]]     <<- t(res$mat)   # features × wells for MOFA
+    scale_lst[[view_nm]] <<- res[c("plate_centers", "feat_center", "feat_scale")]
+  }
+
+  if (!is.null(ephys_cols)  && length(ephys_cols))
+    .build_view(ephys_cols,  eff_ephys_na,  "ephys")
+  if (!is.null(morpho_cols) && length(morpho_cols))
+    .build_view(morpho_cols, eff_morpho_na, "morpho")
+
+  # Assay views
+  if (!is.null(assay_names) && length(assay_names)) {
+    valid_a <- intersect(assay_names, SummarizedExperiment::assayNames(se))
+    bad_a   <- setdiff(assay_names, valid_a)
+    if (length(bad_a))
+      warning("seMOFAFeatures: assays not found (skipped): ",
+              paste(bad_a, collapse = ", "))
+    for (a in valid_a) {
+      mat_a <- as.matrix(SummarizedExperiment::assay(se, a))   # sweeps × wells
+      storage.mode(mat_a) <- "double"
+      colnames(mat_a) <- well_names
+      mat_t <- t(mat_a)   # wells × sweeps for scaling
+      if (eff_ephys_na != "pass") mat_t <- .impute_mofa_block(mat_t, eff_ephys_na)
+      res_a <- .scale_mofa_block(mat_t, scale, plates)
+      v_nm  <- paste0("ephys_", a)
+      views[[v_nm]]     <- t(res_a$mat)   # sweeps × wells for MOFA
+      scale_lst[[v_nm]] <- res_a[c("plate_centers", "feat_center", "feat_scale")]
+    }
+  }
+
+  if (length(views) == 0)
+    stop("seMOFAFeatures: no valid views built. ",
+         "Check ephys_cols, morpho_cols, and assay_names.")
+
+  list(
+    views        = views,
+    scale_params = list(per_view  = scale_lst,
+                        steps     = scale,
+                        plate_col = plate_col),
+    well_names   = well_names,
+    ephys_cols   = ephys_cols,
+    morpho_cols  = morpho_cols,
+    assay_names  = assay_names
+  )
+}
+
+
+# ── fitMOFASE ─────────────────────────────────────────────────────────────────
+
+#' Fit a MOFA2 multi-modal factor model on a SummarizedExperiment
+#'
+#' Takes the output of \code{\link{seMOFAFeatures}}, trains a MOFA2 model,
+#' and returns a \code{mofa_fit_se} S3 object analogous to the
+#' \code{lda_fit_se} returned by \code{\link{fitLDASE}}.
+#'
+#' @param se A \code{SummarizedExperiment} (used for well alignment only;
+#'   the actual feature data is in \code{mofa_features}).
+#' @param mofa_features Output of \code{\link{seMOFAFeatures}}.
+#' @param n_factors Number of latent factors requested.  ARD priors will
+#'   shrink inactive factors toward zero; the actual number retained may be
+#'   lower.  Default \code{5}.
+#' @param scale_views Logical.  Rescale views to equal total variance before
+#'   fitting (MOFA's cross-view balancing, applied on top of the per-view
+#'   scaling done in \code{\link{seMOFAFeatures}}).  Default \code{TRUE}.
+#' @param seed Integer random seed.  Default \code{42}.
+#' @param use_basilisk Logical.  Use \pkg{basilisk} for Python management.
+#'   Default \code{FALSE}.
+#' @param condaenv Name of a conda environment with \code{mofapy2} installed.
+#'   When provided, \code{use_basilisk} is forced to \code{FALSE}.
+#' @param ... Additional arguments passed to \code{MOFA2::run_mofa()}.
+#'
+#' @return An S3 object of class \code{mofa_fit_se} containing the fitted
+#'   MOFA2 object, variance explained, factor scores, and all parameters
+#'   needed by \code{\link{predictMOFASE}}, \code{\link{mofaWeights}}, and
+#'   \code{\link{mofaVariance}}.
+#'
+#' @seealso \code{\link{seMOFAFeatures}}, \code{\link{predictMOFASE}},
+#'   \code{\link{mofaWeights}}, \code{\link{mofaVariance}}
+#'
+#' @export
+fitMOFASE <- function(se,
+                       mofa_features,
+                       n_factors    = 5,
+                       scale_views  = TRUE,
+                       seed         = 42,
+                       use_basilisk = FALSE,
+                       condaenv     = NULL,
+                       ...) {
+  .mofa_check()
+  stopifnot(is.list(mofa_features), !is.null(mofa_features$views))
+
+  if (!is.null(condaenv)) {
+    use_basilisk <- FALSE
+    reticulate::use_condaenv(condaenv, required = TRUE)
+  }
+
+  mofa_obj <- MOFA2::create_mofa(mofa_features$views)
+
+  data_opts             <- MOFA2::get_default_data_options(mofa_obj)
+  data_opts$scale_views <- scale_views
+
+  model_opts             <- MOFA2::get_default_model_options(mofa_obj)
+  model_opts$num_factors <- n_factors
+
+  train_opts         <- MOFA2::get_default_training_options(mofa_obj)
+  train_opts$seed    <- seed
+  train_opts$verbose <- FALSE
+
+  mofa_obj <- MOFA2::prepare_mofa(mofa_obj,
+                                   data_options     = data_opts,
+                                   model_options    = model_opts,
+                                   training_options = train_opts)
+  mofa_obj <- MOFA2::run_mofa(mofa_obj, use_basilisk = use_basilisk, ...)
+
+  var_exp    <- tryCatch(MOFA2::get_variance_explained(mofa_obj),
+                          error = function(e) NULL)
+  factor_mat <- do.call(rbind, MOFA2::get_factors(mofa_obj))   # samples × factors
+
+  structure(
+    list(
+      mofa_obj     = mofa_obj,
+      views        = names(mofa_features$views),
+      n_factors    = ncol(factor_mat),
+      scale_params = mofa_features$scale_params,
+      well_names   = mofa_features$well_names,
+      ephys_cols   = mofa_features$ephys_cols,
+      morpho_cols  = mofa_features$morpho_cols,
+      assay_names  = mofa_features$assay_names,
+      scale_views  = scale_views,
+      var_exp      = var_exp,
+      factor_mat   = factor_mat,
+      seed         = seed
+    ),
+    class = "mofa_fit_se"
+  )
+}
+
+#' @export
+print.mofa_fit_se <- function(x, ...) {
+  cat("MOFA fit (ephacRTools)\n")
+  cat("  Views:      ", paste(x$views, collapse = ", "), "\n")
+  cat("  Factors:    ", x$n_factors, "\n")
+  cat("  Wells:      ", length(x$well_names), "\n")
+  cat("  scale_views:", x$scale_views, "\n")
+  if (!is.null(x$var_exp)) {
+    r2 <- x$var_exp$r2_per_factor
+    if (!is.null(r2)) {
+      cat("  Variance explained (R²) per view:\n")
+      for (v in names(r2)) {
+        vals <- colMeans(as.matrix(r2[[v]]), na.rm = TRUE)
+        cat(sprintf("    %-12s: %s\n", v,
+                    paste(sprintf("F%d=%.1f%%", seq_along(vals), vals),
+                          collapse = "  ")))
+      }
+    }
+  }
+  invisible(x)
+}
+
+
+# ── predictMOFASE ─────────────────────────────────────────────────────────────
+
+#' Write MOFA2 factor scores to a SummarizedExperiment
+#'
+#' Extracts factor scores from a fitted \code{mofa_fit_se} object and writes
+#' them to \code{colData(se)} as \code{\{prefix\}_Factor1},
+#' \code{\{prefix\}_Factor2}, \ldots — the same \code{out_prefix} convention
+#' used by \code{\link{predictLDASE}} for LD scores.  Factor scores are also
+#' stored in \code{reducedDims(se)[["MOFA"]]}.
+#'
+#' @param se A \code{SummarizedExperiment} compatible with the SE used for
+#'   fitting (same well names).
+#' @param mofa_fit Output of \code{\link{fitMOFASE}}.
+#' @param out_prefix Prefix for new colData columns.  Default \code{"mofa"}.
+#'
+#' @return The \code{se} with factor score columns appended to
+#'   \code{colData} and factor matrix stored in
+#'   \code{reducedDims(se)[["MOFA"]]}.
+#'
+#' @importFrom SummarizedExperiment colData colData<-
 #' @importFrom SingleCellExperiment reducedDims
-#' @importFrom S4Vectors metadata
+#' @importFrom S4Vectors DataFrame
+#' @export
+predictMOFASE <- function(se, mofa_fit, out_prefix = "mofa") {
+  stopifnot(inherits(mofa_fit, "mofa_fit_se"))
+
+  factor_mat <- mofa_fit$factor_mat   # samples × factors (rownames = well names)
+  n_factors  <- mofa_fit$n_factors
+  se_wells   <- colnames(se)
+  factor_nms <- paste0(out_prefix, "_Factor", seq_len(n_factors))
+
+  # Align factor scores to SE column order
+  aligned <- matrix(NA_real_, nrow = length(se_wells), ncol = n_factors,
+                    dimnames = list(se_wells, factor_nms))
+  idx   <- match(rownames(factor_mat), se_wells)
+  valid <- !is.na(idx)
+  aligned[idx[valid], ] <- factor_mat[valid, ]
+
+  # Write to colData
+  cd <- as.data.frame(SummarizedExperiment::colData(se))
+  for (k in seq_len(n_factors))
+    cd[[factor_nms[k]]] <- aligned[, k]
+  SummarizedExperiment::colData(se) <- S4Vectors::DataFrame(cd)
+
+  # Write to reducedDims
+  SingleCellExperiment::reducedDims(se)[["MOFA"]] <- aligned
+
+  se
+}
+
+
+# ── mofaWeights ───────────────────────────────────────────────────────────────
+
+#' Feature weights from a fitted MOFA2 model
+#'
+#' Returns the per-feature weights for each view and factor, analogous to
+#' \code{\link{ldaLoadings}} for LDA models.  Importance is defined as the
+#' mean absolute weight across selected factors.
+#'
+#' @param mofa_fit Output of \code{\link{fitMOFASE}}.
+#' @param view Character vector.  One or more view names to include.
+#'   \code{NULL} (default) returns all views.
+#' @param factor Integer vector.  Which factors to include.
+#'   \code{NULL} (default) returns all factors.
+#' @param n_top Return only the top \code{n_top} features per view by
+#'   importance.  \code{NULL} returns all.
+#'
+#' @return A \code{data.frame} with columns \code{feature}, \code{view},
+#'   one column per selected factor (\code{Factor1}, \code{Factor2}, \ldots),
+#'   \code{importance} (mean |weight| across factors), and \code{rank}.
+#'
+#' @export
+mofaWeights <- function(mofa_fit, view = NULL, factor = NULL, n_top = NULL) {
+  .mofa_check()
+  stopifnot(inherits(mofa_fit, "mofa_fit_se"))
+
+  w_list    <- MOFA2::get_weights(mofa_fit$mofa_obj)
+  views_use <- if (!is.null(view)) intersect(view, names(w_list)) else names(w_list)
+  if (!length(views_use))
+    stop("No matching views. Available: ", paste(names(w_list), collapse = ", "))
+
+  rows <- lapply(views_use, function(v) {
+    mat <- w_list[[v]]   # features × factors
+    if (!is.null(factor)) {
+      keep <- intersect(paste0("Factor", factor), colnames(mat))
+      mat  <- mat[, keep, drop = FALSE]
+    }
+    factor_cols <- colnames(mat)
+    df              <- as.data.frame(mat)
+    df$feature      <- rownames(mat)
+    df$view         <- v
+    df$importance   <- rowMeans(abs(mat), na.rm = TRUE)
+    df              <- df[order(-df$importance), , drop = FALSE]
+    df$rank         <- seq_len(nrow(df))
+    if (!is.null(n_top)) df <- head(df, n_top)
+    lead <- c("feature", "view", factor_cols, "importance", "rank")
+    df[, intersect(lead, colnames(df)), drop = FALSE]
+  })
+
+  do.call(rbind, rows)
+}
+
+
+# ── mofaVariance ──────────────────────────────────────────────────────────────
+
+#' Variance explained by MOFA2 factors per view
+#'
+#' Returns the \eqn{R^2} variance explained by each factor in each view,
+#' analogous to \code{\link{ldaPCAVariance}} for LDA models.
+#'
+#' @param mofa_fit Output of \code{\link{fitMOFASE}}.
+#'
+#' @return A \code{data.frame} with columns \code{view}, \code{factor}, and
+#'   \code{r2} (fraction of variance explained, averaged across groups when
+#'   the model was fit with multiple sample groups).
+#'
+#' @export
+mofaVariance <- function(mofa_fit) {
+  .mofa_check()
+  stopifnot(inherits(mofa_fit, "mofa_fit_se"))
+
+  var_exp <- mofa_fit$var_exp
+  if (is.null(var_exp))
+    var_exp <- tryCatch(
+      MOFA2::get_variance_explained(mofa_fit$mofa_obj),
+      error = function(e)
+        stop("mofaVariance: could not retrieve variance explained. ",
+             "Did the model converge?")
+    )
+
+  r2_list <- var_exp$r2_per_factor
+  rows <- lapply(names(r2_list), function(v) {
+    mat <- as.matrix(r2_list[[v]])   # groups × factors
+    r2v <- colMeans(mat, na.rm = TRUE)
+    data.frame(view   = v,
+               factor = paste0("Factor", seq_along(r2v)),
+               r2     = as.numeric(r2v),
+               stringsAsFactors = FALSE)
+  })
+  df <- do.call(rbind, rows)
+  rownames(df) <- NULL
+  df
+}
+
+
+# ── clusterMOFA (deprecated wrapper) ─────────────────────────────────────────
+
+#' Multi-modal factor analysis using MOFA2 (deprecated wrapper)
+#'
+#' Calls the modular \code{\link{seMOFAFeatures}} →
+#' \code{\link{fitMOFASE}} → \code{\link{predictMOFASE}} pipeline.
+#' For new code, use those functions directly for full control over scaling,
+#' NA handling, and output prefix.
+#'
+#' @inheritParams seMOFAFeatures
+#' @inheritParams fitMOFASE
+#' @param out_prefix Prefix for colData factor columns.  Default \code{"mofa"}.
+#'
+#' @return \code{se} updated by \code{\link{predictMOFASE}}.
+#'
 #' @export
 clusterMOFA <- function(se,
                          ephys_cols   = NULL,
@@ -1088,91 +1553,26 @@ clusterMOFA <- function(se,
                          n_factors    = 5,
                          scale_views  = TRUE,
                          seed         = 42,
-                         use_basilisk = TRUE,
+                         use_basilisk = FALSE,
                          condaenv     = NULL,
+                         out_prefix   = "mofa",
                          ...) {
-  if (!requireNamespace("MOFA2", quietly = TRUE))
-    stop("clusterMOFA: package 'MOFA2' is required.\n",
-         "  Install with: BiocManager::install('MOFA2')")
-
-  if (!is.null(condaenv)) {
-    use_basilisk <- FALSE
-    reticulate::use_condaenv(condaenv, required = TRUE)
-  }
-
-  cd    <- as.data.frame(SummarizedExperiment::colData(se))
-  views <- list()
-
-  # Ephys view (colData scalars) — features × wells
-  if (!is.null(ephys_cols)) {
-    valid_e <- intersect(ephys_cols, names(cd))
-    if (length(valid_e) > 0) {
-      mat_e <- t(as.matrix(cd[, valid_e, drop = FALSE]))
-      storage.mode(mat_e) <- "double"
-      colnames(mat_e) <- colnames(se)
-      views[["ephys"]] <- mat_e
-    }
-  }
-
-  # Assay views (full IV curves) — features × wells
-  if (!is.null(assay_names)) {
-    valid_a <- intersect(assay_names, SummarizedExperiment::assayNames(se))
-    for (a in valid_a) {
-      mat_a <- as.matrix(SummarizedExperiment::assay(se, a))
-      storage.mode(mat_a) <- "double"
-      colnames(mat_a) <- colnames(se)
-      views[[paste0("ephys_", a)]] <- mat_a
-    }
-  }
-
-  # Morphology view — features × wells
-  if (!is.null(morpho_cols)) {
-    valid_m <- intersect(morpho_cols, names(cd))
-    if (length(valid_m) > 0) {
-      mat_m <- t(as.matrix(cd[, valid_m, drop = FALSE]))
-      storage.mode(mat_m) <- "double"
-      colnames(mat_m) <- colnames(se)
-      views[["morpho"]] <- mat_m
-    }
-  }
-
-  if (length(views) == 0)
-    stop("clusterMOFA: no valid views found.",
-         " Check ephys_cols, morpho_cols, and assay_names.")
-
-  mofa_obj <- MOFA2::create_mofa(views)
-
-  data_opts              <- MOFA2::get_default_data_options(mofa_obj)
-  data_opts$scale_views  <- scale_views
-
-  model_opts              <- MOFA2::get_default_model_options(mofa_obj)
-  model_opts$num_factors  <- n_factors
-
-  train_opts          <- MOFA2::get_default_training_options(mofa_obj)
-  train_opts$seed     <- seed
-  train_opts$verbose  <- FALSE
-
-  mofa_obj <- MOFA2::prepare_mofa(mofa_obj,
-                                    data_options     = data_opts,
-                                    model_options    = model_opts,
-                                    training_options = train_opts)
-  mofa_obj <- MOFA2::run_mofa(mofa_obj, use_basilisk = use_basilisk, ...)
-
-  # Factor scores: samples × factors
-  factors      <- MOFA2::get_factors(mofa_obj)
-  factor_mat   <- do.call(rbind, factors)          # combine groups if >1
-
-  # Align to SE column order
-  aligned      <- matrix(NA_real_,
-                          nrow = ncol(se), ncol = ncol(factor_mat),
-                          dimnames = list(colnames(se), colnames(factor_mat)))
-  idx          <- match(rownames(factor_mat), colnames(se))
-  valid        <- !is.na(idx)
-  aligned[idx[valid], ] <- factor_mat[valid, ]
-
-  SingleCellExperiment::reducedDims(se)[["MOFA"]] <- aligned
-  S4Vectors::metadata(se)[["MOFA_model"]]         <- mofa_obj
-  se
+  .Deprecated("fitMOFASE",
+              msg = paste("clusterMOFA() is a compatibility wrapper.",
+                          "Use seMOFAFeatures() + fitMOFASE() + predictMOFASE()",
+                          "for the full pipeline."))
+  mofa_feats <- seMOFAFeatures(se,
+                                ephys_cols  = ephys_cols,
+                                morpho_cols = morpho_cols,
+                                assay_names = assay_names)
+  mofa_fit   <- fitMOFASE(se, mofa_feats,
+                           n_factors    = n_factors,
+                           scale_views  = scale_views,
+                           seed         = seed,
+                           use_basilisk = use_basilisk,
+                           condaenv     = condaenv,
+                           ...)
+  predictMOFASE(se, mofa_fit, out_prefix = out_prefix)
 }
 
 

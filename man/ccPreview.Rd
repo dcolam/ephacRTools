@@ -2,18 +2,28 @@
 % Please edit documentation in R/ccPreviewModule.R
 \name{ccPreview}
 \alias{ccPreview}
+\alias{ccPreviewUI_csv}
+\alias{ccPreviewUI_detect}
+\alias{ccPreviewUI_build}
 \alias{ccPreviewUI}
 \alias{ccPreviewServer}
 \title{CC Preview Shiny Module}
 \usage{
+ccPreviewUI_csv(id)
+
+ccPreviewUI_detect(id)
+
+ccPreviewUI_build(id)
+
 ccPreviewUI(id)
 
-ccPreviewServer(id)
+ccPreviewServer(id, ses = NULL)
 }
 \arguments{
 \item{id}{Module namespace ID.}
 }
 \description{
-Interactive AP detection preview embedded as a reusable Shiny module.
-Can be embedded in any Shiny app (e.g. tinySEV).
+Interactive AP detection preview — plate grid, trace/phase-plane tabs,
+pre-scan caching, and SE generation.  Embedded in tinySEV as the
+"Current Clamp" tab.
 }

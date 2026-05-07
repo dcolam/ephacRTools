@@ -2,7 +2,7 @@
 % Please edit documentation in R/currentClampTools.R
 \name{extractCCFeatures}
 \alias{extractCCFeatures}
-\title{Prepare a SingleCellExperiment from pre-computed current-clamp sweep parquets}
+\title{Extract per-well current-clamp features from a CC SingleCellExperiment}
 \usage{
 extractCCFeatures(se_cc, ap_parquet_path = NULL)
 }
@@ -12,42 +12,51 @@ extractCCFeatures(se_cc, ap_parquet_path = NULL)
 \item{ap_parquet_path}{Optional path(s) to per-spike Parquet file(s)
 produced by \code{\link{runAPAnalysis}}.  If \code{NULL} and AP data are
 stored in \code{metadata(se_cc)$ap_data}, those are used automatically.}
-
-\item{sweep_parquet_path}{Character vector of paths to sweep-level Parquet
-files.  Multiple files are row-bound before processing.}
-
-\item{progress_callback}{Optional function \code{f(i, total, name)} called
-after each file is read.}
 }
 \value{
-A \code{SingleCellExperiment}.
-
 A \code{data.frame} with one row per well and columns
   \code{well_id}, \code{plate_id}, plus the features listed above.
 }
 \description{
-Step 3 of the current-clamp pipeline.  Reads one or more sweep-level Parquet
-files produced by \code{\link{runAPAnalysis}} and assembles them into a
-\code{SingleCellExperiment} compatible with \code{\link{buildMAE}}.
+Derives a summary feature table from a \code{SingleCellExperiment} produced
+by \code{\link{prepareCCSE}}.  All features come from data already computed
+by the Python AP-analysis pipeline — no raw traces are required.
 }
 \details{
-The output \code{SingleCellExperiment} has:
+\strong{Sweep-parquet features (always computed):}
 \itemize{
-  \item \strong{rows} = sweeps (stimulus metadata in \code{rowData}).
-  \item \strong{cols} = \code{well_id.plate_id} keys, matching
-    \code{prepareSE()} output.
-  \item \strong{assays} = \code{baseline_v_mV}, \code{steady_v_mV},
-    \code{after_v_mV}, \code{ap_count}, \code{ap_freq_hz},
-    \code{mean_ap_amplitude_mV}, \code{mean_isi_s},
-    \code{mean_dvdt_max_mV_per_ms}, etc.
+  \item \code{resting_vm_mV} — mean baseline voltage at the most
+    hyperpolarised (zero or smallest) current step.
+  \item \code{input_resistance_MOhm} — slope of the linear fit
+    ΔV_steady / ΔI across all subthreshold sweeps (ap_count == 0);
+    requires ≥ 3 subthreshold sweeps.
+  \item \code{rheobase_pA} — commanded current at the first sweep with at
+    least one AP.
+  \item \code{max_firing_rate_Hz} — peak \code{ap_freq_hz} across all sweeps.
+  \item \code{fi_slope_Hz_per_pA} — slope of the linear fit
+    ap_freq_hz ~ stim_amp_cmd across all firing sweeps (ap_count > 0);
+    requires ≥ 2 firing sweeps.
+  \item \code{depolarization_block} — logical; \code{TRUE} when ap_count
+    drops to < 50 \% of its maximum in a later sweep.
+  \item \code{depolarization_block_stim_pA} — commanded current (pA) at the
+    first sweep where depolarisation block is detected.
+}
+
+\strong{AP-parquet features (requires \code{ap_parquet_path} or AP data in
+\code{metadata(se_cc)$ap_data}):}
+\itemize{
+  \item \code{first_ap_amplitude_mV} — amplitude of the first AP at
+    rheobase.
+  \item \code{time_to_first_spike_ms} — latency from stimulus onset to the
+    first AP at rheobase (ms).
+  \item \code{ap_amplitude_tapering} — ratio of the last to first AP
+    amplitude in the sweep with the most APs (< 1 = adapting, > 1 =
+    facilitation).
+  \item \code{isi_adaptation_ratio} — ratio of the last to first ISI in the
+    best (most APs) sweep.
 }
 }
 \examples{
-\dontrun{
-paths <- runAPAnalysis("260304.parquet", out_dir = "260304_results")
-se_cc <- prepareCCSE(paths["sweep"], ap_parquet_path = paths["ap"])
-}
-
 \dontrun{
 paths  <- runAPAnalysis("260304.parquet", out_dir = "260304_results")
 se_cc  <- prepareCCSE(paths["sweep"], ap_parquet_path = paths["ap"])

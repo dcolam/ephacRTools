@@ -87,8 +87,6 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
   function(input, output, session) {
 
-    ccPreviewServer("cc_preview")
-
     previous_sel <- reactiveVal(value=NULL)
 
     if(!is.null(logins)){
@@ -131,7 +129,7 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
     output$uploadMenu <- renderUI({
       if(!(uploadMaxSize>0)) return(NULL)
-      menuSubItem("Upload object", tabName="tab_fileinput")
+      menuSubItem("Load SE", tabName="tab_load_se")
     })
 
     mergeFlists <- function(se){
@@ -203,6 +201,12 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
         coldata <- as.data.frame(colData(x))
         updateSelectInput(session, "clusterAssay", choices = assayNames(x))
         updateSelectInput(session, "clusterColData", choices = coldat)
+        updateSelectizeInput(session, "lda_assays", choices = assayNames(x), server = TRUE)
+        updateSelectizeInput(session, "lda_coldata_feats", choices = coldat, server = TRUE)
+        updateSelectInput(session, "lda_label_col",
+                          choices = c("", colnames(as.data.frame(colData(x)))), selected = "")
+        updateSelectInput(session, "lda_conf_label",
+                          choices = c("", colnames(as.data.frame(colData(x)))), selected = "")
         updateSelectInput(session, "clustercolor1", choices = colnames(coldata), selected = "cluster.tsne")
         updateSelectInput(session, "clustercolor2", choices = colnames(coldata), selected = "cluster.umap")
         updateSelectInput(session, "clustercolor3", choices = colnames(coldata), selected = "cluster.pca")
@@ -277,6 +281,97 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
     for(nn in names(objects)) SEs[[nn]] <- objects[[nn]]
     updateSelectInput(session, "object", choices=names(objects))
 
+    ccPreviewServer("cc_preview", ses = SEs)
+
+    # Keep the "object" selector in sync whenever SEs is updated
+    # (covers SEs added by ccPreviewServer and other sources)
+    observe({
+      nms <- names(shiny::reactiveValuesToList(SEs))
+      updateSelectInput(session, "object",
+                        choices = union(names(objects), nms))
+    })
+
+    # ── MAE builder ───────────────────────────────────────────────────────────
+    output$mae_se_list_ui <- renderUI({
+      all_nms <- names(shiny::reactiveValuesToList(SEs))
+      if (!length(all_nms))
+        return(helpText("No SE objects loaded yet. Load or build SEs first."))
+      rows <- lapply(all_nms, function(nm) {
+        safe <- make.names(nm)
+        fluidRow(
+          column(5, checkboxInput(paste0("mae_include_", safe), nm, value = TRUE)),
+          column(7, textInput(paste0("mae_expname_", safe), NULL,
+                              value = nm, placeholder = "Experiment name in MAE"))
+        )
+      })
+      tagList(
+        tags$p(style = "font-size:11px; color:#888; margin-bottom:6px;",
+               "Check the SEs to include and optionally rename each experiment."),
+        do.call(tagList, rows)
+      )
+    })
+
+    output$mae_status_ui <- renderUI(NULL)
+
+    observeEvent(input$build_mae_btn, {
+      all_nms <- names(shiny::reactiveValuesToList(SEs))
+      selected <- Filter(function(nm) {
+        isTRUE(input[[paste0("mae_include_", make.names(nm))]])
+      }, all_nms)
+
+      if (length(selected) < 2) {
+        showNotification("Select at least 2 SE objects.", type = "error"); return()
+      }
+
+      exp_list <- tryCatch({
+        nms_out <- vapply(selected, function(nm) {
+          v <- trimws(input[[paste0("mae_expname_", make.names(nm))]] %||% nm)
+          if (!nzchar(v)) nm else v
+        }, character(1))
+        se_list <- lapply(selected, function(nm) {
+          se <- SEs[[nm]]
+          if (is.character(se)) se <- readRDS(se)
+          cd <- as.data.frame(SummarizedExperiment::colData(se))
+          if (!"well_id"  %in% colnames(cd) && "Well"     %in% colnames(cd)) se$well_id  <- se$Well
+          if (!"plate_id" %in% colnames(cd) && "Plate_ID" %in% colnames(cd)) se$plate_id <- se$Plate_ID
+          se
+        })
+        setNames(se_list, nms_out)
+      }, error = function(e) {
+        showNotification(paste("Preparation failed:", e$message), type = "error"); NULL
+      })
+
+      if (is.null(exp_list)) return()
+
+      mae <- tryCatch(
+        buildMAE(exp_list),
+        error = function(e) {
+          showNotification(paste("buildMAE failed:", e$message),
+                           type = "error", duration = 15)
+          NULL
+        }
+      )
+
+      if (!is.null(mae)) {
+        mae_nm <- trimws(input$mae_name %||% "MAE")
+        if (!nzchar(mae_nm)) mae_nm <- "MAE"
+        existing <- names(shiny::reactiveValuesToList(SEs))
+        if (mae_nm %in% existing)
+          mae_nm <- make.unique(c(existing, mae_nm), sep = " ")[length(existing) + 1L]
+        SEs[[mae_nm]] <- mae
+        output$mae_status_ui <- renderUI(
+          tags$p(style = "color:#2a7; font-size:0.9em; margin-top:6px;",
+                 icon("check-circle"),
+                 sprintf(" MAE '%s' built: %d experiments — added to dataset selector.",
+                         mae_nm, length(mae)))
+        )
+        showNotification(
+          sprintf("MAE built with %d experiments — added as '%s'.",
+                  length(mae), mae_nm),
+          type = "message", duration = 8
+        )
+      }
+    })
 
     SE <- reactive({
       if(is.null(input$object) || input$object=="" ||
@@ -1244,6 +1339,239 @@ tinySEV.server <- function(objects=NULL, uploadMaxSize=1000*1024^2, maxPlot=500,
 
 
 
+  # ── LDA supervised classification ─────────────────────────────────────────
+  lda_fit_rv    <- reactiveVal(NULL)
+  lda_cv_rv     <- reactiveVal(NULL)
+  lda_features_rv <- reactiveVal(NULL)
+
+  # Populate LDA feature selectors when SE changes
+  observe({
+    se <- SE(); req(se)
+    cd <- as.data.frame(SummarizedExperiment::colData(se))
+    num_cd <- names(cd)[vapply(cd, is.numeric, logical(1))]
+    updateSelectizeInput(session, "lda_assays",
+                         choices = assayNames(se), server = TRUE)
+    updateSelectizeInput(session, "lda_coldata_feats",
+                         choices = num_cd, server = TRUE)
+    updateSelectInput(session, "lda_label_col",
+                      choices = c("", names(cd)), selected = "")
+    updateSelectInput(session, "lda_conf_label",
+                      choices = c("", names(cd)), selected = "")
+  })
+
+  observeEvent(input$lda_fit_btn, {
+    se <- SE()
+    req(se)
+    if (is.null(input$lda_assays) && is.null(input$lda_coldata_feats)) {
+      showNotification("Select at least one assay or colData column.", type = "error"); return()
+    }
+    lbl <- input$lda_label_col
+    if (!nzchar(lbl %||% "")) {
+      showNotification("Select a class label column.", type = "error"); return()
+    }
+    withProgress(message = "Building feature matrix…", value = 0.2, {
+      feats <- tryCatch(
+        seLDAFeatures(
+          se,
+          coldata_cols  = if (length(input$lda_coldata_feats)) input$lda_coldata_feats else NULL,
+          assays        = if (length(input$lda_assays))        input$lda_assays        else NULL,
+          assay_agg     = input$lda_assay_agg %||% "all",
+          scale         = input$lda_scale_steps %||% c("assay", "plate", "feature"),
+          plate_col     = "Plate_ID"
+        ),
+        error = function(e) {
+          showNotification(paste("Feature extraction failed:", e$message), type = "error"); NULL
+        }
+      )
+      if (is.null(feats)) return()
+      lda_features_rv(feats)
+      incProgress(0.5, message = "Fitting LDA…")
+
+      fit <- tryCatch(
+        fitLDASE(
+          se, feats, lbl,
+          method  = input$lda_method %||% "global",
+          pca_var = input$lda_pca_var %||% 0.95
+        ),
+        error = function(e) {
+          showNotification(paste("LDA fit failed:", e$message), type = "error"); NULL
+        }
+      )
+      if (is.null(fit)) return()
+      lda_fit_rv(fit)
+      lda_cv_rv(NULL)  # reset CV on new fit
+
+      # Populate LD axis selectors
+      ld_choices <- paste0("LD", seq_len(fit$n_ld))
+      updateSelectInput(session, "lda_ld_x",  choices = ld_choices, selected = ld_choices[1])
+      updateSelectInput(session, "lda_ld_y",  choices = ld_choices,
+                        selected = if (length(ld_choices) > 1) ld_choices[2] else ld_choices[1])
+      updateSelectInput(session, "lda_imp_ld", choices = ld_choices, selected = ld_choices[1])
+
+      showNotification(
+        sprintf("LDA fitted: %d wells, %d features, %d classes.",
+                fit$training_n, length(fit$spec), length(fit$classes)),
+        type = "message", duration = 6
+      )
+    })
+  })
+
+  output$lda_fit_status <- renderText({
+    fit <- lda_fit_rv()
+    if (is.null(fit)) return("No model fitted yet.")
+    sprintf(
+      "Method: %s  |  Features: %d  |  Classes: %s  |  N trained: %d%s",
+      fit$method, length(fit$spec),
+      paste(fit$classes, collapse = "/"),
+      fit$training_n,
+      if (fit$method == "pca")
+        sprintf("  |  PCs retained: %d (%.0f%% var)", fit$fit$n_pc, fit$pca_var * 100)
+      else ""
+    )
+  })
+
+  observeEvent(input$lda_predict_btn, {
+    fit <- lda_fit_rv(); se <- SE()
+    req(fit, se)
+    withProgress(message = "Projecting wells through LDA…", {
+      se_out <- tryCatch(
+        predictLDASE(se, fit, out_prefix = input$lda_out_prefix %||% "lda"),
+        error = function(e) {
+          showNotification(paste("Prediction failed:", e$message), type = "error"); NULL
+        }
+      )
+      if (is.null(se_out)) return()
+      SEs[[input$object]] <- se_out
+      initialized(FALSE)
+      SEinit(SEs[[input$object]])
+      showNotification(
+        sprintf("LDA predictions written to colData (prefix '%s').",
+                input$lda_out_prefix %||% "lda"),
+        type = "message", duration = 5
+      )
+    })
+  })
+
+  observeEvent(input$lda_cv_btn, {
+    fit <- lda_fit_rv(); feats <- lda_features_rv(); se <- SE()
+    req(fit, feats, se)
+    withProgress(message = "Running LOPO cross-validation…", {
+      cv <- tryCatch(
+        ldaCVSE(se, feats, fit$label_col,
+                method = if (fit$method == "pca") "pca" else "global",
+                pca_var = fit$pca_var %||% 0.95),
+        error = function(e) {
+          showNotification(paste("CV failed:", e$message), type = "error"); NULL
+        }
+      )
+      lda_cv_rv(cv)
+    })
+  })
+
+  output$lda_cv_status_ui <- renderUI({
+    cv <- lda_cv_rv()
+    if (is.null(cv)) return(NULL)
+    mean_test <- mean(cv$test_acc, na.rm = TRUE)
+    tags$p(style = "color:#2a7; font-size:0.85em; margin-top:4px;",
+           icon("check-circle"),
+           sprintf(" LOPO done — mean test accuracy: %.1f%%", mean_test * 100))
+  })
+
+  output$lda_scatter_plot <- renderPlotly({
+    fit <- lda_fit_rv(); se <- SE()
+    req(fit, se)
+    cd    <- as.data.frame(SummarizedExperiment::colData(se))
+    pfx   <- input$lda_out_prefix %||% "lda"
+    x_col <- paste0(pfx, "_", input$lda_ld_x %||% "LD1")
+    y_col <- paste0(pfx, "_", input$lda_ld_y %||% "LD2")
+    cl_col <- paste0(pfx, "_class")
+    if (!x_col %in% names(cd)) return(plotly::plot_ly() %>%
+      plotly::layout(title = "Run 'Predict all wells' first."))
+    plotly::plot_ly(cd, x = ~get(x_col), y = ~get(y_col),
+                    color = ~get(cl_col), type = "scatter", mode = "markers",
+                    text = ~paste0(rownames(cd), "<br>", cl_col, ": ", get(cl_col)),
+                    hoverinfo = "text",
+                    marker = list(size = 7, opacity = 0.75)) %>%
+      plotly::layout(xaxis = list(title = input$lda_ld_x %||% "LD1"),
+                     yaxis = list(title = input$lda_ld_y %||% "LD2"),
+                     legend = list(title = list(text = "Predicted class")))
+  })
+
+  output$lda_importance_plot <- renderPlotly({
+    fit <- lda_fit_rv(); req(fit)
+    ld_sel <- input$lda_imp_ld %||% "LD1"
+    n_top  <- input$lda_imp_top %||% 20L
+    imp <- tryCatch(ldaLoadings(fit, n_top = n_top, ld = as.integer(gsub("LD", "", ld_sel))),
+                    error = function(e) NULL)
+    req(imp)
+    imp <- imp[order(imp$importance), , drop = FALSE]  # ascending for coord_flip
+    plotly::plot_ly(imp, x = ~get(ld_sel), y = ~reorder(feature, abs(get(ld_sel))),
+                    type = "bar", orientation = "h",
+                    marker = list(color = ~get(ld_sel),
+                                  colorscale = "RdBu", cauto = TRUE),
+                    text = ~paste0(feature, "<br>assay: ", assay,
+                                   if (!is.na(imp$sweep[1])) paste0("<br>sweep: ", sweep) else ""),
+                    hoverinfo = "text") %>%
+      plotly::layout(xaxis = list(title = paste(ld_sel, "loading")),
+                     yaxis = list(title = "", tickfont = list(size = 9)),
+                     bargap = 0.2)
+  })
+
+  output$lda_confusion_out <- renderPrint({
+    se <- SE(); req(se)
+    lbl <- input$lda_conf_label
+    if (!nzchar(lbl %||% "")) { cat("Select a true label column.\n"); return() }
+    pfx  <- input$lda_out_prefix %||% "lda"
+    conf <- tryCatch(ldaConfusion(se, lbl, out_prefix = pfx),
+                     error = function(e) { cat(e$message, "\n"); NULL })
+    if (is.null(conf)) return()
+    print(conf$table)
+    cat(sprintf("\nAccuracy: %.1f%%  |  Cohen's κ: %.3f  |  N: %d\n",
+                conf$accuracy * 100, conf$kappa, conf$n))
+  })
+
+  output$lda_cv_table <- renderTable({
+    cv <- lda_cv_rv(); req(cv)
+    cv$train_acc    <- paste0(round(cv$train_acc    * 100, 1), "%")
+    cv$test_acc     <- paste0(round(cv$test_acc     * 100, 1), "%")
+    cv$overfit_gap  <- paste0(round(as.numeric(gsub("%","", cv$train_acc)) -
+                                      as.numeric(gsub("%","", cv$test_acc)), 1), "%")
+    cv
+  }, striped = TRUE, hover = TRUE, spacing = "s", width = "100%")
+
+  output$lda_cv_plot <- renderPlotly({
+    cv <- lda_cv_rv(); req(cv)
+    cv_long <- rbind(
+      data.frame(Plate_ID = cv$Plate_ID, Accuracy = cv$train_acc, Split = "Train"),
+      data.frame(Plate_ID = cv$Plate_ID, Accuracy = cv$test_acc,  Split = "Test")
+    )
+    plotly::plot_ly(cv_long, x = ~Plate_ID, y = ~Accuracy, color = ~Split,
+                    type = "bar",
+                    colors = c(Train = "#4e79a7", Test = "#f28e2b")) %>%
+      plotly::layout(barmode = "group",
+                     yaxis = list(title = "Accuracy", tickformat = ".0%"),
+                     xaxis = list(title = ""),
+                     legend = list(orientation = "h"))
+  })
+
+  output$lda_pca_scree <- renderPlotly({
+    fit <- lda_fit_rv(); req(fit)
+    if (fit$method != "pca") return(plotly::plot_ly())
+    pv <- tryCatch(ldaPCAVariance(fit), error = function(e) NULL); req(pv)
+    plotly::plot_ly(pv, x = ~PC, y = ~cumulative_var,
+                    type = "scatter", mode = "lines+markers",
+                    color = ~factor(retained, labels = c("dropped", "retained")),
+                    colors = c(dropped = "#aaa", retained = "#e05c2a"),
+                    marker = list(size = 7)) %>%
+      plotly::add_bars(y = ~var_explained, name = "per-PC var",
+                       marker = list(color = "#ccc", line = list(color = "#999")),
+                       inherit = FALSE, x = ~PC) %>%
+      plotly::layout(yaxis = list(title = "Cumulative variance", tickformat = ".0%"),
+                     xaxis = list(title = "Principal component"),
+                     legend = list(orientation = "h"))
+  })
+
+  # ── Unsupervised clustering ────────────────────────────────────────────────
   observeEvent(input$clustering, {
 
     if(!is.null(input$clusterAssay) | !is.null(input$clusterColData)){
